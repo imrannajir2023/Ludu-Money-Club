@@ -1,0 +1,5 @@
+{
+  "name": "Ludo Money Club",
+  "description": "A real-money Ludo game simulation with deposit/withdraw systems and AI-powered commentary.",
+  "requestFramePermissions": []
+}
