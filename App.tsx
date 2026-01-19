@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction } from './types';
 import LudoBoard from './components/LudoBoard';
 import WalletModal from './components/WalletModal';
 import AdminPortal from './components/AdminPortal';
 import { soundManager } from './services/soundService';
 import { getRandomBotName } from './services/botService';
+import { SAFE_SPOTS } from './constants';
 
 const LOGO_URL = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
 
@@ -38,6 +39,9 @@ const App: React.FC = () => {
   const [selectedStake, setSelectedStake] = useState(100);
   const [selectedPlayerCount, setSelectedPlayerCount] = useState(4);
 
+  // Use a ref to prevent double bot triggers
+  const botThinkingRef = useRef(false);
+
   // Splash Loading
   useEffect(() => {
     if (view === 'SPLASH') {
@@ -55,43 +59,51 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Bot Logic Effect
+  // Bot AI Controller
   useEffect(() => {
-    if (view !== 'GAME' || !gameState || gameState.winner) return;
+    if (view !== 'GAME' || !gameState || gameState.winner || animating || botThinkingRef.current) return;
 
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    
-    if (currentPlayer.isBot) {
-      // Step 1: Bot Rolls Dice
-      if (!gameState.isDiceRolled && !animating) {
-        // Random delay between 1.2s to 2.5s for human feel
-        const rollDelay = Math.floor(Math.random() * 1300) + 1200;
-        const rollTimer = setTimeout(() => {
-          rollDice();
-        }, rollDelay); 
-        return () => clearTimeout(rollTimer);
-      }
+    if (!currentPlayer.isBot) return;
 
-      // Step 2: Bot Moves Token
-      if (gameState.isDiceRolled && gameState.diceValue) {
-        const possibleMoves = currentPlayer.tokens.filter(t => {
-          if (t.state === TokenState.WIN) return false;
-          if (t.state === TokenState.HOME) return gameState.diceValue === 6;
-          if (t.state === TokenState.PATH) return (t.distanceTraveled + gameState.diceValue!) <= 57;
-          return false;
-        });
+    if (!gameState.isDiceRolled) {
+      botThinkingRef.current = true;
+      const rollDelay = Math.floor(Math.random() * 1000) + 1000;
+      setTimeout(() => {
+        rollDice();
+        botThinkingRef.current = false;
+      }, rollDelay);
+    } else if (gameState.diceValue) {
+      const possibleMoves = currentPlayer.tokens.filter(t => {
+        if (t.state === TokenState.WIN) return false;
+        if (t.state === TokenState.HOME) return gameState.diceValue === 6;
+        if (t.state === TokenState.PATH) return (t.distanceTraveled + gameState.diceValue!) <= 57;
+        return false;
+      });
 
-        if (possibleMoves.length > 0) {
-          // Random delay between 0.8s to 1.8s for human feel
-          const moveDelay = Math.floor(Math.random() * 1000) + 800;
-          const moveTimer = setTimeout(() => {
-            const bestToken = possibleMoves.reduce((prev, curr) => 
-              (curr.distanceTraveled > prev.distanceTraveled) ? curr : prev
-            );
-            moveToken(bestToken.id);
-          }, moveDelay); 
-          return () => clearTimeout(moveTimer);
-        }
+      if (possibleMoves.length > 0) {
+        botThinkingRef.current = true;
+        const moveDelay = Math.floor(Math.random() * 800) + 700;
+        setTimeout(() => {
+          // Smart AI: 1. Try to kill someone, 2. Try to get out, 3. Move furthest token
+          let bestToken = possibleMoves[0];
+          
+          // Check for capture moves
+          const captureMove = possibleMoves.find(t => {
+             const nextPos = (t.position + gameState.diceValue!) % 52;
+             return !SAFE_SPOTS.includes(nextPos) && gameState.players.some(p => 
+               p.color !== currentPlayer.color && p.tokens.some(ot => ot.state === TokenState.PATH && ot.position === nextPos)
+             );
+          });
+
+          if (captureMove) bestToken = captureMove;
+          else {
+            bestToken = possibleMoves.reduce((prev, curr) => (curr.distanceTraveled > prev.distanceTraveled) ? curr : prev);
+          }
+
+          moveToken(bestToken.id);
+          botThinkingRef.current = false;
+        }, moveDelay);
       }
     }
   }, [view, gameState?.currentPlayerIndex, gameState?.isDiceRolled, animating]);
@@ -193,13 +205,13 @@ const App: React.FC = () => {
       .map(t => t.id);
   }, [gameState]);
 
-  const switchTurn = (isSix: boolean) => {
+  const switchTurn = (bonus: boolean) => {
     setGameState(prev => {
       if (!prev) return null;
       let nextIndex = prev.currentPlayerIndex;
-      let nextSixes = isSix ? prev.consecutiveSixes + 1 : 0;
+      let nextSixes = bonus && prev.diceValue === 6 ? prev.consecutiveSixes + 1 : 0;
       
-      if (!isSix || nextSixes === 3) {
+      if (!bonus || nextSixes === 3) {
         nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
         nextSixes = 0;
       }
@@ -222,17 +234,40 @@ const App: React.FC = () => {
     const token = player.tokens.find(t => t.id === tokenId);
     if (!token) return;
 
+    let didCapture = false;
+    let didReachFinish = false;
+
     soundManager.play('move');
 
     if (token.state === TokenState.HOME && dice === 6) {
       token.state = TokenState.PATH;
-      token.position = 0;
+      token.position = 0; 
       token.distanceTraveled = 0;
     } else if (token.state === TokenState.PATH) {
       token.distanceTraveled += dice;
       token.position = (token.position + dice) % 52;
+      
       if (token.distanceTraveled === 57) {
         token.state = TokenState.WIN;
+        didReachFinish = true;
+        soundManager.play('win');
+      } else {
+        // Capture Logic
+        if (!SAFE_SPOTS.includes(token.position)) {
+          players.forEach(p => {
+            if (p.color !== player.color) {
+              p.tokens.forEach(ot => {
+                if (ot.state === TokenState.PATH && ot.position === token.position) {
+                  ot.state = TokenState.HOME;
+                  ot.position = -1;
+                  ot.distanceTraveled = 0;
+                  didCapture = true;
+                  soundManager.play('kill');
+                }
+              });
+            }
+          });
+        }
       }
     }
 
@@ -241,12 +276,12 @@ const App: React.FC = () => {
     setTimeout(() => {
       const hasWon = player.tokens.every(t => t.state === TokenState.WIN);
       if (hasWon) {
-        alert(`${player.name} WINS!`);
+        alert(`${player.name} wins the match!`);
         setView('LOBBY');
         return;
       }
-      switchTurn(dice === 6);
-    }, 300);
+      switchTurn(dice === 6 || didCapture || didReachFinish);
+    }, 400);
   };
 
   const rollDice = useCallback(() => {
