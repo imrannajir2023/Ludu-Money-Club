@@ -85,11 +85,11 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
         cells.push(
           <div 
             key={`${r}-${c}`} 
-            className={`absolute w-[6.66%] h-[6.66%] border-[0.5px] border-gray-200 ${bgColor} flex items-center justify-center`}
+            className={`absolute w-[6.66%] h-[6.66%] border-[0.5px] border-gray-100 ${bgColor} flex items-center justify-center`}
             style={{ top: `${r * 6.666}%`, left: `${c * 6.666}%` }}
           >
             {isStar && (
-              <span className="text-[10px] md:text-sm drop-shadow-md select-none opacity-60">⭐</span>
+              <span className="text-[10px] md:text-sm drop-shadow-sm select-none opacity-40">⭐</span>
             )}
           </div>
         );
@@ -98,15 +98,28 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
     return cells;
   };
 
+  const tokensAtPos: Record<string, {token: Token, playerIndex: number}[]> = {};
+  players.forEach((p, pIdx) => {
+    p.tokens.forEach(t => {
+      if (t.state === TokenState.WIN) return;
+      let r, c;
+      if (t.state === TokenState.HOME) [r, c] = getBaseGridPos(t.color, t.id);
+      else [r, c] = getGridPos(t.position, t.color);
+      const key = `${r}-${c}`;
+      if (!tokensAtPos[key]) tokensAtPos[key] = [];
+      tokensAtPos[key].push({token: t, playerIndex: pIdx});
+    });
+  });
+
   return (
-    <div className="relative w-full h-full aspect-square bg-white border-[12px] border-[#e8c058] rounded-[32px] shadow-2xl overflow-hidden">
+    <div className="relative w-full h-full aspect-square bg-white border-[6px] border-[#e8c058] rounded-[16px] shadow-2xl overflow-hidden select-none">
       {renderGridBackground()}
 
       {/* BASES */}
-      <div className="absolute top-0 left-0 w-[40%] h-[40%] p-3"><div className="w-full h-full bg-red-500 rounded-3xl border-4 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-2xl"></div></div></div>
-      <div className="absolute top-0 right-0 w-[40%] h-[40%] p-3"><div className="w-full h-full bg-green-500 rounded-3xl border-4 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-2xl"></div></div></div>
-      <div className="absolute bottom-0 right-0 w-[40%] h-[40%] p-3"><div className="w-full h-full bg-yellow-400 rounded-3xl border-4 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-2xl"></div></div></div>
-      <div className="absolute bottom-0 left-0 w-[40%] h-[40%] p-3"><div className="w-full h-full bg-blue-500 rounded-3xl border-4 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-2xl"></div></div></div>
+      <div className="absolute top-0 left-0 w-[40%] h-[40%] p-2"><div className="w-full h-full bg-red-500 rounded-xl border-2 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-lg"></div></div></div>
+      <div className="absolute top-0 right-0 w-[40%] h-[40%] p-2"><div className="w-full h-full bg-green-500 rounded-xl border-2 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-lg"></div></div></div>
+      <div className="absolute bottom-0 right-0 w-[40%] h-[40%] p-2"><div className="w-full h-full bg-yellow-400 rounded-xl border-2 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-lg"></div></div></div>
+      <div className="absolute bottom-0 left-0 w-[40%] h-[40%] p-2"><div className="w-full h-full bg-blue-500 rounded-xl border-2 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-lg"></div></div></div>
 
       {/* CENTER */}
       <div className="absolute top-[40%] left-[40%] w-[20%] h-[20%]">
@@ -118,29 +131,56 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
           </div>
       </div>
 
-      {/* TOKENS */}
-      {players.flatMap(p => p.tokens).filter(t => t.state !== TokenState.WIN).map(token => {
-          let r, c;
-          if (token.state === TokenState.HOME) [r, c] = getBaseGridPos(token.color, token.id);
-          else [r, c] = getGridPos(token.position, token.color);
-
-          const isClickable = validTokens.includes(token.id) && token.color === currentPlayerColor;
+      {/* TOKENS WITH SMART STACKING GRID */}
+      {Object.entries(tokensAtPos).flatMap(([posKey, stack]) => {
+          const [r, c] = posKey.split('-').map(Number);
+          const isAtHome = stack.some(s => s.token.state === TokenState.HOME);
           
-          return (
-              <div 
-                 key={`${token.color}-${token.id}`}
-                 className={`absolute z-30 w-[6.66%] h-[6.66%] flex items-center justify-center transition-all duration-300 pointer-events-auto cursor-pointer`}
-                 style={{ top: `${r * 6.666}%`, left: `${c * 6.666}%` }}
-                 onClick={(e) => {
-                   e.stopPropagation();
-                   if (isClickable) onTokenClick(token);
-                 }}
-              >
-                  <div className={`w-[85%] h-[85%] rounded-full shadow-lg border-[3px] border-white flex items-center justify-center ${COLORS[token.color].base} ${isClickable ? 'animate-bounce ring-4 ring-yellow-400 z-50' : ''}`}>
-                      <div className="w-[40%] h-[25%] bg-white/40 rounded-full mb-1"></div>
+          return stack.map(({token, playerIndex}, index) => {
+              const isClickable = validTokens.includes(token.id) && token.color === currentPlayerColor;
+              
+              let sizeClass = "w-[85%] h-[85%]";
+              let offsetStyle = {};
+              
+              if (stack.length > 1 && !isAtHome) {
+                  sizeClass = "w-[45%] h-[45%]";
+                  const row = Math.floor(index / 2);
+                  const col = index % 2;
+                  offsetStyle = {
+                      top: `${row * 50}%`,
+                      left: `${col * 50}%`,
+                      transform: 'none'
+                  };
+              }
+
+              const zIndex = isClickable ? 200 : 10 + index;
+
+              return (
+                  <div 
+                     key={`${token.color}-${token.id}`}
+                     // SMOOTH MOVEMENT: Increased duration to 500ms for natural feel
+                     className={`absolute w-[6.66%] h-[6.66%] transition-all duration-500 ease-out pointer-events-none`}
+                     style={{ 
+                        top: `${r * 6.666}%`, 
+                        left: `${c * 6.666}%`,
+                        zIndex: zIndex
+                     }}
+                  >
+                      <div 
+                        className={`absolute ${sizeClass} flex items-center justify-center transition-all cursor-pointer pointer-events-auto`}
+                        style={offsetStyle}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isClickable) onTokenClick(token);
+                        }}
+                      >
+                        <div className={`w-full h-full rounded-full shadow-lg border-[1.5px] border-white flex items-center justify-center ${COLORS[token.color].base} ${isClickable ? 'animate-bounce ring-4 ring-yellow-400' : ''} transition-transform hover:scale-110 active:scale-95`}>
+                            <div className="w-[40%] h-[20%] bg-white/30 rounded-full mb-1"></div>
+                        </div>
+                      </div>
                   </div>
-              </div>
-          );
+              );
+          });
       })}
     </div>
   );
