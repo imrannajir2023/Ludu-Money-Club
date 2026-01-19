@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction } from './types';
 import LudoBoard from './components/LudoBoard';
 import WalletModal from './components/WalletModal';
@@ -38,6 +38,7 @@ const App: React.FC = () => {
   const [selectedStake, setSelectedStake] = useState(100);
   const [selectedPlayerCount, setSelectedPlayerCount] = useState(4);
 
+  // Splash Loading
   useEffect(() => {
     if (view === 'SPLASH') {
       const interval = setInterval(() => {
@@ -53,6 +54,47 @@ const App: React.FC = () => {
       return () => clearInterval(interval);
     }
   }, [view]);
+
+  // Bot Logic Effect
+  useEffect(() => {
+    if (view !== 'GAME' || !gameState || gameState.winner) return;
+
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    
+    if (currentPlayer.isBot) {
+      // Step 1: Bot Rolls Dice
+      if (!gameState.isDiceRolled && !animating) {
+        // Random delay between 1.2s to 2.5s for human feel
+        const rollDelay = Math.floor(Math.random() * 1300) + 1200;
+        const rollTimer = setTimeout(() => {
+          rollDice();
+        }, rollDelay); 
+        return () => clearTimeout(rollTimer);
+      }
+
+      // Step 2: Bot Moves Token
+      if (gameState.isDiceRolled && gameState.diceValue) {
+        const possibleMoves = currentPlayer.tokens.filter(t => {
+          if (t.state === TokenState.WIN) return false;
+          if (t.state === TokenState.HOME) return gameState.diceValue === 6;
+          if (t.state === TokenState.PATH) return (t.distanceTraveled + gameState.diceValue!) <= 57;
+          return false;
+        });
+
+        if (possibleMoves.length > 0) {
+          // Random delay between 0.8s to 1.8s for human feel
+          const moveDelay = Math.floor(Math.random() * 1000) + 800;
+          const moveTimer = setTimeout(() => {
+            const bestToken = possibleMoves.reduce((prev, curr) => 
+              (curr.distanceTraveled > prev.distanceTraveled) ? curr : prev
+            );
+            moveToken(bestToken.id);
+          }, moveDelay); 
+          return () => clearTimeout(moveTimer);
+        }
+      }
+    }
+  }, [view, gameState?.currentPlayerIndex, gameState?.isDiceRolled, animating]);
 
   const handleFacebookLogin = () => {
     soundManager.play('click');
@@ -72,16 +114,11 @@ const App: React.FC = () => {
   };
 
   const handleNewTransaction = (tx: PendingTransaction) => {
-    // If withdrawal, deduct balance immediately
     if (tx.type === 'WITHDRAW') {
       setUser(prev => ({ ...prev, balance: prev.balance - tx.amount }));
     }
-    
     setPendingTransactions(prev => [...prev, tx]);
-    setUser(prev => ({
-      ...prev,
-      history: [tx, ...prev.history]
-    }));
+    setUser(prev => ({ ...prev, history: [tx, ...prev.history] }));
   };
 
   const approveTransaction = (tx: PendingTransaction) => {
@@ -93,31 +130,24 @@ const App: React.FC = () => {
         history: prev.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' } : h)
       }));
     } else {
-      // Withdrawal: Balance already deducted, just update history
       setUser(prev => ({ 
         ...prev, 
         history: prev.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' } : h)
       }));
     }
     setPendingTransactions(prev => prev.filter(t => t.id !== tx.id));
-    alert(`${tx.type} Request Approved!`);
   };
 
   const rejectTransaction = (txId: string) => {
     const tx = pendingTransactions.find(t => t.id === txId);
-    if (!tx) return;
-
-    // Refund if withdrawal was rejected
-    if (tx.type === 'WITHDRAW') {
+    if (tx && tx.type === 'WITHDRAW') {
       setUser(prev => ({ ...prev, balance: prev.balance + tx.amount }));
     }
-
     setUser(prev => ({ 
       ...prev, 
       history: prev.history.map(h => h.id === txId ? { ...h, status: 'REJECTED' } : h)
     }));
     setPendingTransactions(prev => prev.filter(t => t.id !== txId));
-    alert(`${tx.type} Request Rejected & Refunded!`);
   };
 
   const initGame = () => {
@@ -148,6 +178,77 @@ const App: React.FC = () => {
     setView('GAME');
   };
 
+  const validTokens = useMemo(() => {
+    if (!gameState || !gameState.isDiceRolled || !gameState.diceValue) return [];
+    const player = gameState.players[gameState.currentPlayerIndex];
+    if (player.isBot) return []; 
+    const dice = gameState.diceValue;
+    return player.tokens
+      .filter(t => {
+        if (t.state === TokenState.WIN) return false;
+        if (t.state === TokenState.HOME) return dice === 6;
+        if (t.state === TokenState.PATH) return (t.distanceTraveled + dice) <= 57;
+        return true;
+      })
+      .map(t => t.id);
+  }, [gameState]);
+
+  const switchTurn = (isSix: boolean) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      let nextIndex = prev.currentPlayerIndex;
+      let nextSixes = isSix ? prev.consecutiveSixes + 1 : 0;
+      
+      if (!isSix || nextSixes === 3) {
+        nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
+        nextSixes = 0;
+      }
+
+      return {
+        ...prev,
+        currentPlayerIndex: nextIndex,
+        consecutiveSixes: nextSixes,
+        diceValue: null,
+        isDiceRolled: false
+      };
+    });
+  };
+
+  const moveToken = (tokenId: number) => {
+    if (!gameState || !gameState.diceValue) return;
+    const dice = gameState.diceValue;
+    const players = [...gameState.players];
+    const player = players[gameState.currentPlayerIndex];
+    const token = player.tokens.find(t => t.id === tokenId);
+    if (!token) return;
+
+    soundManager.play('move');
+
+    if (token.state === TokenState.HOME && dice === 6) {
+      token.state = TokenState.PATH;
+      token.position = 0;
+      token.distanceTraveled = 0;
+    } else if (token.state === TokenState.PATH) {
+      token.distanceTraveled += dice;
+      token.position = (token.position + dice) % 52;
+      if (token.distanceTraveled === 57) {
+        token.state = TokenState.WIN;
+      }
+    }
+
+    setGameState(prev => prev ? ({ ...prev, players }) : null);
+
+    setTimeout(() => {
+      const hasWon = player.tokens.every(t => t.state === TokenState.WIN);
+      if (hasWon) {
+        alert(`${player.name} WINS!`);
+        setView('LOBBY');
+        return;
+      }
+      switchTurn(dice === 6);
+    }, 300);
+  };
+
   const rollDice = useCallback(() => {
     if (animating || (gameState && gameState.isDiceRolled)) return;
     setAnimating(true); 
@@ -156,7 +257,23 @@ const App: React.FC = () => {
       const val = Math.floor(Math.random() * 6) + 1;
       setAnimating(false); 
       soundManager.play('dice_stop');
-      setGameState(prev => prev ? ({ ...prev, diceValue: val, isDiceRolled: true }) : null);
+      if (val === 6) soundManager.play('six');
+      
+      setGameState(prev => {
+        if (!prev) return null;
+        const player = prev.players[prev.currentPlayerIndex];
+        const canMove = player.tokens.some(t => {
+          if (t.state === TokenState.HOME) return val === 6;
+          if (t.state === TokenState.PATH) return (t.distanceTraveled + val) <= 57;
+          return false;
+        });
+
+        if (!canMove) {
+          setTimeout(() => switchTurn(false), 1200);
+        }
+
+        return { ...prev, diceValue: val, isDiceRolled: true };
+      });
     }, 600);
   }, [animating, gameState]);
 
@@ -206,7 +323,6 @@ const App: React.FC = () => {
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a192f] flex flex-col relative text-white select-none overflow-hidden font-fredoka">
-      {/* Header */}
       <div className="p-4 flex justify-between items-center z-50 bg-[#0f172a] shadow-lg">
         <div className="flex items-center gap-2">
           <img src={user.avatar} className="w-10 h-10 rounded-xl bg-white border-2 border-yellow-500" />
@@ -225,7 +341,6 @@ const App: React.FC = () => {
       </div>
 
       <div className="flex-1 p-4 space-y-4 z-10 overflow-y-auto no-scrollbar pb-24">
-        {/* Play Online Card */}
         <div className="bg-[#2d3da9] rounded-[40px] p-8 shadow-2xl relative overflow-hidden flex flex-col items-start min-h-[200px]" onClick={() => setView('MATCH_CONFIG')}>
             <div className="relative z-10 w-2/3">
               <h2 className="text-4xl font-black italic text-[#ffd900] mb-2 uppercase tracking-tighter leading-tight">PLAY ONLINE</h2>
@@ -235,7 +350,6 @@ const App: React.FC = () => {
             <div className="absolute right-[-10px] bottom-4 text-[130px] opacity-20 rotate-12 scale-x-[-1]">🎲</div>
         </div>
 
-        {/* Action Cards */}
         <div className="grid grid-cols-2 gap-4">
             <div onClick={() => setView('MATCH_CONFIG')} className="bg-[#1e293b] py-8 px-4 rounded-[40px] shadow-xl flex flex-col items-center cursor-pointer border border-white/5">
               <div className="text-5xl mb-3">🤖</div>
@@ -247,7 +361,6 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* Top Winners List */}
         <div className="bg-[#1e293b]/50 p-6 rounded-[40px] border border-white/5">
             <h3 className="text-[9px] font-black uppercase text-white/30 tracking-widest mb-4">TOP WINNERS TODAY</h3>
             <div className="space-y-2">
@@ -300,7 +413,7 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center relative overflow-hidden text-white">
         <div className="w-full h-14 bg-blue-950 flex justify-between items-center px-6 z-10 shadow-2xl">
-           <button onClick={() => setView('LOBBY')} className="bg-red-600 text-white font-black px-6 py-2 rounded-2xl text-[10px] uppercase border-b-4 border-red-800">Quit</button>
+           <button onClick={() => { setGameState(null); setView('LOBBY'); }} className="bg-red-600 text-white font-black px-6 py-2 rounded-2xl text-[10px] uppercase border-b-4 border-red-800">Quit</button>
            <div className="font-black text-sky-400 italic">Ludo Money Battle</div>
         </div>
         
@@ -309,12 +422,29 @@ const App: React.FC = () => {
                 <LudoBoard 
                     players={gameState!.players} 
                     currentPlayerColor={gameState!.players[gameState!.currentPlayerIndex].color}
-                    validTokens={[]} 
-                    onTokenClick={() => {}}
+                    validTokens={validTokens} 
+                    onTokenClick={(token) => moveToken(token.id)}
                 />
             </div>
-            <div onClick={rollDice} className={`w-36 h-36 bg-white rounded-[45px] shadow-2xl flex items-center justify-center text-8xl font-black text-gray-800 border-b-[16px] border-gray-200 cursor-pointer ${animating ? 'animate-spin' : ''}`}>
-               {gameState!.diceValue || '🎲'}
+            
+            <div className="flex flex-col items-center gap-6">
+                <div className="bg-slate-900/50 p-6 rounded-3xl border border-white/10 text-center w-full min-w-[200px]">
+                    <p className="text-[10px] font-black uppercase text-sky-400 mb-1">Current Turn</p>
+                    <p className="text-xl font-black italic uppercase text-yellow-500">{gameState!.players[gameState!.currentPlayerIndex].name}</p>
+                </div>
+                
+                <div 
+                  onClick={!gameState!.players[gameState!.currentPlayerIndex].isBot ? rollDice : undefined} 
+                  className={`w-36 h-36 bg-white rounded-[45px] shadow-2xl flex items-center justify-center text-8xl font-black text-gray-800 border-b-[16px] border-gray-200 transition-all ${animating ? 'animate-spin' : ''} ${gameState?.isDiceRolled || gameState!.players[gameState!.currentPlayerIndex].isBot ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:scale-105 active:translate-y-2'}`}
+                >
+                   {gameState!.diceValue || '🎲'}
+                </div>
+                
+                {gameState?.diceValue && (
+                    <div className="bg-yellow-500 text-black px-8 py-3 rounded-full font-black animate-bounce shadow-xl border-b-4 border-yellow-700 uppercase italic">
+                        Rolled: {gameState.diceValue}
+                    </div>
+                )}
             </div>
         </div>
     </div>
