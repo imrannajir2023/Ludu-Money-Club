@@ -42,6 +42,15 @@ const App: React.FC = () => {
 
   const botActionTimeoutRef = useRef<number | null>(null);
 
+  // Winner Ticker Data
+  const winners = useMemo(() => [
+    "Sajid Ahmed won ৳500 in Online Match!",
+    "Rony Khan just withdrew ৳1,200 via bKash!",
+    "Sumaiya Akter won ৳2,000 in Private Table!",
+    "Tanvir Hossain won ৳100 in Training Mode!",
+    "Aryan Dev won ৳5,000 in Mega Stake!"
+  ], []);
+
   useEffect(() => {
     const savedUser = localStorage.getItem(STORAGE_KEY_USER);
     if (savedUser) setUser(JSON.parse(savedUser));
@@ -317,75 +326,105 @@ const App: React.FC = () => {
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white font-fredoka overflow-hidden dotted-bg">
+        {/* Floating Decorative Elements */}
+        <div className="absolute top-1/4 left-10 text-4xl opacity-5 animate-bounce-slow">🎲</div>
+        <div className="absolute top-3/4 right-20 text-5xl opacity-5 animate-pulse">💰</div>
+        <div className="absolute bottom-1/4 left-20 text-3xl opacity-5 animate-bounce">🪙</div>
+
         {/* TOP GORGEOUS BAR */}
-        <div className="p-6 flex items-center justify-between z-[100] relative bg-gradient-to-b from-black/40 to-transparent">
-            <div className="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10 backdrop-blur-md">
+        <div className="p-6 flex items-center justify-between z-[100] relative bg-gradient-to-b from-black/60 to-transparent">
+            <div className="flex items-center gap-4 bg-white/10 p-2 pr-6 rounded-full border border-white/20 backdrop-blur-xl shadow-2xl">
                 <img src={user.avatar} className="w-14 h-14 rounded-full border-2 border-yellow-500 shadow-xl" />
                 <div>
-                  <h3 className="font-black text-sm uppercase tracking-tighter text-white">{user.name}</h3>
-                  <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest">Premium Player</p>
+                  <h3 className="font-black text-base uppercase tracking-tighter text-white">{user.name}</h3>
+                  <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Online
+                  </p>
                 </div>
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="bg-gradient-to-r from-[#1e293b] to-[#0f172a] rounded-[24px] px-6 py-3 flex items-center gap-4 border-2 border-yellow-500/30 shadow-[0_0_20px_rgba(234,179,8,0.2)]">
-                  <span className="text-yellow-400 font-black text-2xl drop-shadow-lg">৳</span>
-                  <span className="font-black text-xl tracking-tighter">{user.balance.toLocaleString()}</span>
-                  <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-8 h-8 rounded-xl font-black text-2xl flex items-center justify-center shadow-lg hover:scale-110 active:scale-90 transition-all">+</button>
+              <div className="bg-gradient-to-r from-[#1e293b] to-[#0f172a] rounded-[24px] px-6 py-3 flex items-center gap-4 border-2 border-yellow-500/50 shadow-[0_0_30px_rgba(234,179,8,0.3)] backdrop-blur-md">
+                  <span className="text-yellow-400 font-black text-3xl drop-shadow-[0_0_10px_rgba(234,179,8,0.5)]">৳</span>
+                  <span className="font-black text-2xl tracking-tighter">{user.balance.toLocaleString()}</span>
+                  <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-10 h-10 rounded-xl font-black text-3xl flex items-center justify-center shadow-lg hover:bg-yellow-400 hover:scale-110 active:scale-90 transition-all ml-2">+</button>
               </div>
               
               <button 
                 onClick={handleLogout} 
-                className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white w-12 h-12 rounded-2xl flex items-center justify-center border border-red-500/20 shadow-xl transition-all"
+                className="bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white w-14 h-14 rounded-2xl flex items-center justify-center border border-red-500/30 shadow-2xl backdrop-blur-md transition-all group"
                 title="Logout"
               >
-                <span className="text-xl font-black">✕</span>
+                <span className="text-2xl font-black group-hover:rotate-90 transition-transform duration-300">✕</span>
               </button>
             </div>
         </div>
 
         {/* MAIN CARDS */}
-        <div className="flex-1 px-8 space-y-8 overflow-y-auto no-scrollbar pb-32 pt-4">
+        <div className="flex-1 px-8 space-y-8 overflow-y-auto no-scrollbar pb-32 pt-6 relative z-10">
             <div 
-              className="bg-gradient-to-br from-[#243494] via-[#1e297a] to-[#0a192f] rounded-[45px] p-10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden group cursor-pointer border-2 border-white/5 active:scale-95 transition-all"
+              className="bg-gradient-to-br from-[#243494] via-[#1e297a] to-[#0a192f] rounded-[50px] p-12 shadow-[0_30px_60px_rgba(0,0,0,0.6)] relative overflow-hidden group cursor-pointer border-2 border-white/10 active:scale-95 transition-all"
               onClick={() => setView('MATCH_CONFIG')}
             >
-                <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl group-hover:bg-sky-500/10 transition-all"></div>
-                <h2 className="text-5xl font-black italic text-[#FFD700] mb-3 uppercase tracking-tighter drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]">PLAY ONLINE</h2>
-                <p className="text-white/60 font-bold mb-6 text-sm tracking-wide uppercase">Compete with world-class players & win big!</p>
-                <button className="bg-white text-[#243494] font-black px-10 py-4 rounded-[20px] uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-yellow-400 hover:text-black transition-all">START BATTLE</button>
-                <div className="absolute bottom-6 right-10 text-6xl opacity-30 group-hover:opacity-100 group-hover:scale-125 transition-all">🎲</div>
+                <div className="absolute -top-10 -right-10 w-52 h-52 bg-sky-500/10 rounded-full blur-3xl group-hover:bg-sky-500/20 transition-all"></div>
+                <div className="relative z-10">
+                  <h2 className="text-6xl font-black italic text-[#FFD700] mb-3 uppercase tracking-tighter drop-shadow-[0_4px_8px_rgba(0,0,0,0.6)]">PLAY ONLINE</h2>
+                  <p className="text-white/70 font-bold mb-8 text-base tracking-wide uppercase max-w-[300px]">Challenge players across the club and win massive stakes!</p>
+                  <button className="bg-yellow-500 text-black font-black px-12 py-5 rounded-2xl uppercase text-sm tracking-[0.25em] shadow-2xl hover:bg-white transition-all transform group-hover:translate-x-2">START BATTLE 🎲</button>
+                </div>
+                <div className="absolute bottom-10 right-12 text-8xl opacity-20 group-hover:opacity-100 group-hover:scale-125 transition-all transform duration-700 pointer-events-none">🎲</div>
             </div>
 
             <div className="grid grid-cols-2 gap-8">
                 <div 
                   onClick={() => setView('MATCH_CONFIG')} 
-                  className="bg-white/5 backdrop-blur-md p-8 rounded-[40px] border border-white/10 text-center cursor-pointer group hover:bg-sky-500/10 hover:border-sky-500/30 transition-all shadow-2xl"
+                  className="bg-white/5 backdrop-blur-xl p-10 rounded-[45px] border border-white/10 text-center cursor-pointer group hover:bg-sky-500/20 hover:border-sky-500/50 transition-all shadow-2xl"
                 >
-                    <div className="text-5xl mb-4 group-hover:scale-125 transition-all duration-300">🤖</div>
-                    <span className="font-black text-xs uppercase tracking-[0.3em] text-sky-400">Bot Training</span>
+                    <div className="text-6xl mb-4 group-hover:scale-125 transition-all duration-300">🤖</div>
+                    <span className="font-black text-sm uppercase tracking-[0.4em] text-sky-400">Training</span>
                 </div>
                 <div 
                   onClick={() => setView('MATCH_CONFIG')} 
-                  className="bg-white/5 backdrop-blur-md p-8 rounded-[40px] border border-white/10 text-center cursor-pointer group hover:bg-yellow-500/10 hover:border-yellow-500/30 transition-all shadow-2xl"
+                  className="bg-white/5 backdrop-blur-xl p-10 rounded-[45px] border border-white/10 text-center cursor-pointer group hover:bg-yellow-500/20 hover:border-yellow-500/50 transition-all shadow-2xl"
                 >
-                    <div className="text-5xl mb-4 group-hover:scale-125 transition-all duration-300">👭</div>
-                    <span className="font-black text-xs uppercase tracking-[0.3em] text-yellow-500">Private Club</span>
+                    <div className="text-6xl mb-4 group-hover:scale-125 transition-all duration-300">👬</div>
+                    <span className="font-black text-sm uppercase tracking-[0.4em] text-yellow-500">Private</span>
                 </div>
             </div>
             
             {/* STATS PREVIEW */}
-            <div className="bg-black/20 p-8 rounded-[40px] border border-white/5 flex justify-around">
+            <div className="bg-black/40 backdrop-blur-md p-10 rounded-[45px] border border-white/5 flex justify-around shadow-inner">
                 <div className="text-center">
-                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Total Wins</p>
-                  <p className="text-2xl font-black text-green-500">{user.stats.wins}</p>
+                  <p className="text-[12px] font-black text-white/40 uppercase tracking-widest mb-2">Total Wins</p>
+                  <p className="text-4xl font-black text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.3)]">{user.stats.wins}</p>
                 </div>
-                <div className="h-10 w-[1px] bg-white/5 self-center"></div>
+                <div className="h-16 w-[2px] bg-white/10 self-center"></div>
                 <div className="text-center">
-                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Earnings</p>
-                  <p className="text-2xl font-black text-yellow-500">৳{user.stats.totalWinnings.toLocaleString()}</p>
+                  <p className="text-[12px] font-black text-white/40 uppercase tracking-widest mb-2">Earnings</p>
+                  <p className="text-4xl font-black text-yellow-500 drop-shadow-[0_0_10px_rgba(234,179,8,0.3)]">৳{user.stats.totalWinnings.toLocaleString()}</p>
                 </div>
             </div>
+        </div>
+
+        {/* LIVE WINNER TICKER */}
+        <div className="fixed bottom-0 w-full h-12 bg-yellow-500/90 backdrop-blur-sm flex items-center overflow-hidden z-[200]">
+           <div className="bg-black text-yellow-500 px-4 h-full flex items-center font-black text-xs italic uppercase tracking-tighter shrink-0 border-r border-yellow-500/30">
+              🏆 RECENT WINNERS
+           </div>
+           <div className="flex-1 overflow-hidden whitespace-nowrap">
+              <div className="inline-block animate-marquee pl-[100%] hover:pause">
+                 {winners.map((win, idx) => (
+                   <span key={idx} className="inline-block px-10 text-black font-black text-sm uppercase italic">
+                      {win} •
+                   </span>
+                 ))}
+                 {winners.map((win, idx) => (
+                   <span key={`dup-${idx}`} className="inline-block px-10 text-black font-black text-sm uppercase italic">
+                      {win} •
+                   </span>
+                 ))}
+              </div>
+           </div>
         </div>
 
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={handleAddTransaction} />
@@ -393,56 +432,56 @@ const App: React.FC = () => {
   );
 
   if (view === 'MATCH_CONFIG') return (
-    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg">
-        <div className="bg-[#1e293b] p-10 rounded-[50px] w-full max-w-sm shadow-[0_30px_60px_rgba(0,0,0,0.5)] border border-white/10">
-           <h2 className="text-2xl font-black italic uppercase text-center mb-8 text-yellow-500 tracking-tighter">Table Settings</h2>
-           <div className="grid grid-cols-2 gap-4 mb-8">
+    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg relative">
+        <div className="bg-[#1e293b] p-12 rounded-[55px] w-full max-w-sm shadow-[0_40px_80px_rgba(0,0,0,0.7)] border border-white/10 backdrop-blur-md">
+           <h2 className="text-3xl font-black italic uppercase text-center mb-10 text-yellow-500 tracking-tighter">Table Settings</h2>
+           <div className="grid grid-cols-2 gap-5 mb-10">
               {[2, 4].map(c => (
-                <button key={c} onClick={() => setSelectedPlayerCount(c)} className={`py-6 rounded-[24px] font-black text-sm border-2 transition-all ${selectedPlayerCount === c ? 'bg-sky-500 border-sky-300 shadow-xl scale-105' : 'bg-white/5 border-transparent text-white/20 hover:text-white/60'}`}>{c} Players</button>
+                <button key={c} onClick={() => { soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-8 rounded-[30px] font-black text-lg border-2 transition-all transform ${selectedPlayerCount === c ? 'bg-sky-500 border-sky-300 shadow-[0_0_30px_rgba(14,165,233,0.4)] scale-105' : 'bg-white/5 border-transparent text-white/30 hover:bg-white/10 hover:text-white/60'}`}>{c} Players</button>
               ))}
            </div>
-           <p className="text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-4 text-center">Select Stake (৳)</p>
-           <div className="grid grid-cols-3 gap-3 mb-10">
+           <p className="text-[12px] font-black text-white/40 uppercase tracking-[0.4em] mb-4 text-center">Entry Stake (৳)</p>
+           <div className="grid grid-cols-3 gap-3 mb-12">
               {STAKE_OPTIONS.map(s => (
-                <button key={s} onClick={() => setSelectedStake(s)} className={`py-4 rounded-[18px] font-black text-xs border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-xl scale-110' : 'bg-white/5 border-transparent text-white/20 hover:text-white/60'}`}>{s}</button>
+                <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all transform ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_25px_rgba(234,179,8,0.4)] scale-110' : 'bg-white/5 border-transparent text-white/30 hover:bg-white/10 hover:text-white/60'}`}>{s}</button>
               ))}
            </div>
-           <button onClick={() => { soundManager.play('click'); setView('MATCHING'); setTimeout(initGame, 1500); }} className="w-full bg-green-500 py-6 rounded-[24px] font-black text-xl shadow-2xl active:scale-95 hover:bg-green-400 transition-all uppercase tracking-widest">Confirm & Start</button>
-           <button onClick={() => setView('LOBBY')} className="w-full mt-6 text-white/20 uppercase font-black text-[10px] tracking-widest hover:text-white transition-all">Cancel</button>
+           <button onClick={() => { soundManager.play('click'); setView('MATCHING'); setTimeout(initGame, 1500); }} className="w-full bg-green-500 py-8 rounded-[30px] font-black text-2xl shadow-[0_15px_30px_rgba(34,197,94,0.4)] active:scale-95 hover:bg-green-400 transition-all uppercase tracking-widest border-b-8 border-green-700 active:border-b-0">START GAME</button>
+           <button onClick={() => setView('LOBBY')} className="w-full mt-8 text-white/30 uppercase font-black text-xs tracking-widest hover:text-white transition-all">Cancel</button>
         </div>
     </div>
   );
 
   if (view === 'MATCHING') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center text-white p-10 dotted-bg">
-      <div className="relative w-40 h-40 mb-10">
-        <div className="absolute inset-0 border-[8px] border-sky-500/10 rounded-full"></div>
-        <div className="absolute inset-0 border-[8px] border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-        <div className="absolute inset-0 flex items-center justify-center text-6xl">🎲</div>
+      <div className="relative w-48 h-48 mb-12">
+        <div className="absolute inset-0 border-[10px] border-sky-500/10 rounded-full"></div>
+        <div className="absolute inset-0 border-[10px] border-sky-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="absolute inset-0 flex items-center justify-center text-7xl animate-pulse">🎲</div>
       </div>
-      <h2 className="text-2xl font-black italic uppercase animate-pulse tracking-tighter">Connecting to Arena...</h2>
-      <p className="text-white/30 font-black uppercase text-[10px] tracking-[0.5em] mt-4">Waiting for Opponents</p>
+      <h2 className="text-3xl font-black italic uppercase animate-pulse tracking-tighter text-sky-400">Finding Opponents...</h2>
+      <p className="text-white/30 font-black uppercase text-xs tracking-[0.6em] mt-6">Syncing with Lobby Server</p>
     </div>
   );
 
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden">
-        <div className="w-full h-16 bg-[#0f172a] flex justify-between items-center px-6 border-b border-white/5 shrink-0 shadow-xl">
-           <button onClick={() => { if(confirm("Exit Game?")) setView('LOBBY'); }} className="text-red-500 font-black text-xs uppercase bg-red-500/10 px-4 py-2 rounded-xl">Surrender</button>
-           <div className="font-black text-sky-400 italic text-xl uppercase tracking-tighter">Ludo Arena</div>
-           <div className="bg-yellow-500/10 px-4 py-2 rounded-xl text-yellow-500 font-black text-sm">৳{selectedStake}</div>
+        <div className="w-full h-20 bg-[#0f172a]/90 backdrop-blur-md flex justify-between items-center px-8 border-b border-white/10 shrink-0 shadow-2xl z-50">
+           <button onClick={() => { if(confirm("Surrender and return to lobby? Entry stake will be lost.")) setView('LOBBY'); }} className="text-red-500 font-black text-sm uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all">Surrender</button>
+           <div className="font-black text-sky-400 italic text-2xl uppercase tracking-tighter drop-shadow-lg">Ludo Arena</div>
+           <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-lg border border-yellow-500/20 shadow-inner">৳{selectedStake}</div>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8 w-full">
-            <div className="w-full max-w-[450px] shadow-[0_30px_100px_rgba(0,0,0,0.8)] rounded-[32px] overflow-hidden border-[6px] border-white/10 shrink-0 bg-white/5">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8 w-full max-h-screen overflow-hidden">
+            <div className="w-full max-w-[500px] shadow-[0_40px_120px_rgba(0,0,0,0.9)] rounded-[40px] overflow-hidden border-[8px] border-white/20 shrink-0 bg-white/5 relative">
                 <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} validTokens={validTokens} onTokenClick={(t) => moveToken(t.id)} />
             </div>
-            <div className="flex flex-col items-center gap-4 shrink-0">
-                <div className="text-center h-6">
-                    <p className="text-sm font-black uppercase text-sky-400 tracking-[0.3em] animate-pulse">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
+            <div className="flex flex-col items-center gap-6 shrink-0 pb-10">
+                <div className="text-center h-8">
+                    <p className="text-lg font-black uppercase text-sky-400 tracking-[0.4em] animate-pulse drop-shadow-lg">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
                 </div>
                 <div 
                    onClick={!gameState.players[gameState.currentPlayerIndex].isBot ? rollDice : undefined} 
-                   className={`w-24 h-24 bg-white rounded-[32px] shadow-2xl flex items-center justify-center text-5xl font-black text-gray-800 border-b-[8px] border-gray-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer active:scale-90 active:border-b-0'}`}
+                   className={`w-28 h-28 bg-white rounded-[40px] shadow-[0_20px_40px_rgba(0,0,0,0.6)] flex items-center justify-center text-6xl font-black text-gray-800 border-b-[10px] border-gray-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer hover:scale-105 active:scale-90 active:border-b-0'}`}
                 >
                    {gameState.diceValue || '🎲'}
                 </div>
