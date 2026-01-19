@@ -12,6 +12,7 @@ const LOGO_URL = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
 const STORAGE_KEY_USER = "LUDO_USER_PROFILE";
 const STORAGE_KEY_USERS_DB = "LUDO_USERS_DATABASE"; 
 const STORAGE_KEY_TXS = "LUDO_PENDING_TRANSACTIONS";
+const STORAGE_KEY_ADMIN = "LUDO_ADMIN_SESSION";
 
 const INITIAL_USER: UserProfile = {
   name: "Guest Player",
@@ -42,23 +43,22 @@ const App: React.FC = () => {
 
   const botActionTimeoutRef = useRef<number | null>(null);
 
-  // Winner Ticker Data
-  const winners = useMemo(() => [
-    "Sajid Ahmed won ৳500 in Online Match!",
-    "Rony Khan just withdrew ৳1,200 via bKash!",
-    "Sumaiya Akter won ৳2,000 in Private Table!",
-    "Tanvir Hossain won ৳100 in Training Mode!",
-    "Aryan Dev won ৳5,000 in Mega Stake!"
-  ], []);
-
+  // Load all data on mount
   useEffect(() => {
     const savedUser = localStorage.getItem(STORAGE_KEY_USER);
     if (savedUser) setUser(JSON.parse(savedUser));
     
     const savedTxs = localStorage.getItem(STORAGE_KEY_TXS);
     if (savedTxs) setPendingTransactions(JSON.parse(savedTxs));
+
+    // Check for Admin Session
+    const isAdmin = localStorage.getItem(STORAGE_KEY_ADMIN);
+    if (isAdmin === 'true' && view === 'SPLASH') {
+        // We'll handle redirection in the splash effect
+    }
   }, []);
 
+  // Handle Splash Screen and Persistence Redirection
   useEffect(() => {
     if (view === 'SPLASH') {
       const interval = setInterval(() => {
@@ -66,6 +66,11 @@ const App: React.FC = () => {
           if (prev >= 100) {
             clearInterval(interval);
             setTimeout(() => {
+              const isAdmin = localStorage.getItem(STORAGE_KEY_ADMIN);
+              if (isAdmin === 'true') {
+                  setView('ADMIN');
+                  return 100;
+              }
               const saved = localStorage.getItem(STORAGE_KEY_USER);
               setView(saved ? 'LOBBY' : 'LOGIN');
             }, 500);
@@ -83,6 +88,7 @@ const App: React.FC = () => {
     if (confirm("আপনি কি লগআউট করতে চান?")) {
         soundManager.play('click');
         localStorage.removeItem(STORAGE_KEY_USER);
+        localStorage.removeItem(STORAGE_KEY_ADMIN);
         window.location.reload();
     }
   };
@@ -94,6 +100,7 @@ const App: React.FC = () => {
 
     if (authMode === 'ADMIN_LOGIN') {
       if (loginPhone === 'emukhan580' && loginPassword === 'Imran2015@!@!') {
+        localStorage.setItem(STORAGE_KEY_ADMIN, 'true');
         setView('ADMIN');
       } else {
         alert("Invalid Admin Credentials!");
@@ -102,6 +109,7 @@ const App: React.FC = () => {
     }
 
     if (authMode === 'SIGNUP') {
+      if (!loginPhone || !loginPassword) return alert("Please fill all fields");
       const newUser: UserProfile = {
         name: loginName || "Player", phone: loginPhone, password: loginPassword, balance: 400, 
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${loginPhone}`,
@@ -118,39 +126,62 @@ const App: React.FC = () => {
         localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(existingUser));
         setUser(existingUser);
         setView('LOBBY');
-      } else alert("Invalid Login!");
+      } else alert("Invalid Phone or Password!");
     }
   };
 
+  // Improved Transaction Handler with functional update
   const handleAddTransaction = (tx: PendingTransaction) => {
-    const updated = [...pendingTransactions, tx];
-    setPendingTransactions(updated);
-    localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(updated));
+    setPendingTransactions(prev => {
+        const updated = [...prev, tx];
+        localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(updated));
+        return updated;
+    });
   };
 
   const approveTransaction = (tx: PendingTransaction) => {
     const usersDB: UserProfile[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS_DB) || '[]');
-    const targetUser = usersDB.find(u => u.name === tx.userName);
-    if (targetUser) {
-      if (tx.type === 'DEPOSIT') targetUser.balance += tx.amount;
-      else targetUser.balance -= tx.amount;
+    const targetIdx = usersDB.findIndex(u => u.name === tx.userName || u.phone === tx.phone);
+    
+    if (targetIdx !== -1) {
+      if (tx.type === 'DEPOSIT') usersDB[targetIdx].balance += tx.amount;
+      else usersDB[targetIdx].balance -= tx.amount;
+      
       localStorage.setItem(STORAGE_KEY_USERS_DB, JSON.stringify(usersDB));
-      if (user.name === targetUser.name) {
-        const updatedUser = { ...user, balance: targetUser.balance };
+      
+      // If the admin-approved user is the current logged-in user, update their session too
+      if (user.phone === usersDB[targetIdx].phone) {
+        const updatedUser = { ...user, balance: usersDB[targetIdx].balance };
         setUser(updatedUser);
         localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedUser));
       }
     }
-    const remaining = pendingTransactions.filter(t => t.id !== tx.id);
-    setPendingTransactions(remaining);
-    localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
+
+    setPendingTransactions(prev => {
+        const remaining = prev.filter(t => t.id !== tx.id);
+        localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
+        return remaining;
+    });
+    soundManager.play('win');
   };
 
   const rejectTransaction = (txId: string) => {
-    const remaining = pendingTransactions.filter(t => t.id !== txId);
-    setPendingTransactions(remaining);
-    localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
+    setPendingTransactions(prev => {
+        const remaining = prev.filter(t => t.id !== txId);
+        localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
+        return remaining;
+    });
+    soundManager.play('click');
   };
+
+  // Winner Ticker Data (Randomized for aesthetics)
+  const winners = useMemo(() => [
+    "Sajid Ahmed won ৳500 in Online Match!",
+    "Rony Khan just withdrew ৳1,200 via bKash!",
+    "Sumaiya Akter won ৳2,000 in Private Table!",
+    "Tanvir Hossain won ৳100 in Training Mode!",
+    "Aryan Dev won ৳5,000 in Mega Stake!"
+  ], []);
 
   const validTokens = useMemo(() => {
     if (!gameState || !gameState.isDiceRolled || gameState.diceValue === null) return [];
@@ -291,7 +322,7 @@ const App: React.FC = () => {
       <div className="w-64 bg-white/5 h-2 rounded-full overflow-hidden border border-white/10">
         <div className="bg-sky-500 h-full transition-all duration-500" style={{width:`${loadingProgress}%`}}></div>
       </div>
-      <p className="mt-4 text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Loading Experience...</p>
+      <p className="mt-4 text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Syncing with Server...</p>
     </div>
   );
 
@@ -300,7 +331,7 @@ const App: React.FC = () => {
       <div className="bg-[#1e293b] rounded-[40px] shadow-2xl w-full max-w-sm border border-white/10 overflow-hidden relative">
         <div className="bg-gradient-to-br from-[#1e297a] to-[#0a192f] p-8 text-center border-b border-white/5">
             <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter">
-              {authMode === 'ADMIN_LOGIN' ? 'Admin Login' : 'Enter Club'}
+              {authMode === 'ADMIN_LOGIN' ? 'Admin Entry' : 'Enter Club'}
             </h2>
         </div>
         <div className="flex bg-black/20 p-3">
@@ -312,7 +343,7 @@ const App: React.FC = () => {
           <input type="text" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder={authMode === 'ADMIN_LOGIN' ? "Admin ID" : "Phone"} className="w-full bg-white/5 border border-white/10 p-5 rounded-[20px] text-white outline-none focus:border-sky-500 transition-all font-bold" />
           <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Password" className="w-full bg-white/5 border border-white/10 p-5 rounded-[20px] text-white outline-none focus:border-sky-500 transition-all font-bold" />
           <button type="submit" className="w-full bg-sky-500 py-5 rounded-[20px] font-black text-white shadow-2xl text-lg tracking-widest active:scale-95 transition-all">
-             {authMode === 'ADMIN_LOGIN' ? 'ACCESS ADMIN' : 'LET\'S PLAY'}
+             {authMode === 'ADMIN_LOGIN' ? 'OPEN DASHBOARD' : 'START PLAYING'}
           </button>
         </form>
         <div onClick={() => setAuthMode(authMode === 'ADMIN_LOGIN' ? 'LOGIN' : 'ADMIN_LOGIN')} className="absolute bottom-3 right-3 w-10 h-10 flex items-center justify-center opacity-10 cursor-default hover:opacity-50 transition-opacity">🛡️</div>
@@ -321,16 +352,11 @@ const App: React.FC = () => {
   );
 
   if (view === 'ADMIN') return (
-    <AdminPortal user={user} pendingTransactions={pendingTransactions} onUpdateUser={setUser} onApproveTransaction={approveTransaction} onRejectTransaction={rejectTransaction} onExit={() => setView('LOBBY')} />
+    <AdminPortal user={user} pendingTransactions={pendingTransactions} onUpdateUser={setUser} onApproveTransaction={approveTransaction} onRejectTransaction={rejectTransaction} onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} />
   );
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white font-fredoka overflow-hidden dotted-bg">
-        {/* Floating Decorative Elements */}
-        <div className="absolute top-1/4 left-10 text-4xl opacity-5 animate-bounce-slow">🎲</div>
-        <div className="absolute top-3/4 right-20 text-5xl opacity-5 animate-pulse">💰</div>
-        <div className="absolute bottom-1/4 left-20 text-3xl opacity-5 animate-bounce">🪙</div>
-
         {/* TOP GORGEOUS BAR */}
         <div className="p-6 flex items-center justify-between z-[100] relative bg-gradient-to-b from-black/60 to-transparent">
             <div className="flex items-center gap-4 bg-white/10 p-2 pr-6 rounded-full border border-white/20 backdrop-blur-xl shadow-2xl">
@@ -338,7 +364,7 @@ const App: React.FC = () => {
                 <div>
                   <h3 className="font-black text-base uppercase tracking-tighter text-white">{user.name}</h3>
                   <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Online
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Connected
                   </p>
                 </div>
             </div>
@@ -369,39 +395,20 @@ const App: React.FC = () => {
                 <div className="absolute -top-10 -right-10 w-52 h-52 bg-sky-500/10 rounded-full blur-3xl group-hover:bg-sky-500/20 transition-all"></div>
                 <div className="relative z-10">
                   <h2 className="text-6xl font-black italic text-[#FFD700] mb-3 uppercase tracking-tighter drop-shadow-[0_4px_8px_rgba(0,0,0,0.6)]">PLAY ONLINE</h2>
-                  <p className="text-white/70 font-bold mb-8 text-base tracking-wide uppercase max-w-[300px]">Challenge players across the club and win massive stakes!</p>
+                  <p className="text-white/70 font-bold mb-8 text-base tracking-wide uppercase max-w-[300px]">Win massive prizes on every battle!</p>
                   <button className="bg-yellow-500 text-black font-black px-12 py-5 rounded-2xl uppercase text-sm tracking-[0.25em] shadow-2xl hover:bg-white transition-all transform group-hover:translate-x-2">START BATTLE 🎲</button>
                 </div>
                 <div className="absolute bottom-10 right-12 text-8xl opacity-20 group-hover:opacity-100 group-hover:scale-125 transition-all transform duration-700 pointer-events-none">🎲</div>
             </div>
 
             <div className="grid grid-cols-2 gap-8">
-                <div 
-                  onClick={() => setView('MATCH_CONFIG')} 
-                  className="bg-white/5 backdrop-blur-xl p-10 rounded-[45px] border border-white/10 text-center cursor-pointer group hover:bg-sky-500/20 hover:border-sky-500/50 transition-all shadow-2xl"
-                >
+                <div onClick={() => setView('MATCH_CONFIG')} className="bg-white/5 backdrop-blur-xl p-10 rounded-[45px] border border-white/10 text-center cursor-pointer group hover:bg-sky-500/20 transition-all shadow-2xl">
                     <div className="text-6xl mb-4 group-hover:scale-125 transition-all duration-300">🤖</div>
                     <span className="font-black text-sm uppercase tracking-[0.4em] text-sky-400">Training</span>
                 </div>
-                <div 
-                  onClick={() => setView('MATCH_CONFIG')} 
-                  className="bg-white/5 backdrop-blur-xl p-10 rounded-[45px] border border-white/10 text-center cursor-pointer group hover:bg-yellow-500/20 hover:border-yellow-500/50 transition-all shadow-2xl"
-                >
+                <div onClick={() => setView('MATCH_CONFIG')} className="bg-white/5 backdrop-blur-xl p-10 rounded-[45px] border border-white/10 text-center cursor-pointer group hover:bg-yellow-500/20 transition-all shadow-2xl">
                     <div className="text-6xl mb-4 group-hover:scale-125 transition-all duration-300">👬</div>
                     <span className="font-black text-sm uppercase tracking-[0.4em] text-yellow-500">Private</span>
-                </div>
-            </div>
-            
-            {/* STATS PREVIEW */}
-            <div className="bg-black/40 backdrop-blur-md p-10 rounded-[45px] border border-white/5 flex justify-around shadow-inner">
-                <div className="text-center">
-                  <p className="text-[12px] font-black text-white/40 uppercase tracking-widest mb-2">Total Wins</p>
-                  <p className="text-4xl font-black text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.3)]">{user.stats.wins}</p>
-                </div>
-                <div className="h-16 w-[2px] bg-white/10 self-center"></div>
-                <div className="text-center">
-                  <p className="text-[12px] font-black text-white/40 uppercase tracking-widest mb-2">Earnings</p>
-                  <p className="text-4xl font-black text-yellow-500 drop-shadow-[0_0_10px_rgba(234,179,8,0.3)]">৳{user.stats.totalWinnings.toLocaleString()}</p>
                 </div>
             </div>
         </div>
@@ -413,16 +420,8 @@ const App: React.FC = () => {
            </div>
            <div className="flex-1 overflow-hidden whitespace-nowrap">
               <div className="inline-block animate-marquee pl-[100%] hover:pause">
-                 {winners.map((win, idx) => (
-                   <span key={idx} className="inline-block px-10 text-black font-black text-sm uppercase italic">
-                      {win} •
-                   </span>
-                 ))}
-                 {winners.map((win, idx) => (
-                   <span key={`dup-${idx}`} className="inline-block px-10 text-black font-black text-sm uppercase italic">
-                      {win} •
-                   </span>
-                 ))}
+                 {winners.map((win, idx) => <span key={idx} className="inline-block px-10 text-black font-black text-sm uppercase italic">{win} •</span>)}
+                 {winners.map((win, idx) => <span key={`dup-${idx}`} className="inline-block px-10 text-black font-black text-sm uppercase italic">{win} •</span>)}
               </div>
            </div>
         </div>
@@ -460,14 +459,13 @@ const App: React.FC = () => {
         <div className="absolute inset-0 flex items-center justify-center text-7xl animate-pulse">🎲</div>
       </div>
       <h2 className="text-3xl font-black italic uppercase animate-pulse tracking-tighter text-sky-400">Finding Opponents...</h2>
-      <p className="text-white/30 font-black uppercase text-xs tracking-[0.6em] mt-6">Syncing with Lobby Server</p>
     </div>
   );
 
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden">
         <div className="w-full h-20 bg-[#0f172a]/90 backdrop-blur-md flex justify-between items-center px-8 border-b border-white/10 shrink-0 shadow-2xl z-50">
-           <button onClick={() => { if(confirm("Surrender and return to lobby? Entry stake will be lost.")) setView('LOBBY'); }} className="text-red-500 font-black text-sm uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all">Surrender</button>
+           <button onClick={() => { if(confirm("Surrender? stake will be lost.")) setView('LOBBY'); }} className="text-red-500 font-black text-sm uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 transition-all">Surrender</button>
            <div className="font-black text-sky-400 italic text-2xl uppercase tracking-tighter drop-shadow-lg">Ludo Arena</div>
            <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-lg border border-yellow-500/20 shadow-inner">৳{selectedStake}</div>
         </div>
