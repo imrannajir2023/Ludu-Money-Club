@@ -9,7 +9,7 @@ import { getRandomBotName } from './services/botService';
 import { SAFE_SPOTS, START_POSITIONS, HOME_ENTRANCE } from './constants';
 import { databaseService } from './services/database.ts';
 
-const LOGO_URL = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
+const LOGO_ICON = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
 const STORAGE_KEY_USER = "LUDO_USER_PROFILE";
 const STORAGE_KEY_ADMIN = "LUDO_ADMIN_SESSION";
 
@@ -22,6 +22,11 @@ const INITIAL_USER: UserProfile = {
 };
 
 const STAKE_OPTIONS = [50, 100, 500, 1000, 5000];
+
+const LATEST_WINNERS = [
+  "Rony Khan withdraw ৳৫০০০", "Sajid Ahmed won ৳২০০০", "Aryan Dev withdraw ৳১০০০", 
+  "Sumaiya won ৳৫০০", "Tanvir withdraw ৳৩০০০", "Mehedi won ৳১০০০০"
+];
 
 const App: React.FC = () => {
   const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'LOBBY' | 'MATCH_CONFIG' | 'MATCHING' | 'GAME' | 'ADMIN'>('SPLASH');
@@ -53,7 +58,6 @@ const App: React.FC = () => {
     const matches = await databaseService.getLiveMatches();
     setLiveMatches(matches);
 
-    // Sync current user session
     const savedUserStr = localStorage.getItem(STORAGE_KEY_USER);
     if (savedUserStr) {
         const saved = JSON.parse(savedUserStr);
@@ -64,7 +68,6 @@ const App: React.FC = () => {
         }
     }
 
-    // Admin termination check
     if (matchIdRef.current) {
         const myMatch = matches.find(m => m.matchId === matchIdRef.current);
         if (myMatch && myMatch.status === 'TERMINATED') {
@@ -81,7 +84,6 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [refreshCloudData]);
 
-  // Initial Boot
   useEffect(() => {
     if (view === 'SPLASH') {
       const interval = setInterval(() => {
@@ -94,12 +96,12 @@ const App: React.FC = () => {
               const savedUser = localStorage.getItem(STORAGE_KEY_USER);
               if (savedUser) { setView('LOBBY'); return 100; }
               setView('LOGIN');
-            }, 500);
+            }, 800);
             return 100;
           }
           return prev + 5;
         });
-      }, 20);
+      }, 30);
       return () => clearInterval(interval);
     }
   }, [view]);
@@ -159,10 +161,8 @@ const App: React.FC = () => {
   const handleApproveTransaction = async (tx: PendingTransaction) => {
     const targetUser = allUsers.find(u => u.phone === tx.phone);
     if (!targetUser) return alert("User not found!");
-    
     const newBalance = tx.type === 'DEPOSIT' ? targetUser.balance + tx.amount : targetUser.balance - tx.amount;
     const updatedUser = { ...targetUser, balance: Math.max(0, newBalance) };
-    
     await databaseService.updateUser(updatedUser);
     await databaseService.updateTransactionStatus(tx.id, 'APPROVED');
     refreshCloudData();
@@ -219,9 +219,8 @@ const App: React.FC = () => {
     } else {
       for (let i = 0; i < dice; i++) {
         token.distanceTraveled += 1;
-        // Logic for home entrance
         if (token.distanceTraveled >= 51) {
-            token.position = 100 + (token.distanceTraveled - 51); // Special home track mapping
+            token.position = 100 + (token.distanceTraveled - 51);
         } else {
             token.position = (token.position + 1) % 52;
         }
@@ -358,29 +357,41 @@ const App: React.FC = () => {
   }, [gameState]);
 
   if (view === 'SPLASH') return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center dotted-bg">
-      <img src={LOGO_URL} className="w-32 h-32 animate-pulse mb-8" />
-      <h1 className="text-4xl font-black text-white italic tracking-tighter uppercase mb-4">Ludo Online Arena</h1>
-      <div className="w-64 bg-white/5 h-2 rounded-full overflow-hidden border border-white/10">
-        <div className="bg-sky-500 h-full transition-all duration-500" style={{width:`${loadingProgress}%`}}></div>
+    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center dotted-bg overflow-hidden relative">
+      <div className="absolute inset-0 bg-gradient-to-b from-blue-900/20 to-transparent"></div>
+      <div className="relative animate-float mb-12 flex flex-col items-center">
+        <img src={LOGO_ICON} className="w-24 h-24 mb-6 drop-shadow-[0_0_30px_rgba(251,191,36,0.5)]" />
+        <h1 className="ludo-money-logo text-7xl md:text-9xl tracking-tight text-center">
+          LUDO<br/><span className="text-5xl md:text-7xl">MONEY</span>
+        </h1>
       </div>
+      <div className="w-72 bg-white/5 h-3 rounded-full overflow-hidden border border-white/10 p-[2px]">
+        <div className="bg-gradient-to-r from-yellow-500 to-yellow-300 h-full rounded-full transition-all duration-300" style={{width:`${loadingProgress}%`}}></div>
+      </div>
+      <p className="mt-4 text-yellow-500/60 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Loading Arena...</p>
     </div>
   );
 
   if (view === 'LOGIN') return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-4 dotted-bg">
-        <form onSubmit={handleAuthAction} className="bg-[#1e293b] p-10 rounded-[45px] w-full max-sm:max-w-xs max-w-sm border border-white/10 space-y-5 shadow-2xl">
+    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-4 dotted-bg overflow-hidden relative">
+        <div className="absolute top-10 flex flex-col items-center">
+          <h1 className="ludo-money-logo text-5xl tracking-tight">LUDO MONEY</h1>
+          <p className="text-sky-400 font-black text-[10px] uppercase tracking-[0.4em] mt-2">Win Real Cash Rewards</p>
+        </div>
+        <form onSubmit={handleAuthAction} className="premium-card p-10 rounded-[50px] w-full max-w-sm border border-yellow-500/20 space-y-5 shadow-[0_50px_100px_rgba(0,0,0,0.6)] relative z-10">
           <div className="text-center mb-6">
-              <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">Arena Access</h2>
-              <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest mt-1">Join the global competition</p>
+              <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Arena Access</h2>
+              <div className="h-1 w-20 bg-yellow-500 mx-auto mt-2 rounded-full"></div>
           </div>
-          {authMode === 'SIGNUP' && <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Display Name" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-sky-500" />}
-          <input type="text" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder="Phone Number" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-sky-500" />
-          <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Security Code" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-sky-500" />
-          <button type="submit" className="w-full bg-sky-500 py-6 rounded-3xl font-black text-white uppercase tracking-[0.2em] shadow-xl hover:bg-sky-400 transition-all">{authMode === 'LOGIN' ? 'Login' : 'Create Account'}</button>
-          <div className="flex justify-between px-2">
-              <p className="text-white/20 text-[10px] font-black uppercase cursor-pointer hover:text-white" onClick={() => setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}>{authMode === 'LOGIN' ? "No account? Signup" : "Already registered? Login"}</p>
-              <p className="text-white/10 text-[10px] font-black uppercase cursor-pointer" onClick={() => setAuthMode('ADMIN_LOGIN')}>Admin</p>
+          {authMode === 'SIGNUP' && <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Display Name" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all font-bold placeholder:text-white/20" />}
+          <input type="text" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder="Phone Number" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all font-bold placeholder:text-white/20" />
+          <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Security Code" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all font-bold placeholder:text-white/20" />
+          <button type="submit" className="w-full gold-button py-6 rounded-3xl font-black text-black uppercase tracking-[0.2em] text-lg mt-4">
+            {authMode === 'LOGIN' ? 'Login' : 'Create Account'}
+          </button>
+          <div className="flex justify-between px-2 pt-4">
+              <p className="text-yellow-500/40 text-[10px] font-black uppercase cursor-pointer hover:text-yellow-500 transition-colors" onClick={() => setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}>{authMode === 'LOGIN' ? "No account? Signup" : "Already registered? Login"}</p>
+              <p className="text-white/10 text-[10px] font-black uppercase cursor-pointer hover:text-white/30 transition-colors" onClick={() => setAuthMode('ADMIN_LOGIN')}>Admin Access</p>
           </div>
         </form>
     </div>
@@ -402,43 +413,84 @@ const App: React.FC = () => {
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white dotted-bg overflow-hidden">
-        <div className="p-6 flex items-center justify-between z-[100] relative bg-slate-900/80 backdrop-blur-xl border-b border-white/5">
+        {/* Header */}
+        <div className="p-6 flex items-center justify-between z-[100] relative bg-slate-900/90 backdrop-blur-2xl border-b border-yellow-500/10 shadow-xl">
             <div className="flex items-center gap-4">
-                <img src={user.avatar} className="w-12 h-12 rounded-full border-2 border-yellow-500 shadow-lg" />
+                <div className="relative">
+                  <img src={user.avatar} className="w-14 h-14 rounded-full border-4 border-yellow-500/30 shadow-2xl" />
+                  <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-[#0a1220] rounded-full"></div>
+                </div>
                 <div>
-                    <h3 className="font-black text-sm uppercase tracking-tighter">{user.name}</h3>
-                    <p className="text-[8px] text-green-400 font-black uppercase tracking-[0.3em] animate-pulse flex items-center gap-1">
-                        <span className="w-1 h-1 bg-green-500 rounded-full"></span> Online
-                    </p>
+                    <h3 className="font-black text-base uppercase tracking-tight italic">{user.name}</h3>
+                    <div className="bg-yellow-500/10 px-3 py-0.5 rounded-full border border-yellow-500/20 inline-block mt-1">
+                      <p className="text-[9px] text-yellow-500 font-black uppercase tracking-widest">VIP Member</p>
+                    </div>
                 </div>
             </div>
             <div className="flex items-center gap-4">
-                <div className="bg-[#1e293b] px-6 py-2 rounded-full border-2 border-yellow-500/20 flex items-center gap-4 shadow-inner">
-                    <span className="text-yellow-400 font-black text-xl">৳</span>
-                    <span className="font-black text-2xl tracking-tighter">{user.balance.toLocaleString()}</span>
-                    <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-8 h-8 rounded-full font-black text-xl flex items-center justify-center shadow-lg hover:scale-110 active:scale-90 transition-all">+</button>
+                <div className="bg-black/40 px-6 py-3 rounded-3xl border-2 border-yellow-500/30 flex items-center gap-4 shadow-2xl group hover:border-yellow-500 transition-all cursor-pointer" onClick={() => setWalletOpen(true)}>
+                    <div className="w-8 h-8 bg-gradient-to-b from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center text-black font-black text-xl shadow-lg ring-2 ring-yellow-500/20 group-hover:scale-110 transition-transform">৳</div>
+                    <span className="font-black text-2xl tracking-tighter text-yellow-500">{user.balance.toLocaleString()}</span>
+                    <div className="bg-yellow-500 text-black w-6 h-6 rounded-full font-black text-base flex items-center justify-center shadow-lg">+</div>
                 </div>
-                <button onClick={handleLogout} className="bg-red-500/10 text-red-500 w-12 h-12 rounded-2xl flex items-center justify-center border border-red-500/20 hover:bg-red-500 hover:text-white transition-all">✕</button>
+                <button onClick={handleLogout} className="bg-red-500/10 text-red-500 w-12 h-12 rounded-2xl flex items-center justify-center border border-red-500/10 hover:bg-red-500 hover:text-white transition-all shadow-lg">✕</button>
             </div>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center gap-12 p-8 max-w-2xl mx-auto w-full">
-            <div className="bg-gradient-to-br from-blue-700 to-indigo-900 w-full p-16 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.5)] text-center border-b-[12px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden" onClick={() => setView('MATCH_CONFIG')}>
-                <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-2xl group-hover:bg-white/10 transition-all"></div>
-                <h2 className="text-5xl font-black uppercase italic mb-3 tracking-tighter text-white drop-shadow-2xl">BATTLE ONLINE</h2>
-                <p className="text-white/40 text-xs uppercase font-black tracking-[0.4em]">Earn ৳ Real Cash Globally</p>
-                <div className="mt-8 inline-block bg-yellow-500 text-black px-10 py-4 rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl">Start Match 🎲</div>
+        {/* Live Winners Ticker */}
+        <div className="w-full bg-yellow-500/5 py-2 border-b border-yellow-500/10 overflow-hidden">
+          <div className="animate-marquee whitespace-nowrap inline-block">
+             {LATEST_WINNERS.concat(LATEST_WINNERS).map((msg, i) => (
+               <span key={i} className="mx-12 text-[11px] font-black uppercase tracking-widest text-yellow-500/80">🔥 {msg}</span>
+             ))}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-12 p-8 max-w-4xl mx-auto w-full pb-20">
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-12 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.6)] text-center border-b-[15px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center" onClick={() => setView('MATCH_CONFIG')}>
+                  <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1)_0%,transparent_60%)]"></div>
+                  <span className="text-7xl block mb-6 animate-float drop-shadow-2xl">🎲</span>
+                  <h2 className="text-4xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
+                  <p className="text-yellow-400 text-[10px] uppercase font-black tracking-[0.4em] mb-8">Win Huge Real Money</p>
+                  <div className="gold-button text-black px-12 py-5 rounded-3xl font-black uppercase text-sm tracking-widest shadow-2xl">Join Table</div>
+               </div>
+
+               <div className="grid grid-rows-2 gap-8">
+                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group">
+                      <div className="flex items-center gap-6">
+                        <span className="text-5xl group-hover:scale-110 transition-transform">🤖</span>
+                        <div>
+                          <h4 className="font-black text-xl uppercase italic tracking-tighter">Practice</h4>
+                          <p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Train for free</p>
+                        </div>
+                      </div>
+                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
+                  </div>
+                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group">
+                      <div className="flex items-center gap-6">
+                        <span className="text-5xl group-hover:scale-110 transition-transform">👬</span>
+                        <div>
+                          <h4 className="font-black text-xl uppercase italic tracking-tighter">Private</h4>
+                          <p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Play with friends</p>
+                        </div>
+                      </div>
+                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
+                  </div>
+               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-8 w-full">
-                <div className="bg-white/5 p-10 rounded-[45px] border border-white/5 text-center hover:bg-white/10 transition-all cursor-pointer shadow-xl">
-                    <span className="text-5xl block mb-4">🤖</span>
-                    <p className="font-black text-[10px] uppercase tracking-[0.5em] text-sky-400">Training</p>
-                </div>
-                <div className="bg-white/5 p-10 rounded-[45px] border border-white/5 text-center hover:bg-white/10 transition-all cursor-pointer shadow-xl">
-                    <span className="text-5xl block mb-4">👬</span>
-                    <p className="font-black text-[10px] uppercase tracking-[0.5em] text-yellow-500">Private</p>
-                </div>
+            <div className="flex items-center gap-8 w-full justify-center">
+               <div className="text-center">
+                  <p className="text-[40px] font-black text-white">১০কে+</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Total Active</p>
+               </div>
+               <div className="w-[1px] h-12 bg-white/10"></div>
+               <div className="text-center">
+                  <p className="text-[40px] font-black text-yellow-500">৳১এম+</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Payouts</p>
+               </div>
             </div>
         </div>
         
@@ -448,37 +500,39 @@ const App: React.FC = () => {
 
   if (view === 'MATCH_CONFIG') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg">
-        <div className="bg-[#1e293b] p-12 rounded-[55px] w-full max-w-sm shadow-2xl border border-white/10 backdrop-blur-md">
-           <h2 className="text-3xl font-black italic uppercase text-center mb-10 text-yellow-500 tracking-tighter">Table Setup</h2>
+        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10">
+           <h2 className="ludo-money-logo text-3xl text-center mb-10 tracking-tighter">SELECT STAKE</h2>
            <div className="grid grid-cols-2 gap-5 mb-10">
-              {[2, 4].map(c => <button key={c} onClick={() => setSelectedPlayerCount(c)} className={`py-8 rounded-[30px] font-black text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-sky-500 border-sky-300 shadow-xl scale-105' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
+              {[2, 4].map(c => <button key={c} onClick={() => setSelectedPlayerCount(c)} className={`py-8 rounded-[35px] font-black text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 shadow-xl scale-105' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
            </div>
-           <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.5em] mb-4 text-center">Entry Fee</p>
+           <p className="text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-4 text-center">Entry Fee (৳)</p>
            <div className="grid grid-cols-3 gap-3 mb-12">
               {STAKE_OPTIONS.map(s => <button key={s} onClick={() => setSelectedStake(s)} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-xl scale-110' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
            </div>
-           <button onClick={initGame} className="w-full bg-green-500 py-8 rounded-[35px] font-black text-2xl shadow-2xl active:scale-95 hover:bg-green-400 transition-all uppercase tracking-widest border-b-[10px] border-green-700">Enter Arena</button>
-           <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer" onClick={() => setView('LOBBY')}>Back to Lobby</p>
+           <button onClick={initGame} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black">Start Battle</button>
+           <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer hover:text-white transition-colors" onClick={() => setView('LOBBY')}>Cancel & Return</p>
         </div>
     </div>
   );
 
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden">
-        <div className="w-full h-20 bg-slate-900/90 backdrop-blur-md flex justify-between items-center px-8 border-b border-white/5 shadow-2xl z-[100]">
-           <button onClick={() => { if(confirm("Surrender?")) setView('LOBBY'); }} className="text-red-500 font-black text-xs uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all">Surrender</button>
-           <div className="font-black text-sky-400 italic text-2xl uppercase tracking-tighter drop-shadow-xl">Ludo Battle</div>
-           <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-lg border border-yellow-500/20 shadow-inner">৳{selectedStake}</div>
+        <div className="w-full h-20 bg-slate-900/95 backdrop-blur-xl flex justify-between items-center px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
+           <button onClick={() => { if(confirm("Surrender?")) setView('LOBBY'); }} className="text-red-500 font-black text-[10px] uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all tracking-widest border border-red-500/20">Surrender</button>
+           <div className="ludo-money-logo text-3xl tracking-tighter">LUDO MONEY</div>
+           <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-xl border border-yellow-500/20 shadow-inner">৳{selectedStake}</div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8 w-full max-h-[calc(100vh-80px)]">
-            <div className="w-full max-w-[500px] aspect-square shadow-[0_50px_100px_rgba(0,0,0,0.8)] rounded-[45px] overflow-hidden border-[10px] border-white/10 bg-white/5">
+            <div className="w-full max-w-[500px] aspect-square shadow-[0_60px_120px_rgba(0,0,0,0.8)] rounded-[50px] overflow-hidden border-[12px] border-white/5 bg-white/5 relative">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.05)_0%,transparent_70%)] pointer-events-none"></div>
                 <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} validTokens={validTokens} onTokenClick={(t) => moveToken(t.id)} />
             </div>
-            <div className="flex flex-col items-center gap-6 pb-12">
-                <div className="h-10">
-                    <p className="text-xl font-black uppercase text-sky-400 tracking-[0.4em] animate-pulse">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
+            <div className="flex flex-col items-center gap-6 pb-12 w-full max-w-sm">
+                <div className="flex items-center gap-4 bg-slate-800/40 p-4 px-8 rounded-full border border-white/5 shadow-2xl">
+                    <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-10 h-10 rounded-full border-2 border-yellow-500" alt="" />
+                    <p className="text-xl font-black uppercase text-white tracking-tight">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
                 </div>
-                <div onClick={!gameState.players[gameState.currentPlayerIndex].isBot ? rollDice : undefined} className={`w-32 h-32 bg-white rounded-[45px] shadow-2xl flex items-center justify-center text-7xl font-black text-slate-800 border-b-[12px] border-slate-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer hover:scale-110 active:scale-95 active:border-b-0'}`}>
+                <div onClick={!gameState.players[gameState.currentPlayerIndex].isBot ? rollDice : undefined} className={`w-36 h-36 bg-white rounded-[50px] shadow-[0_30px_60px_rgba(0,0,0,0.5)] flex items-center justify-center text-8xl font-black text-slate-800 border-b-[15px] border-slate-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer hover:scale-110 active:scale-95 active:border-b-0 active:translate-y-4'}`}>
                    {gameState.diceValue || '🎲'}
                 </div>
             </div>
