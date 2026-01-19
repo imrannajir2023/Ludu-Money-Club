@@ -156,6 +156,25 @@ const App: React.FC = () => {
     }
   };
 
+  const handleApproveTransaction = async (tx: PendingTransaction) => {
+    const targetUser = allUsers.find(u => u.phone === tx.phone);
+    if (!targetUser) return alert("User not found!");
+    
+    const newBalance = tx.type === 'DEPOSIT' ? targetUser.balance + tx.amount : targetUser.balance - tx.amount;
+    const updatedUser = { ...targetUser, balance: Math.max(0, newBalance) };
+    
+    await databaseService.updateUser(updatedUser);
+    await databaseService.updateTransactionStatus(tx.id, 'APPROVED');
+    refreshCloudData();
+    alert("Transaction Approved!");
+  };
+
+  const handleRejectTransaction = async (txId: string) => {
+    await databaseService.updateTransactionStatus(txId, 'REJECTED');
+    refreshCloudData();
+    alert("Transaction Rejected!");
+  };
+
   const syncMatchState = useCallback(async (currentGS: GameState) => {
     if (!matchIdRef.current) return;
     const match: LiveMatch = {
@@ -350,7 +369,7 @@ const App: React.FC = () => {
 
   if (view === 'LOGIN') return (
     <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-4 dotted-bg">
-        <form onSubmit={handleAuthAction} className="bg-[#1e293b] p-10 rounded-[45px] w-full max-w-sm border border-white/10 space-y-5 shadow-2xl">
+        <form onSubmit={handleAuthAction} className="bg-[#1e293b] p-10 rounded-[45px] w-full max-sm:max-w-xs max-w-sm border border-white/10 space-y-5 shadow-2xl">
           <div className="text-center mb-6">
               <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">Arena Access</h2>
               <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest mt-1">Join the global competition</p>
@@ -367,7 +386,19 @@ const App: React.FC = () => {
     </div>
   );
 
-  if (view === 'ADMIN') return <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={handleUpdateUsersDB} pendingTransactions={pendingTransactions} liveMatches={liveMatches} onApproveTransaction={refreshCloudData} onRejectTransaction={refreshCloudData} onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} onUpdateUser={setUser} />;
+  if (view === 'ADMIN') return (
+    <AdminPortal 
+      user={user} 
+      allUsers={allUsers} 
+      onUpdateUsersDB={handleUpdateUsersDB} 
+      pendingTransactions={pendingTransactions} 
+      liveMatches={liveMatches} 
+      onApproveTransaction={handleApproveTransaction} 
+      onRejectTransaction={handleRejectTransaction} 
+      onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} 
+      onUpdateUser={setUser} 
+    />
+  );
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white dotted-bg overflow-hidden">

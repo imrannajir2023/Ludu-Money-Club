@@ -2,8 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, PendingTransaction, LiveMatch, PlayerColor } from '../types';
 import { soundManager } from '../services/soundService';
-
-const STORAGE_KEY_LIVE_MATCHES = "LUDO_LIVE_MATCHES";
+import { databaseService } from '../services/database';
 
 interface AdminPortalProps {
   user: UserProfile;
@@ -53,40 +52,39 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
     );
   }, [allUsers, searchTerm]);
 
-  const handleAdjustBalance = () => {
+  const handleAdjustBalance = async () => {
     if (!selectedUser || !adjustAmount) return;
     const amount = parseFloat(adjustAmount);
     if (isNaN(amount) || amount <= 0) return alert("Please enter a valid positive amount.");
 
-    const updatedDB = allUsers.map(u => {
-      if (u.phone === selectedUser.phone) {
-        const newBalance = adjustType === 'add' ? u.balance + amount : u.balance - amount;
-        return { ...u, balance: Math.max(0, newBalance) };
-      }
-      return u;
-    });
+    const newBalance = adjustType === 'add' ? selectedUser.balance + amount : selectedUser.balance - amount;
+    const updatedUser = { ...selectedUser, balance: Math.max(0, newBalance) };
 
-    onUpdateUsersDB(updatedDB);
-    setSelectedUser(updatedDB.find(u => u.phone === selectedUser.phone) || null);
+    await databaseService.updateUser(updatedUser);
+    onUpdateUsersDB(allUsers.map(u => u.phone === updatedUser.phone ? updatedUser : u));
+    setSelectedUser(updatedUser);
     setAdjustAmount('');
     alert("Balance adjusted successfully!");
     soundManager.play('win');
   };
 
-  const handleTerminateMatch = (matchId: string) => {
+  const handleTerminateMatch = async (matchId: string) => {
     if(!confirm("Terminate this match? Players will be kicked to Lobby.")) return;
-    const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
-    const updated = matches.map(m => m.matchId === matchId ? { ...m, status: 'TERMINATED' } as LiveMatch : m);
-    localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(updated));
-    soundManager.play('click');
+    const match = liveMatches.find(m => m.matchId === matchId);
+    if (match) {
+        await databaseService.syncMatch({ ...match, status: 'TERMINATED' });
+        soundManager.play('click');
+        alert("Match Terminated!");
+    }
   };
 
-  const handleOverrideRoll = (matchId: string, val: number) => {
-    const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
-    const updated = matches.map(m => m.matchId === matchId ? { ...m, nextRollOverride: val } as LiveMatch : m);
-    localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(updated));
-    alert(`Next dice roll for match set to ${val}!`);
-    soundManager.play('win');
+  const handleOverrideRoll = async (matchId: string, val: number) => {
+    const match = liveMatches.find(m => m.matchId === matchId);
+    if (match) {
+        await databaseService.syncMatch({ ...match, nextRollOverride: val });
+        alert(`Next dice roll for match set to ${val}!`);
+        soundManager.play('win');
+    }
   };
 
   return (
@@ -166,7 +164,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                        <p className="font-black uppercase tracking-[0.5em] italic text-2xl">Arena is Empty</p>
                     </div>
                   ) : (
-                    liveMatches.map(match => (
+                    liveMatches.filter(m => m.status === 'ACTIVE').map(match => (
                         <div key={match.matchId} className="bg-slate-800/40 rounded-[45px] border border-white/5 p-8 space-y-6 shadow-2xl relative overflow-hidden group">
                            {match.nextRollOverride && <div className="absolute top-4 right-4 bg-yellow-500 text-black px-4 py-1 rounded-full text-[10px] font-black animate-pulse">NEXT: {match.nextRollOverride}</div>}
                            <div className="flex justify-between items-start">
