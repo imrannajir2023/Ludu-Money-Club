@@ -10,15 +10,14 @@ import { SAFE_SPOTS } from './constants';
 
 const LOGO_URL = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
 
+const STORAGE_KEY_USER = "LUDO_USER_PROFILE";
+const STORAGE_KEY_TX = "LUDO_TRANSACTIONS";
+
 const INITIAL_USER: UserProfile = {
-  name: "Araf Ahmed",
-  balance: 5000,
-  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Araf",
-  stats: {
-    totalGames: 124,
-    wins: 86,
-    totalWinnings: 15400
-  },
+  name: "Guest Player",
+  balance: 500,
+  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest",
+  stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
   history: []
 };
 
@@ -39,8 +38,38 @@ const App: React.FC = () => {
   const [selectedStake, setSelectedStake] = useState(100);
   const [selectedPlayerCount, setSelectedPlayerCount] = useState(4);
 
-  // Use a ref to prevent double bot triggers
   const botThinkingRef = useRef(false);
+
+  // Persistence & Real-time Sync Logic
+  useEffect(() => {
+    const savedUser = localStorage.getItem(STORAGE_KEY_USER);
+    const savedTx = localStorage.getItem(STORAGE_KEY_TX);
+    
+    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedTx) setPendingTransactions(JSON.parse(savedTx));
+
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_TX && e.newValue) {
+        setPendingTransactions(JSON.parse(e.newValue));
+      }
+      if (e.key === STORAGE_KEY_USER && e.newValue) {
+        setUser(JSON.parse(e.newValue));
+      }
+    };
+
+    window.addEventListener('storage', handleStorageSync);
+    return () => window.removeEventListener('storage', handleStorageSync);
+  }, []);
+
+  useEffect(() => {
+    if (user.name !== "Guest Player") {
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+    }
+  }, [user]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(pendingTransactions));
+  }, [pendingTransactions]);
 
   // Splash Loading
   useEffect(() => {
@@ -49,7 +78,10 @@ const App: React.FC = () => {
         setLoadingProgress(prev => {
           if (prev >= 100) {
             clearInterval(interval);
-            setTimeout(() => setView('LOGIN'), 1000);
+            setTimeout(() => {
+                const saved = localStorage.getItem(STORAGE_KEY_USER);
+                setView(saved ? 'LOBBY' : 'LOGIN');
+            }, 1000);
             return 100;
           }
           return prev + 5;
@@ -68,7 +100,7 @@ const App: React.FC = () => {
 
     if (!gameState.isDiceRolled) {
       botThinkingRef.current = true;
-      const rollDelay = Math.floor(Math.random() * 1000) + 1000;
+      const rollDelay = Math.floor(Math.random() * 1000) + 1200;
       setTimeout(() => {
         rollDice();
         botThinkingRef.current = false;
@@ -83,35 +115,52 @@ const App: React.FC = () => {
 
       if (possibleMoves.length > 0) {
         botThinkingRef.current = true;
-        const moveDelay = Math.floor(Math.random() * 800) + 700;
+        const moveDelay = Math.floor(Math.random() * 800) + 1000;
         setTimeout(() => {
-          // Smart AI: 1. Try to kill someone, 2. Try to get out, 3. Move furthest token
           let bestToken = possibleMoves[0];
-          
-          // Check for capture moves
           const captureMove = possibleMoves.find(t => {
              const nextPos = (t.position + gameState.diceValue!) % 52;
              return !SAFE_SPOTS.includes(nextPos) && gameState.players.some(p => 
                p.color !== currentPlayer.color && p.tokens.some(ot => ot.state === TokenState.PATH && ot.position === nextPos)
              );
           });
-
           if (captureMove) bestToken = captureMove;
           else {
             bestToken = possibleMoves.reduce((prev, curr) => (curr.distanceTraveled > prev.distanceTraveled) ? curr : prev);
           }
-
           moveToken(bestToken.id);
           botThinkingRef.current = false;
         }, moveDelay);
+      } else {
+        setTimeout(() => switchTurn(false), 800);
       }
     }
   }, [view, gameState?.currentPlayerIndex, gameState?.isDiceRolled, animating]);
 
   const handleFacebookLogin = () => {
     soundManager.play('click');
-    setUser(prev => ({ ...prev, name: "Araf Ahmed" }));
-    setView('LOBBY');
+    if (typeof (window as any).FB !== 'undefined') {
+        (window as any).FB.login((response: any) => {
+            if (response.authResponse) {
+                (window as any).FB.api('/me', { fields: 'name,picture' }, (userData: any) => {
+                    const newUser: UserProfile = {
+                        name: userData.name,
+                        balance: 500,
+                        avatar: userData.picture?.data?.url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.name}`,
+                        stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
+                        history: []
+                    };
+                    setUser(newUser);
+                    setView('LOBBY');
+                });
+            } else {
+                alert("Login cancelled");
+            }
+        });
+    } else {
+        setUser(prev => ({ ...prev, name: "Araf Ahmed" }));
+        setView('LOBBY');
+    }
   };
 
   const handleAdminAuth = (e: React.FormEvent) => {
@@ -129,7 +178,8 @@ const App: React.FC = () => {
     if (tx.type === 'WITHDRAW') {
       setUser(prev => ({ ...prev, balance: prev.balance - tx.amount }));
     }
-    setPendingTransactions(prev => [...prev, tx]);
+    const updatedTx = [...pendingTransactions, tx];
+    setPendingTransactions(updatedTx);
     setUser(prev => ({ ...prev, history: [tx, ...prev.history] }));
   };
 
@@ -166,7 +216,11 @@ const App: React.FC = () => {
     if (user.balance < selectedStake) return alert("Insufficient Balance!");
     setUser(prev => ({ ...prev, balance: prev.balance - selectedStake }));
     const players: Player[] = [];
-    let colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE].slice(0, selectedPlayerCount);
+    
+    // For 2 players, use opposite colors (Red and Yellow)
+    let colors = selectedPlayerCount === 2 
+      ? [PlayerColor.RED, PlayerColor.YELLOW] 
+      : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
 
     players.push({
       id: 'p1', name: user.name, color: colors[0], isBot: false,
@@ -252,7 +306,6 @@ const App: React.FC = () => {
         didReachFinish = true;
         soundManager.play('win');
       } else {
-        // Capture Logic
         if (!SAFE_SPOTS.includes(token.position)) {
           players.forEach(p => {
             if (p.color !== player.color) {
@@ -321,24 +374,27 @@ const App: React.FC = () => {
   );
 
   if (view === 'LOGIN') return (
-    <div className="h-screen w-full bg-[#1877F2] flex flex-col items-center justify-center p-6 relative">
-      <div className="bg-white p-10 rounded-[50px] shadow-2xl w-full max-w-sm flex flex-col items-center border-[10px] border-white/50 z-10">
-        <img src={LOGO_URL} className="w-32 h-32 mb-8 drop-shadow-xl" />
-        <h2 className="text-3xl font-black text-gray-800 mb-10 italic uppercase tracking-tighter">Ludo Money</h2>
-        <button onClick={handleFacebookLogin} className="w-full bg-[#1877F2] text-white py-6 rounded-3xl font-black shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all">
+    <div className="h-screen w-full bg-[#1877F2] flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute top-[-100px] left-[-100px] w-[300px] h-[300px] bg-white/10 rounded-full blur-[80px]"></div>
+      <div className="bg-white p-10 rounded-[60px] shadow-2xl w-full max-w-sm flex flex-col items-center border-[12px] border-white/40 z-10">
+        <img src={LOGO_URL} className="w-32 h-32 mb-8 drop-shadow-2xl animate-bounce-slow" />
+        <h2 className="text-4xl font-black text-gray-800 mb-2 italic uppercase tracking-tighter">Ludo Money</h2>
+        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.2em] mb-12">Earn Real Cash Daily</p>
+        <button onClick={handleFacebookLogin} className="w-full bg-[#1877F2] text-white py-6 rounded-[30px] font-black shadow-xl flex items-center justify-center gap-4 active:scale-95 transition-all hover:brightness-110">
+           <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
            LOGIN WITH FACEBOOK
         </button>
       </div>
-      <button onClick={() => setIsAdminAuthOpen(true)} className="mt-8 text-white/20 hover:text-white/60 font-bold uppercase tracking-widest text-[10px] bg-white/5 px-6 py-2 rounded-full border border-white/5">ADMIN ACCESS</button>
+      <button onClick={() => setIsAdminAuthOpen(true)} className="mt-12 text-white/20 hover:text-white/80 font-bold uppercase tracking-[0.3em] text-[10px] bg-white/5 px-8 py-3 rounded-full border border-white/5 transition-all">ADMIN DASHBOARD</button>
 
       {isAdminAuthOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-xl p-6">
-           <form onSubmit={handleAdminAuth} className="bg-[#1e293b] w-full max-w-sm rounded-[40px] p-10 border border-white/10 shadow-2xl">
-              <h2 className="text-2xl font-black uppercase italic text-yellow-500 mb-8 text-center">Secure Admin</h2>
-              <input type="text" placeholder="Admin Username" value={adminUsername} onChange={e => setAdminUsername(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl text-white font-bold mb-4" />
-              <input type="password" placeholder="Password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl text-white font-bold mb-8" />
-              <button type="submit" className="w-full bg-sky-500 text-white py-5 rounded-3xl font-black uppercase shadow-xl">Authorize</button>
-              <button type="button" onClick={() => setIsAdminAuthOpen(false)} className="w-full mt-4 text-white/40 font-bold uppercase text-[10px]">Close</button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-6">
+           <form onSubmit={handleAdminAuth} className="bg-[#1e293b] w-full max-w-sm rounded-[50px] p-12 border border-white/10 shadow-2xl">
+              <h2 className="text-3xl font-black uppercase italic text-yellow-500 mb-10 text-center tracking-tighter">Staff Authorization</h2>
+              <input type="text" placeholder="Username" value={adminUsername} onChange={e => setAdminUsername(e.target.value)} className="w-full bg-white/5 border border-white/10 p-6 rounded-3xl text-white font-bold mb-4 focus:outline-none focus:border-sky-500" />
+              <input type="password" placeholder="Passcode" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-6 rounded-3xl text-white font-bold mb-10 focus:outline-none focus:border-sky-500" />
+              <button type="submit" className="w-full bg-sky-500 text-white py-6 rounded-[30px] font-black uppercase shadow-2xl border-b-8 border-sky-700 active:border-b-0 active:translate-y-2 transition-all">Enter Dashboard</button>
+              <button type="button" onClick={() => setIsAdminAuthOpen(false)} className="w-full mt-6 text-white/30 font-bold uppercase text-[10px] tracking-widest hover:text-white">Cancel</button>
            </form>
         </div>
       )}
@@ -358,58 +414,58 @@ const App: React.FC = () => {
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a192f] flex flex-col relative text-white select-none overflow-hidden font-fredoka">
-      <div className="p-4 flex justify-between items-center z-50 bg-[#0f172a] shadow-lg">
-        <div className="flex items-center gap-2">
-          <img src={user.avatar} className="w-10 h-10 rounded-xl bg-white border-2 border-yellow-500" />
+      <div className="p-5 flex justify-between items-center z-50 bg-[#0f172a] shadow-2xl border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <img src={user.avatar} className="w-11 h-11 rounded-2xl bg-white border-2 border-yellow-500 shadow-lg" />
           <div className="flex flex-col">
-            <span className="font-bold text-xs">{user.name}</span>
-            <span className="text-[8px] text-green-400 font-bold uppercase tracking-tight">ONLINE</span>
+            <span className="font-black text-sm tracking-tight">{user.name}</span>
+            <span className="text-[9px] text-green-400 font-black uppercase tracking-widest flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>ONLINE</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="bg-[#1e293b] border border-white/10 rounded-full px-3 py-1 flex items-center gap-2">
-             <span className="text-yellow-400 font-black text-sm">৳</span>
-             <span className="font-bold text-xs">{user.balance.toLocaleString()}</span>
-             <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-5 h-5 rounded-lg font-black text-xs shadow-md hover:scale-110 transition-all flex items-center justify-center">+</button>
+        <div className="flex items-center gap-3">
+          <div className="bg-[#1e293b] border border-white/10 rounded-3xl px-4 py-1.5 flex items-center gap-3 shadow-inner">
+             <span className="text-yellow-400 font-black text-lg">৳</span>
+             <span className="font-black text-sm">{user.balance.toLocaleString()}</span>
+             <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-6 h-6 rounded-xl font-black text-lg shadow-lg hover:scale-110 active:scale-95 transition-all flex items-center justify-center">+</button>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 p-4 space-y-4 z-10 overflow-y-auto no-scrollbar pb-24">
-        <div className="bg-[#2d3da9] rounded-[40px] p-8 shadow-2xl relative overflow-hidden flex flex-col items-start min-h-[200px]" onClick={() => setView('MATCH_CONFIG')}>
+      <div className="flex-1 p-6 space-y-6 z-10 overflow-y-auto no-scrollbar pb-32">
+        <div className="bg-gradient-to-br from-[#2d3da9] to-[#1e297a] rounded-[50px] p-10 shadow-2xl relative overflow-hidden flex flex-col items-start min-h-[220px] group cursor-pointer" onClick={() => setView('MATCH_CONFIG')}>
             <div className="relative z-10 w-2/3">
-              <h2 className="text-4xl font-black italic text-[#ffd900] mb-2 uppercase tracking-tighter leading-tight">PLAY ONLINE</h2>
-              <p className="text-white/80 text-[10px] font-bold mb-6 max-w-[150px]">Join live matches and win real cash!</p>
-              <button className="bg-white text-[#2d3da9] font-black px-8 py-3 rounded-full uppercase text-xs shadow-lg hover:scale-105 transition-all">FIND TABLE</button>
+              <h2 className="text-5xl font-black italic text-[#ffd900] mb-3 uppercase tracking-tighter leading-tight drop-shadow-lg">PLAY ONLINE</h2>
+              <p className="text-white/70 text-[11px] font-bold mb-8 max-w-[180px]">Real players, real stakes. Battle for glory!</p>
+              <button className="bg-white text-[#2d3da9] font-black px-10 py-4 rounded-full uppercase text-xs shadow-2xl hover:scale-105 active:scale-95 transition-all">ENTER ARENA</button>
             </div>
-            <div className="absolute right-[-10px] bottom-4 text-[130px] opacity-20 rotate-12 scale-x-[-1]">🎲</div>
+            <div className="absolute right-[-20px] bottom-[-20px] text-[180px] opacity-10 rotate-12 group-hover:rotate-0 transition-all duration-700 select-none pointer-events-none">🎲</div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-            <div onClick={() => setView('MATCH_CONFIG')} className="bg-[#1e293b] py-8 px-4 rounded-[40px] shadow-xl flex flex-col items-center cursor-pointer border border-white/5">
-              <div className="text-5xl mb-3">🤖</div>
-              <span className="font-black text-xs italic text-[#0ea5e9] uppercase">VS BOT</span>
+        <div className="grid grid-cols-2 gap-6">
+            <div onClick={() => setView('MATCH_CONFIG')} className="bg-[#1e293b] py-10 px-6 rounded-[50px] shadow-2xl flex flex-col items-center cursor-pointer border border-white/5 hover:bg-white/5 transition-all">
+              <div className="text-6xl mb-4 filter drop-shadow-xl">🤖</div>
+              <span className="font-black text-xs italic text-[#0ea5e9] uppercase tracking-widest">Training Bot</span>
             </div>
-            <div onClick={() => setView('MATCH_CONFIG')} className="bg-[#1e293b] py-8 px-4 rounded-[40px] shadow-xl flex flex-col items-center cursor-pointer border border-white/5">
-              <div className="text-5xl mb-3">👬</div>
-              <span className="font-black text-xs italic text-[#ffd900] uppercase">FRIENDS</span>
+            <div onClick={() => setView('MATCH_CONFIG')} className="bg-[#1e293b] py-10 px-6 rounded-[50px] shadow-2xl flex flex-col items-center cursor-pointer border border-white/5 hover:bg-white/5 transition-all">
+              <div className="text-6xl mb-4 filter drop-shadow-xl">👬</div>
+              <span className="font-black text-xs italic text-[#ffd900] uppercase tracking-widest">Private Table</span>
             </div>
         </div>
 
-        <div className="bg-[#1e293b]/50 p-6 rounded-[40px] border border-white/5">
-            <h3 className="text-[9px] font-black uppercase text-white/30 tracking-widest mb-4">TOP WINNERS TODAY</h3>
-            <div className="space-y-2">
+        <div className="bg-[#1e293b]/40 p-8 rounded-[50px] border border-white/5 backdrop-blur-md">
+            <h3 className="text-[10px] font-black uppercase text-white/30 tracking-[0.3em] mb-6">GLOBAL LEADERBOARD</h3>
+            <div className="space-y-3">
               {[
-                { name: "Zubair Al-Mahmud", win: 903 },
-                { name: "Tanvir Hossain", win: 658 },
-                { name: "Anika Tabassum", win: 1444 }
+                { name: "Zubair Al-Mahmud", win: 19030 },
+                { name: "Tanvir Hossain", win: 16580 },
+                { name: "Anika Tabassum", win: 14440 }
               ].map((winner, i) => (
-                <div key={i} className="flex justify-between items-center bg-[#1e293b] p-3 rounded-2xl border border-white/5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-6 h-6 rounded-lg bg-[#6366f1] flex items-center justify-center text-[10px] font-black">{i+1}</div>
-                      <span className="text-xs font-bold text-white/80">{winner.name}</span>
+                <div key={i} className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-white/5 shadow-lg group hover:border-yellow-500/30 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shadow-lg ${i === 0 ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'}`}>{i+1}</div>
+                      <span className="text-sm font-bold text-white/80">{winner.name}</span>
                     </div>
-                    <span className="text-[#4ade80] font-black text-xs tracking-tighter">+৳{winner.win}</span>
+                    <span className="text-[#4ade80] font-black text-sm tracking-tighter">৳{winner.win.toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -421,39 +477,65 @@ const App: React.FC = () => {
   );
 
   if (view === 'MATCH_CONFIG') return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-6 text-white">
-        <div className="bg-[#1e293b] p-10 rounded-[50px] w-full max-w-sm shadow-2xl">
-           <h2 className="text-2xl font-black italic uppercase text-center mb-10 text-yellow-500">Match Settings</h2>
-           <div className="mb-10">
-             <p className="text-[10px] font-black uppercase text-yellow-500 mb-4">Stake Amount (৳)</p>
-             <div className="grid grid-cols-3 gap-3">
-                {STAKE_OPTIONS.map(s => (
-                  <button key={s} onClick={() => setSelectedStake(s)} className={`py-3 rounded-2xl font-black text-xs border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-400 text-black' : 'bg-white/5 border-white/5 text-white/40'}`}>{s}</button>
+    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-6 text-white overflow-hidden">
+        <div className="absolute top-[-10%] right-[-10%] w-[400px] h-[400px] bg-sky-500/5 rounded-full blur-[100px]"></div>
+        <div className="bg-[#1e293b] p-10 rounded-[60px] w-full max-w-sm shadow-2xl border border-white/5 relative z-10">
+           <h2 className="text-2xl font-black italic uppercase text-center mb-8 text-yellow-500 tracking-tighter">Table Settings</h2>
+           
+           {/* Player Count Selection */}
+           <div className="mb-8">
+             <p className="text-[10px] font-black uppercase text-white/30 tracking-widest mb-4 ml-2">Number of Players</p>
+             <div className="grid grid-cols-2 gap-4">
+                {[2, 4].map(count => (
+                  <button 
+                    key={count} 
+                    onClick={() => { soundManager.play('click'); setSelectedPlayerCount(count); }} 
+                    className={`py-4 rounded-3xl font-black text-sm border-4 transition-all flex flex-col items-center justify-center gap-1 ${selectedPlayerCount === count ? 'bg-sky-500 border-sky-400 text-white shadow-xl scale-105' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}
+                  >
+                    <span className="text-2xl">{count === 2 ? '👥' : '👨‍👩‍👧‍👦'}</span>
+                    <span>{count} Players</span>
+                  </button>
                 ))}
              </div>
            </div>
-           <button onClick={() => { setView('MATCHING'); setTimeout(initGame, 2000); }} className="w-full bg-green-500 py-6 rounded-3xl font-black text-xl shadow-2xl border-b-8 border-green-700 uppercase italic tracking-widest">Start Battle</button>
-           <button onClick={() => setView('LOBBY')} className="w-full mt-6 text-white/30 font-black uppercase text-[10px] tracking-widest">Back</button>
+
+           {/* Stake Amount Selection */}
+           <div className="mb-10">
+             <p className="text-[10px] font-black uppercase text-white/30 tracking-widest mb-4 ml-2">Choose Stake (৳)</p>
+             <div className="grid grid-cols-3 gap-3">
+                {STAKE_OPTIONS.map(s => (
+                  <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`py-3 rounded-2xl font-black text-xs border-4 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-400 text-black shadow-xl scale-105' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}>{s}</button>
+                ))}
+             </div>
+           </div>
+
+           <button onClick={() => { soundManager.play('click'); setView('MATCHING'); setTimeout(initGame, 2000); }} className="w-full bg-green-500 py-6 rounded-[35px] font-black text-xl shadow-2xl border-b-[8px] border-green-700 uppercase italic tracking-widest active:border-b-0 active:translate-y-2 transition-all">Start Battle</button>
+           <button onClick={() => setView('LOBBY')} className="w-full mt-6 text-white/20 font-black uppercase text-[10px] tracking-[0.4em] hover:text-white transition-all text-center">Back</button>
         </div>
     </div>
   );
 
   if (view === 'MATCHING') return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center text-white p-10">
-      <div className="w-56 h-56 border-[16px] border-yellow-500/10 border-t-yellow-500 rounded-full animate-spin flex items-center justify-center"><span className="text-7xl">🎲</span></div>
-      <h2 className="text-3xl font-black mt-16 italic uppercase text-center">Finding Opponents...</h2>
+    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center text-white p-10 overflow-hidden">
+      <div className="relative">
+          <div className="w-64 h-64 border-[16px] border-sky-500/10 border-t-sky-500 rounded-full animate-spin flex items-center justify-center shadow-2xl shadow-sky-500/20"></div>
+          <span className="absolute inset-0 flex items-center justify-center text-8xl animate-pulse">🎲</span>
+      </div>
+      <h2 className="text-4xl font-black mt-20 italic uppercase text-center tracking-tighter text-white/80">Connecting to Server...</h2>
+      <p className="mt-4 text-[10px] font-bold text-sky-400 uppercase tracking-widest animate-pulse">Looking for {selectedPlayerCount - 1} opponents</p>
     </div>
   );
 
   return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center relative overflow-hidden text-white">
-        <div className="w-full h-14 bg-blue-950 flex justify-between items-center px-6 z-10 shadow-2xl">
-           <button onClick={() => { setGameState(null); setView('LOBBY'); }} className="bg-red-600 text-white font-black px-6 py-2 rounded-2xl text-[10px] uppercase border-b-4 border-red-800">Quit</button>
-           <div className="font-black text-sky-400 italic">Ludo Money Battle</div>
+    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center relative overflow-hidden text-white font-fredoka">
+        <div className="w-full h-16 bg-[#0f172a] flex justify-between items-center px-8 z-10 shadow-2xl border-b border-white/5">
+           <button onClick={() => { setGameState(null); setView('LOBBY'); }} className="bg-red-600/20 text-red-500 font-black px-6 py-2 rounded-2xl text-[10px] uppercase border border-red-500/20 hover:bg-red-600/40 transition-all">Exit Game</button>
+           <div className="font-black text-sky-400 italic text-sm tracking-widest uppercase">Ludo Money • Live Match</div>
+           <div className="bg-white/5 px-4 py-2 rounded-2xl border border-white/5 text-yellow-500 font-black text-xs">Prizepool: ৳{Math.floor(selectedStake * selectedPlayerCount * 0.9)}</div>
         </div>
         
-        <div className="flex-1 flex flex-col md:flex-row items-center justify-center p-6 gap-12 w-full overflow-hidden">
-            <div className="w-full max-w-[500px] shadow-2xl rounded-[50px] overflow-hidden border-[16px] border-yellow-500/20 flex-shrink-0">
+        <div className="flex-1 flex flex-col lg:flex-row items-center justify-center p-6 gap-12 w-full overflow-hidden">
+            <div className="w-full max-w-[520px] shadow-[0_50px_100px_rgba(0,0,0,0.6)] rounded-[60px] overflow-hidden border-[16px] border-white/5 bg-white/5 backdrop-blur-sm flex-shrink-0">
                 <LudoBoard 
                     players={gameState!.players} 
                     currentPlayerColor={gameState!.players[gameState!.currentPlayerIndex].color}
@@ -462,22 +544,25 @@ const App: React.FC = () => {
                 />
             </div>
             
-            <div className="flex flex-col items-center gap-6">
-                <div className="bg-slate-900/50 p-6 rounded-3xl border border-white/10 text-center w-full min-w-[200px]">
-                    <p className="text-[10px] font-black uppercase text-sky-400 mb-1">Current Turn</p>
-                    <p className="text-xl font-black italic uppercase text-yellow-500">{gameState!.players[gameState!.currentPlayerIndex].name}</p>
+            <div className="flex flex-col items-center gap-8 w-full max-w-xs">
+                <div className="bg-slate-900/80 p-8 rounded-[40px] border border-white/5 text-center w-full shadow-2xl backdrop-blur-xl">
+                    <p className="text-[10px] font-black uppercase text-sky-400 mb-2 tracking-[0.3em]">Current Move</p>
+                    <div className="flex items-center justify-center gap-3">
+                        <img src={gameState!.players[gameState!.currentPlayerIndex].avatarUrl} className="w-8 h-8 rounded-xl border border-white/10" />
+                        <p className="text-2xl font-black italic uppercase text-yellow-500 tracking-tighter truncate">{gameState!.players[gameState!.currentPlayerIndex].name}</p>
+                    </div>
                 </div>
                 
                 <div 
                   onClick={!gameState!.players[gameState!.currentPlayerIndex].isBot ? rollDice : undefined} 
-                  className={`w-36 h-36 bg-white rounded-[45px] shadow-2xl flex items-center justify-center text-8xl font-black text-gray-800 border-b-[16px] border-gray-200 transition-all ${animating ? 'animate-spin' : ''} ${gameState?.isDiceRolled || gameState!.players[gameState!.currentPlayerIndex].isBot ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:scale-105 active:translate-y-2'}`}
+                  className={`w-40 h-40 bg-white rounded-[50px] shadow-[0_30px_60px_rgba(0,0,0,0.4)] flex items-center justify-center text-8xl font-black text-gray-800 border-b-[20px] border-gray-200 transition-all ${animating ? 'animate-spin' : ''} ${gameState?.isDiceRolled || gameState!.players[gameState!.currentPlayerIndex].isBot ? 'opacity-40 grayscale cursor-not-allowed' : 'cursor-pointer hover:scale-105 active:translate-y-4 active:border-b-0 active:shadow-none'}`}
                 >
                    {gameState!.diceValue || '🎲'}
                 </div>
                 
                 {gameState?.diceValue && (
-                    <div className="bg-yellow-500 text-black px-8 py-3 rounded-full font-black animate-bounce shadow-xl border-b-4 border-yellow-700 uppercase italic">
-                        Rolled: {gameState.diceValue}
+                    <div className="bg-yellow-500 text-black px-10 py-4 rounded-full font-black animate-bounce shadow-2xl border-b-8 border-yellow-700 uppercase italic tracking-widest text-lg">
+                        You Got {gameState.diceValue}!
                     </div>
                 )}
             </div>

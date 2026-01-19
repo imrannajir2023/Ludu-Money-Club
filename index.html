@@ -10,8 +10,7 @@
       @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
       
       :root {
-        --ludo-blue: #1e3a8a;
-        --ludo-blue-light: #1e40af;
+        --ludo-blue: #0a192f;
       }
 
       body {
@@ -25,20 +24,8 @@
 
       .dotted-bg {
         background-color: var(--ludo-blue);
-        background-image: radial-gradient(rgba(255, 255, 255, 0.1) 2px, transparent 2px);
+        background-image: radial-gradient(rgba(255, 255, 255, 0.05) 2px, transparent 2px);
         background-size: 24px 24px;
-      }
-
-      .glossy-card {
-        background: linear-gradient(to bottom, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.1) 100%);
-        backdrop-filter: blur(4px);
-        border: 2px solid rgba(255,255,255,0.3);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-      }
-
-      .xp-bar-gradient {
-        background: linear-gradient(to right, #fbbf24, #f59e0b);
-        box-shadow: inset 0 1px 2px rgba(255,255,255,0.5);
       }
 
       .no-scrollbar::-webkit-scrollbar {
@@ -57,6 +44,8 @@
         animation: bounce-slow 2s infinite ease-in-out;
       }
     </style>
+    <!-- Facebook SDK -->
+    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
   <script type="importmap">
 {
   "imports": {
@@ -71,5 +60,15 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <script>
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId      : 'YOUR_APP_ID', // ইউজারের উচিত নিজের FB App ID এখানে বসানো
+          cookie     : true,
+          xfbml      : true,
+          version    : 'v18.0'
+        });
+      };
+    </script>
   </body>
 </html>
