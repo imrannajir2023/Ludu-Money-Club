@@ -1,17 +1,11 @@
+
 import { GoogleGenAI } from "@google/genai";
 
-const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) return null;
-  return new GoogleGenAI({ apiKey });
-};
+// Always use the required initialization with a named parameter
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateGameCommentary = async (eventDescription: string, playerName: string): Promise<string> => {
-  const client = getClient();
-  if (!client) return "What a move!";
-
   try {
-    const model = client.models;
     const prompt = `
       You are an energetic esports commentator for a high-stakes Ludo game.
       The player "${playerName}" just performed this action: "${eventDescription}".
@@ -19,14 +13,16 @@ export const generateGameCommentary = async (eventDescription: string, playerNam
       Use emojis.
     `;
 
-    const response = await model.generateContent({
-      model: 'gemini-2.5-flash',
+    // Use ai.models.generateContent with the correct Gemini 3 model name
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 0 } // Fast response needed
+        thinkingConfig: { thinkingBudget: 0 } // Fast response needed for real-time commentary
       }
     });
 
+    // Access the .text property directly as per the latest SDK
     return response.text?.trim() || "Amazing play!";
   } catch (error) {
     console.error("Gemini Error:", error);
