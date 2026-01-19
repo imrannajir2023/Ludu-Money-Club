@@ -13,11 +13,11 @@ export enum TokenState {
 }
 
 export interface Token {
-  id: number; // 0-3
+  id: number;
   color: PlayerColor;
   state: TokenState;
-  position: number; // 0-51 for main path, 52-57 for home stretch
-  distanceTraveled: number; // To calculate home entry
+  position: number;
+  distanceTraveled: number;
 }
 
 export interface Player {
@@ -37,19 +37,29 @@ export interface GameState {
   winner: PlayerColor | null;
   log: string[];
   lastAction: string;
-  consecutiveSixes: number; // New field to track consecutive 6s
+  consecutiveSixes: number;
 }
 
-export interface WalletTransaction {
+export interface PendingTransaction {
   id: string;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'GAME_FEE' | 'GAME_WIN';
+  userName: string;
+  type: 'DEPOSIT' | 'WITHDRAW';
+  method: string;
   amount: number;
-  date: string;
-  status: 'COMPLETED' | 'PENDING';
+  phone: string;
+  trxId?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  timestamp: string;
 }
 
 export interface UserProfile {
   name: string;
   balance: number;
-  transactions: WalletTransaction[];
+  avatar: string;
+  stats: {
+    totalGames: number;
+    wins: number;
+    totalWinnings: number;
+  };
+  history: PendingTransaction[];
 }
