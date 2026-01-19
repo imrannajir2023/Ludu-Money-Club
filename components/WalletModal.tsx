@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, PendingTransaction } from '../types';
 import { soundManager } from '../services/soundService';
 
@@ -21,17 +21,22 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
   const [amount, setAmount] = useState<string>('');
   const [method, setMethod] = useState<string>('bkash');
   const [trxId, setTrxId] = useState<string>('');
-  const [phone, setPhone] = useState<string>('');
+  const [phone, setPhone] = useState<string>(user.phone || '');
   const [processing, setProcessing] = useState(false);
+
+  // Update phone if user profile updates
+  useEffect(() => {
+    if (user.phone && !phone) setPhone(user.phone);
+  }, [user.phone]);
 
   if (!isOpen) return null;
 
   const handleTransaction = () => {
     const val = parseFloat(amount);
-    if (isNaN(val) || val < 50) return alert("Minimum amount is ৳50");
-    if (activeTab === 'withdraw' && val > user.balance) return alert("Insufficient Balance!");
-    if (!phone) return alert("Enter your mobile number");
-    if (activeTab === 'deposit' && !trxId) return alert("Enter Transaction ID");
+    if (isNaN(val) || val < 50) return alert("সর্বনিম্ন ৫০ টাকা লেনদেন করা যাবে।");
+    if (activeTab === 'withdraw' && val > user.balance) return alert("আপনার ব্যালেন্স পর্যাপ্ত নয়!");
+    if (!phone) return alert("আপনার মোবাইল নম্বর দিন।");
+    if (activeTab === 'deposit' && !trxId) return alert("বিকাশ/নগদ ট্রানজেকশন আইডি (TrxID) দিন।");
 
     setProcessing(true);
     soundManager.play('click');
@@ -48,13 +53,14 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
       timestamp: new Date().toLocaleTimeString()
     };
 
+    // Reduced delay for better reliability
     setTimeout(() => {
       onSubmitTransaction(newTx);
       soundManager.play('six');
       setProcessing(false);
       onClose();
-      alert(activeTab === 'deposit' ? "Deposit request sent! Admin will verify TrxID." : "Withdrawal request sent! Wait for admin approval.");
-    }, 1500);
+      alert(activeTab === 'deposit' ? "ডিপোজিট রিকোয়েস্ট পাঠানো হয়েছে! এডমিন ভেরিফাই করলে ব্যালেন্স যোগ হবে।" : "উইথড্র রিকোয়েস্ট পাঠানো হয়েছে! অনুগ্রহ করে অপেক্ষা করুন।");
+    }, 800);
   };
 
   const selectedMethod = METHODS.find(m => m.id === method);
@@ -65,7 +71,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
         <div className="p-6 text-center bg-gradient-to-r from-blue-700 to-indigo-900 border-b border-white/10">
           <h2 className="text-2xl font-black uppercase tracking-tighter italic text-white flex items-center justify-center gap-3">
              <span className="bg-yellow-500 text-black w-8 h-8 rounded-full flex items-center justify-center not-italic">৳</span>
-             Cashier
+             Wallet
           </h2>
           <button onClick={onClose} className="absolute top-4 right-6 text-white/50 text-2xl hover:text-white transition-colors">✕</button>
         </div>
@@ -87,7 +93,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
 
           <div className="space-y-4">
              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-2">Select Method</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-2">Select Gateway</label>
                 <div className="grid grid-cols-3 gap-3">
                     {METHODS.map(m => (
                       <button 
@@ -109,12 +115,12 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                 </div>
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={`${selectedMethod?.name} Number`} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" />
                 {activeTab === 'deposit' && (
-                  <input type="text" value={trxId} onChange={(e) => setTrxId(e.target.value)} placeholder="Transaction ID (TrxID)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all uppercase" />
+                  <input type="text" value={trxId} onChange={(e) => setTrxId(e.target.value)} placeholder="TrxID (Transaction ID)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all uppercase" />
                 )}
              </div>
 
              <button onClick={handleTransaction} disabled={processing} className={`w-full py-6 rounded-3xl font-black text-xl text-black bg-yellow-500 border-b-8 border-yellow-700 active:translate-y-2 active:border-b-0 transition-all flex items-center justify-center gap-3 ${processing ? 'opacity-50' : ''}`}>
-                {processing ? <div className="w-6 h-6 border-4 border-black/20 border-t-black rounded-full animate-spin"></div> : (activeTab === 'deposit' ? 'DEPOSIT NOW' : 'WITHDRAW NOW')}
+                {processing ? <div className="w-6 h-6 border-4 border-black/20 border-t-black rounded-full animate-spin"></div> : (activeTab === 'deposit' ? 'SEND REQUEST' : 'WITHDRAW NOW')}
              </button>
           </div>
         </div>
