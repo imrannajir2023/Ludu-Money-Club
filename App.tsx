@@ -10,6 +10,7 @@ import { SAFE_SPOTS } from './constants';
 
 const LOGO_URL = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
 const STORAGE_KEY_USER = "LUDO_USER_PROFILE";
+const STORAGE_KEY_USERS_DB = "LUDO_USERS_DATABASE"; // Mock DB for local testing
 const STORAGE_KEY_TX = "LUDO_TRANSACTIONS";
 
 const INITIAL_USER: UserProfile = {
@@ -24,6 +25,7 @@ const STAKE_OPTIONS = [50, 100, 500, 1000, 5000];
 
 const App: React.FC = () => {
   const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'LOBBY' | 'MATCH_CONFIG' | 'MATCHING' | 'GAME' | 'ADMIN'>('SPLASH');
+  const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [user, setUser] = useState<UserProfile>(INITIAL_USER);
   const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
@@ -45,21 +47,19 @@ const App: React.FC = () => {
 
   const botThinkingRef = useRef(false);
 
-  // Sync logic across tabs
+  // Load user and transactions
   useEffect(() => {
     const savedUser = localStorage.getItem(STORAGE_KEY_USER);
     const savedTx = localStorage.getItem(STORAGE_KEY_TX);
     
-    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedUser) {
+        setUser(JSON.parse(savedUser));
+        setView('LOBBY'); // Auto login if profile exists
+    }
     if (savedTx) setPendingTransactions(JSON.parse(savedTx));
 
     const handleSync = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY_TX && e.newValue) {
-        setPendingTransactions(JSON.parse(e.newValue));
-        const newArr = JSON.parse(e.newValue);
-        const oldArr = JSON.parse(e.oldValue || '[]');
-        if (newArr.length > oldArr.length) soundManager.play('six');
-      }
+      if (e.key === STORAGE_KEY_TX && e.newValue) setPendingTransactions(JSON.parse(e.newValue));
       if (e.key === STORAGE_KEY_USER && e.newValue) setUser(JSON.parse(e.newValue));
     };
 
@@ -67,16 +67,19 @@ const App: React.FC = () => {
     return () => window.removeEventListener('storage', handleSync);
   }, []);
 
+  // Sync current user profile
   useEffect(() => {
     if (user.name !== "Guest Player") {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     }
   }, [user]);
 
+  // Sync transactions
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(pendingTransactions));
   }, [pendingTransactions]);
 
+  // Splash Screen loading
   useEffect(() => {
     if (view === 'SPLASH') {
       const interval = setInterval(() => {
@@ -96,27 +99,49 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Manual Signup Handler
-  const handleManualSignup = (e: React.FormEvent) => {
+  // Auth Logic
+  const handleAuthAction = (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginName.trim().length < 3) return alert("দয়া করে আপনার সঠিক নাম লিখুন (কমপক্ষে ৩ অক্ষর)");
-    if (!/^\d{11}$/.test(loginPhone)) return alert("দয়া করে ১১ অক্ষরের সঠিক ফোন নম্বর দিন");
-    if (loginPassword.length < 4) return alert("পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে");
-
     soundManager.play('click');
-    const newUser: UserProfile = {
-      name: loginName.trim(),
-      phone: loginPhone,
-      password: loginPassword,
-      balance: 500, // Starting Bonus
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${loginName.trim()}`,
-      stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
-      history: []
-    };
-    
-    setUser(newUser);
-    setView('LOBBY');
-    soundManager.play('win');
+
+    const usersDB: UserProfile[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS_DB) || '[]');
+
+    if (authMode === 'SIGNUP') {
+      if (loginName.trim().length < 3) return alert("সঠিক নাম লিখুন (কমপক্ষে ৩ অক্ষর)");
+      if (!/^\d{11}$/.test(loginPhone)) return alert("১১ অক্ষরের সঠিক ফোন নম্বর দিন");
+      if (loginPassword.length < 4) return alert("পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে");
+      
+      // Check if user already exists
+      if (usersDB.some(u => u.phone === loginPhone)) {
+        return alert("এই নম্বর দিয়ে অলরেডি অ্যাকাউন্ট করা আছে! দয়া করে লগইন করুন।");
+      }
+
+      const newUser: UserProfile = {
+        name: loginName.trim(),
+        phone: loginPhone,
+        password: loginPassword,
+        balance: 500, // Signup Bonus
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${loginName.trim()}`,
+        stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
+        history: []
+      };
+
+      usersDB.push(newUser);
+      localStorage.setItem(STORAGE_KEY_USERS_DB, JSON.stringify(usersDB));
+      setUser(newUser);
+      setView('LOBBY');
+      soundManager.play('win');
+    } else {
+      // Login Mode
+      const existingUser = usersDB.find(u => u.phone === loginPhone && u.password === loginPassword);
+      if (existingUser) {
+        setUser(existingUser);
+        setView('LOBBY');
+        soundManager.play('win');
+      } else {
+        alert("ফোন নম্বর বা পাসওয়ার্ড ভুল! অথবা সাইন-আপ করুন।");
+      }
+    }
   };
 
   const handleAdminAuth = (e: React.FormEvent) => {
@@ -134,32 +159,25 @@ const App: React.FC = () => {
     if (tx.type === 'WITHDRAW') setUser(prev => ({ ...prev, balance: prev.balance - tx.amount }));
     const updatedTx = [...pendingTransactions, tx];
     setPendingTransactions(updatedTx);
-    localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(updatedTx));
     setUser(prev => ({ ...prev, history: [tx, ...prev.history] }));
   };
 
   const approveTransaction = (tx: PendingTransaction) => {
     soundManager.play('win');
-    if (tx.type === 'DEPOSIT') {
-      setUser(prev => ({ 
-        ...prev, 
-        balance: prev.balance + tx.amount,
-        history: prev.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' } : h)
-      }));
-    } else {
-      setUser(prev => ({ 
-        ...prev, 
-        history: prev.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' } : h)
-      }));
-    }
+    setUser(prev => {
+        const newBalance = tx.type === 'DEPOSIT' ? prev.balance + tx.amount : prev.balance;
+        return { 
+          ...prev, 
+          balance: newBalance,
+          history: prev.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' } : h)
+        }
+    });
     setPendingTransactions(prev => prev.filter(t => t.id !== tx.id));
   };
 
   const rejectTransaction = (txId: string) => {
     const tx = pendingTransactions.find(t => t.id === txId);
-    if (tx && tx.type === 'WITHDRAW') {
-      setUser(prev => ({ ...prev, balance: prev.balance + tx.amount }));
-    }
+    if (tx && tx.type === 'WITHDRAW') setUser(prev => ({ ...prev, balance: prev.balance + tx.amount }));
     setUser(prev => ({ 
       ...prev, 
       history: prev.history.map(h => h.id === txId ? { ...h, status: 'REJECTED' } : h)
@@ -177,16 +195,14 @@ const App: React.FC = () => {
       : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
 
     players.push({
-      id: 'p1', name: user.name, color: colors[0], isBot: false,
-      avatarUrl: user.avatar,
+      id: 'p1', name: user.name, color: colors[0], isBot: false, avatarUrl: user.avatar,
       tokens: [0,1,2,3].map(id => ({ id, color: colors[0], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
     });
 
     for (let i = 1; i < selectedPlayerCount; i++) {
       const bName = getRandomBotName();
       players.push({
-        id: `p${i+1}`, name: bName, color: colors[i], isBot: true,
-        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`,
+        id: `p${i+1}`, name: bName, color: colors[i], isBot: true, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`,
         tokens: [0,1,2,3].map(id => ({ id, color: colors[i], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
       });
     }
@@ -293,6 +309,7 @@ const App: React.FC = () => {
     }, 600);
   }, [animating, gameState, switchTurn]);
 
+  // Bot logic
   useEffect(() => {
     if (view !== 'GAME' || !gameState || gameState.winner || animating || botThinkingRef.current) return;
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
@@ -338,59 +355,61 @@ const App: React.FC = () => {
   );
 
   if (view === 'LOGIN') return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-6 relative overflow-hidden dotted-bg">
-      <div className="bg-[#1e293b] p-8 md:p-12 rounded-[60px] shadow-2xl w-full max-w-md flex flex-col items-center border border-white/10 z-10 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-10 bg-sky-500/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
-        <img src={LOGO_URL} className="w-24 h-24 mb-6 drop-shadow-2xl animate-bounce-slow" />
-        <h2 className="text-3xl font-black text-white mb-2 italic uppercase tracking-tighter text-center">Join Ludo Club</h2>
-        <p className="text-sky-400 font-bold text-[10px] uppercase tracking-[0.2em] mb-10">Win real cash tournaments</p>
+    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-4 relative overflow-hidden dotted-bg">
+      <div className="bg-[#1e293b] rounded-[50px] shadow-[0_30px_100px_rgba(0,0,0,0.5)] w-full max-w-md flex flex-col items-center border border-white/10 z-10 relative overflow-hidden">
+        {/* Banner Section */}
+        <div className="w-full bg-gradient-to-br from-[#1e297a] to-[#0a192f] p-10 flex flex-col items-center border-b border-white/5">
+            <img src={LOGO_URL} className="w-20 h-20 mb-4 drop-shadow-2xl animate-bounce-slow" />
+            <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter text-center">Ludo Money Club</h2>
+            <p className="text-sky-400 font-bold text-[9px] uppercase tracking-[0.3em] mt-2">Earn Real Cash Rewards</p>
+        </div>
+
+        {/* Tab System */}
+        <div className="flex w-full bg-black/20 p-2">
+            <button onClick={() => setAuthMode('LOGIN')} className={`flex-1 py-4 rounded-3xl font-black text-xs uppercase tracking-widest transition-all ${authMode === 'LOGIN' ? 'bg-sky-500 text-white shadow-xl' : 'text-white/20 hover:text-white/50'}`}>Log In</button>
+            <button onClick={() => setAuthMode('SIGNUP')} className={`flex-1 py-4 rounded-3xl font-black text-xs uppercase tracking-widest transition-all ${authMode === 'SIGNUP' ? 'bg-sky-500 text-white shadow-xl' : 'text-white/20 hover:text-white/50'}`}>Sign Up</button>
+        </div>
         
-        <form onSubmit={handleManualSignup} className="w-full space-y-4">
+        <form onSubmit={handleAuthAction} className="w-full p-10 space-y-5">
+          {authMode === 'SIGNUP' && (
+            <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-white/30 tracking-widest ml-4 italic">Display Name</label>
+                <input 
+                  type="text" required value={loginName} onChange={(e) => setLoginName(e.target.value)}
+                  placeholder="আপনার নাম লিখুন" 
+                  className="w-full bg-white/5 border border-white/10 p-5 rounded-[25px] text-white font-bold focus:outline-none focus:border-sky-500 transition-all placeholder:text-white/10" 
+                />
+            </div>
+          )}
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase text-white/40 tracking-widest ml-4">Full Name</label>
+            <label className="text-[10px] font-black uppercase text-white/30 tracking-widest ml-4 italic">Phone Number</label>
             <input 
-              type="text" 
-              required
-              value={loginName}
-              onChange={(e) => setLoginName(e.target.value)}
-              placeholder="আপনার নাম লিখুন" 
-              className="w-full bg-white/5 border border-white/10 p-5 rounded-[25px] text-white font-bold focus:outline-none focus:border-sky-500 transition-all placeholder:text-white/10" 
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase text-white/40 tracking-widest ml-4">Phone Number</label>
-            <input 
-              type="tel" 
-              required
-              maxLength={11}
-              value={loginPhone}
-              onChange={(e) => setLoginPhone(e.target.value.replace(/\D/g, ''))}
+              type="tel" required maxLength={11} value={loginPhone} onChange={(e) => setLoginPhone(e.target.value.replace(/\D/g, ''))}
               placeholder="মোবাইল নম্বর (১১ ডিজিট)" 
               className="w-full bg-white/5 border border-white/10 p-5 rounded-[25px] text-white font-bold focus:outline-none focus:border-sky-500 transition-all placeholder:text-white/10" 
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase text-white/40 tracking-widest ml-4">Password</label>
+            <label className="text-[10px] font-black uppercase text-white/30 tracking-widest ml-4 italic">Passcode</label>
             <input 
-              type="password" 
-              required
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
+              type="password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
               placeholder="পাসওয়ার্ড দিন" 
               className="w-full bg-white/5 border border-white/10 p-5 rounded-[25px] text-white font-bold focus:outline-none focus:border-sky-500 transition-all placeholder:text-white/10" 
             />
           </div>
           <button 
             type="submit" 
-            className="w-full bg-sky-500 text-white py-6 rounded-[30px] font-black shadow-xl border-b-8 border-sky-700 active:translate-y-2 active:border-b-0 transition-all uppercase tracking-widest text-lg mt-6"
+            className="w-full bg-sky-500 text-white py-6 rounded-[30px] font-black shadow-xl border-b-8 border-sky-700 active:translate-y-2 active:border-b-0 transition-all uppercase tracking-[0.2em] text-lg mt-4"
           >
-            Start Playing
+            {authMode === 'LOGIN' ? 'Enter Game' : 'Create Account'}
           </button>
         </form>
-        <p className="mt-8 text-[9px] text-white/30 font-bold text-center uppercase tracking-widest px-4">By signing up, you agree to our fair play policy and age restrictions.</p>
+        <div className="p-6 text-center border-t border-white/5 w-full bg-white/5">
+            <p className="text-[9px] text-white/20 font-bold uppercase tracking-widest">Safe & Secure Payment Gateways Supported</p>
+        </div>
       </div>
       
-      <button onClick={() => setIsAdminAuthOpen(true)} className="mt-12 text-white/20 hover:text-white/80 font-bold uppercase tracking-[0.3em] text-[10px] bg-white/5 px-8 py-3 rounded-full border border-white/5 transition-all">ADMIN DASHBOARD</button>
+      <button onClick={() => setIsAdminAuthOpen(true)} className="mt-10 text-white/10 hover:text-white/50 font-black uppercase tracking-[0.3em] text-[9px] transition-all">STAFF PANEL ACCESS</button>
 
       {isAdminAuthOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-6">
@@ -426,6 +445,7 @@ const App: React.FC = () => {
              <span className="font-black text-sm">{user.balance.toLocaleString()}</span>
              <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-6 h-6 rounded-xl font-black text-lg shadow-lg hover:scale-110 active:scale-95 transition-all flex items-center justify-center">+</button>
           </div>
+          <button onClick={() => { localStorage.removeItem(STORAGE_KEY_USER); window.location.reload(); }} className="p-2 text-white/20 hover:text-white">✕</button>
         </div>
       </div>
       <div className="flex-1 p-6 space-y-6 z-10 overflow-y-auto no-scrollbar pb-32">
@@ -448,7 +468,7 @@ const App: React.FC = () => {
             </div>
         </div>
         <div className="bg-[#1e293b]/40 p-8 rounded-[50px] border border-white/5 backdrop-blur-md">
-            <h3 className="text-[10px] font-black uppercase text-white/30 tracking-[0.3em] mb-6">GLOBAL LEADERBOARD</h3>
+            <h3 className="text-[10px] font-black uppercase text-white/30 tracking-[0.3em] mb-6 italic">GLOBAL LEADERBOARD</h3>
             <div className="space-y-3">
               {[{ name: "Zubair Al-Mahmud", win: 19030 }, { name: "Tanvir Hossain", win: 16580 }, { name: "Anika Tabassum", win: 14440 }].map((winner, i) => (
                 <div key={i} className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-white/5 shadow-lg group hover:border-yellow-500/30 transition-all">
@@ -519,7 +539,7 @@ const App: React.FC = () => {
             </div>
             <div className="flex flex-col items-center gap-8 w-full max-w-xs">
                 <div className="bg-slate-900/80 p-8 rounded-[40px] border border-white/5 text-center w-full shadow-2xl backdrop-blur-xl">
-                    <p className="text-[10px] font-black uppercase text-sky-400 mb-2 tracking-[0.3em]">Current Turn</p>
+                    <p className="text-[10px] font-black uppercase text-sky-400 mb-2 tracking-[0.3em] italic">Current Turn</p>
                     <div className="flex items-center justify-center gap-3">
                         <img src={gameState!.players[gameState!.currentPlayerIndex].avatarUrl} className="w-8 h-8 rounded-xl border border-white/10" />
                         <p className="text-2xl font-black italic uppercase text-yellow-500 truncate">{gameState!.players[gameState!.currentPlayerIndex].name}</p>
