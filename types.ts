@@ -1,3 +1,4 @@
+
 export enum PlayerColor {
   RED = 'RED',
   GREEN = 'GREEN',
@@ -36,6 +37,7 @@ export interface GameState {
   winner: PlayerColor | null;
   log: string[];
   lastAction: string;
+  consecutiveSixes: number; // New field to track consecutive 6s
 }
 
 export interface WalletTransaction {
