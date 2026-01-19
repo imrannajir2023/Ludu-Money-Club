@@ -44,31 +44,43 @@
         animation: bounce-slow 2s infinite ease-in-out;
       }
     </style>
-    <!-- Facebook SDK -->
-    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
-  <script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
-  }
-}
-</script>
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "react": "https://esm.sh/react@^19.2.3",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+      }
+    }
+    </script>
 </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    
+    <!-- FB SDK Script -->
+    <div id="fb-root"></div>
     <script>
       window.fbAsyncInit = function() {
         FB.init({
-          appId      : 'YOUR_APP_ID', // ইউজারের উচিত নিজের FB App ID এখানে বসানো
+          appId      : 'YOUR_APP_ID', // Replace with your Real FB App ID from Developers Console
           cookie     : true,
           xfbml      : true,
           version    : 'v18.0'
         });
+        window.isFBReady = true;
+        console.log("Facebook SDK Initialized Successfully.");
       };
+
+      (function(d, s, id) {
+        var js, fjs = d.getElementsByTagName(s)[0];
+        if (d.getElementById(id)) return;
+        js = d.createElement(s); js.id = id;
+        js.src = "https://connect.facebook.net/en_US/sdk.js";
+        fjs.parentNode.insertBefore(js, fjs);
+      }(document, 'script', 'facebook-jssdk'));
     </script>
+    
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

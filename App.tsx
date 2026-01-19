@@ -39,50 +39,38 @@ const App: React.FC = () => {
 
   const botThinkingRef = useRef(false);
 
-  // Load initial data and Setup Real-time Sync
+  // Sync logic across tabs
   useEffect(() => {
     const savedUser = localStorage.getItem(STORAGE_KEY_USER);
     const savedTx = localStorage.getItem(STORAGE_KEY_TX);
     
-    if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      setUser(parsedUser);
-    }
+    if (savedUser) setUser(JSON.parse(savedUser));
     if (savedTx) setPendingTransactions(JSON.parse(savedTx));
 
-    // This listener makes the "Real-time" work across different tabs
     const handleSync = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY_TX && e.newValue) {
         setPendingTransactions(JSON.parse(e.newValue));
-        // Play a notification sound if a new request arrives
         const newArr = JSON.parse(e.newValue);
         const oldArr = JSON.parse(e.oldValue || '[]');
-        if (newArr.length > oldArr.length) {
-          soundManager.play('six');
-        }
+        if (newArr.length > oldArr.length) soundManager.play('six');
       }
-      if (e.key === STORAGE_KEY_USER && e.newValue) {
-        setUser(JSON.parse(e.newValue));
-      }
+      if (e.key === STORAGE_KEY_USER && e.newValue) setUser(JSON.parse(e.newValue));
     };
 
     window.addEventListener('storage', handleSync);
     return () => window.removeEventListener('storage', handleSync);
   }, []);
 
-  // Sync user state to localStorage
   useEffect(() => {
     if (user.name !== "Guest Player") {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     }
   }, [user]);
 
-  // Sync transactions to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(pendingTransactions));
   }, [pendingTransactions]);
 
-  // Splash Loading
   useEffect(() => {
     if (view === 'SPLASH') {
       const interval = setInterval(() => {
@@ -102,47 +90,71 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Real Facebook Login Handler
+  // Robust Facebook Login Handler
   const handleFacebookLogin = () => {
     soundManager.play('click');
     
-    // Check if FB SDK is loaded
-    // FIX: Using type assertion to avoid window.FB property error
     const FB = (window as any).FB;
-    if (FB) {
+    const isSDKReady = (window as any).isFBReady;
+
+    // ERROR 2 FIX: Check if SDK is initialized
+    if (!isSDKReady || !FB) {
+      console.warn("FB SDK is not ready yet.");
+      alert("ফেসবুক লোড হতে একটু সময় নিচ্ছে, কয়েক সেকেন্ড পর আবার ক্লিক করুন।");
+      return;
+    }
+
+    // ERROR 1 FIX: HTTPS Protocol Enforcement Check
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (window.location.protocol !== 'https:' && !isLocalhost) {
+      alert("ফেসবুক লগইন এর জন্য HTTPS সিকিউরিটি প্রয়োজন। বর্তমানে এটি সাধারণ HTTP পেজ, তাই গেমটি সরাসরি ডেমো প্রোফাইল মোডে শুরু হচ্ছে।");
+      performDemoLogin();
+      return;
+    }
+
+    try {
       FB.login((response: any) => {
-        if (response.authResponse) {
-          // Get user details from FB
+        if (response.status === 'connected') {
+          console.log('FB Auth Successful, fetching user details...');
           FB.api('/me', { fields: 'name,picture.type(large)' }, (userData: any) => {
-            const fbUser: UserProfile = {
-              name: userData.name,
-              balance: 500, // Starting bonus
-              avatar: userData.picture?.data?.url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.name}`,
-              stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
-              history: []
-            };
-            setUser(fbUser);
-            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(fbUser));
-            setView('LOBBY');
+            if (userData && !userData.error) {
+              const fbUser: UserProfile = {
+                name: userData.name,
+                balance: 500, // Initial Bonus
+                avatar: userData.picture?.data?.url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.name}`,
+                stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
+                history: []
+              };
+              setUser(fbUser);
+              setView('LOBBY');
+              soundManager.play('win');
+            } else {
+              console.error("Failed to fetch FB profile details", userData.error);
+              performDemoLogin();
+            }
           });
         } else {
-          console.log('User cancelled login or did not fully authorize.');
+          console.warn("User cancelled login or didn't authorize.");
+          alert("লগইন বাতিল করা হয়েছে।");
         }
       }, { scope: 'public_profile' });
-    } else {
-      // If SDK failed to load (local testing), use a dummy real login
-      alert("Facebook SDK not loaded. Using demo login.");
-      const demoUser: UserProfile = {
-        name: "Araf Ahmed (FB)",
-        balance: 1500,
-        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Araf",
-        stats: { totalGames: 12, wins: 5, totalWinnings: 4500 },
-        history: []
-      };
-      setUser(demoUser);
-      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(demoUser));
-      setView('LOBBY');
+    } catch (err) {
+      console.error("FB Login Runtime Error:", err);
+      alert("ফেসবুক লগইন সিস্টেমে সমস্যা হয়েছে। ডেমো মোডে লগইন করা হচ্ছে।");
+      performDemoLogin();
     }
+  };
+
+  const performDemoLogin = () => {
+    const demoUser: UserProfile = {
+      name: "Imran Hossain (FB Demo)",
+      balance: 1000,
+      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Imran",
+      stats: { totalGames: 5, wins: 2, totalWinnings: 2000 },
+      history: []
+    };
+    setUser(demoUser);
+    setView('LOBBY');
   };
 
   const handleAdminAuth = (e: React.FormEvent) => {
@@ -152,19 +164,15 @@ const App: React.FC = () => {
       setIsAdminAuthOpen(false);
       setView('ADMIN');
     } else {
-      alert("Invalid Admin Credentials!");
+      alert("ভুল অ্যাডমিন তথ্য!");
     }
   };
 
   const handleNewTransaction = (tx: PendingTransaction) => {
-    if (tx.type === 'WITHDRAW') {
-      setUser(prev => ({ ...prev, balance: prev.balance - tx.amount }));
-    }
+    if (tx.type === 'WITHDRAW') setUser(prev => ({ ...prev, balance: prev.balance - tx.amount }));
     const updatedTx = [...pendingTransactions, tx];
     setPendingTransactions(updatedTx);
-    // Real-time Trigger: Manually dispatch storage event for same-window listeners if needed
     localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(updatedTx));
-    
     setUser(prev => ({ ...prev, history: [tx, ...prev.history] }));
   };
 
@@ -198,7 +206,7 @@ const App: React.FC = () => {
   };
 
   const initGame = () => {
-    if (user.balance < selectedStake) return alert("Insufficient Balance!");
+    if (user.balance < selectedStake) return alert("ব্যালেন্স পর্যাপ্ত নয়!");
     setUser(prev => ({ ...prev, balance: prev.balance - selectedStake }));
     const players: Player[] = [];
     
@@ -223,12 +231,11 @@ const App: React.FC = () => {
 
     setGameState({
       players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null,
-      log: ["Game Started"], lastAction: "", consecutiveSixes: 0
+      log: ["খেলা শুরু হলো"], lastAction: "", consecutiveSixes: 0
     });
     setView('GAME');
   };
 
-  // Turn switching and Move Logic (Same as before but refined)
   const switchTurn = useCallback((bonus: boolean) => {
     setGameState(prev => {
       if (!prev) return null;
@@ -290,7 +297,7 @@ const App: React.FC = () => {
     setTimeout(() => {
       const hasWon = player.tokens.every(t => t.state === TokenState.WIN);
       if (hasWon) {
-        alert(`${player.name} wins the match!`);
+        alert(`${player.name} জয়লাভ করেছে!`);
         setView('LOBBY');
         return;
       }
@@ -324,7 +331,6 @@ const App: React.FC = () => {
     }, 600);
   }, [animating, gameState, switchTurn]);
 
-  // Bot AI Controller Effect
   useEffect(() => {
     if (view !== 'GAME' || !gameState || gameState.winner || animating || botThinkingRef.current) return;
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
@@ -351,9 +357,7 @@ const App: React.FC = () => {
              );
           });
           if (captureMove) bestToken = captureMove;
-          else {
-            bestToken = possibleMoves.reduce((prev, curr) => (curr.distanceTraveled > prev.distanceTraveled) ? curr : prev);
-          }
+          else bestToken = possibleMoves.reduce((prev, curr) => (curr.distanceTraveled > prev.distanceTraveled) ? curr : prev);
           moveToken(bestToken.id);
           botThinkingRef.current = false;
         }, 1200);
@@ -363,7 +367,6 @@ const App: React.FC = () => {
     }
   }, [view, gameState, animating, rollDice, moveToken, switchTurn]);
 
-  // Views Logic
   if (view === 'SPLASH') return (
     <div className="h-screen w-full dotted-bg flex flex-col items-center justify-center bg-[#0a192f]">
       <img src={LOGO_URL} className="w-48 h-48 animate-bounce-slow" />
@@ -374,10 +377,9 @@ const App: React.FC = () => {
 
   if (view === 'LOGIN') return (
     <div className="h-screen w-full bg-[#1877F2] flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-[-100px] left-[-100px] w-[300px] h-[300px] bg-white/10 rounded-full blur-[80px]"></div>
-      <div className="bg-white p-10 rounded-[60px] shadow-2xl w-full max-sm flex flex-col items-center border-[12px] border-white/40 z-10">
+      <div className="bg-white p-10 rounded-[60px] shadow-2xl w-full max-w-sm flex flex-col items-center border-[12px] border-white/40 z-10">
         <img src={LOGO_URL} className="w-32 h-32 mb-8 drop-shadow-2xl animate-bounce-slow" />
-        <h2 className="text-4xl font-black text-gray-800 mb-2 italic uppercase tracking-tighter">Ludo Money</h2>
+        <h2 className="text-4xl font-black text-gray-800 mb-2 italic uppercase tracking-tighter text-center">Ludo Money</h2>
         <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.2em] mb-12">Earn Real Cash Daily</p>
         <button onClick={handleFacebookLogin} className="w-full bg-[#1877F2] text-white py-6 rounded-[30px] font-black shadow-xl flex items-center justify-center gap-4 active:scale-95 transition-all hover:brightness-110">
            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
@@ -401,22 +403,14 @@ const App: React.FC = () => {
   );
 
   if (view === 'ADMIN') return (
-    <AdminPortal 
-      user={user} 
-      pendingTransactions={pendingTransactions} 
-      onUpdateUser={(u) => setUser(prev => ({...prev, balance: u.balance}))} 
-      onApproveTransaction={approveTransaction}
-      onRejectTransaction={rejectTransaction}
-      onExit={() => setView('LOBBY')} 
-    />
+    <AdminPortal user={user} pendingTransactions={pendingTransactions} onUpdateUser={(u) => setUser(prev => ({...prev, balance: u.balance}))} onApproveTransaction={approveTransaction} onRejectTransaction={rejectTransaction} onExit={() => setView('LOBBY')} />
   );
 
-  // Remaining Views (LOBBY, MATCH_CONFIG, MATCHING, GAME) remain identical but integrated with the new state...
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a192f] flex flex-col relative text-white select-none overflow-hidden font-fredoka">
       <div className="p-5 flex justify-between items-center z-50 bg-[#0f172a] shadow-2xl border-b border-white/5">
         <div className="flex items-center gap-3">
-          <img src={user.avatar} className="w-11 h-11 rounded-2xl bg-white border-2 border-yellow-500 shadow-lg" />
+          <img src={user.avatar} className="w-11 h-11 rounded-2xl bg-white border-2 border-yellow-500 shadow-lg object-cover" />
           <div className="flex flex-col">
             <span className="font-black text-sm tracking-tight">{user.name}</span>
             <span className="text-[9px] text-green-400 font-black uppercase tracking-widest flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>ONLINE</span>
@@ -519,7 +513,7 @@ const App: React.FC = () => {
             <div className="w-full max-w-[520px] shadow-[0_50px_100px_rgba(0,0,0,0.6)] rounded-[60px] overflow-hidden border-[16px] border-white/5 bg-white/5 backdrop-blur-sm flex-shrink-0">
                 <LudoBoard players={gameState!.players} currentPlayerColor={gameState!.players[gameState!.currentPlayerIndex].color} validTokens={[]} onTokenClick={(t) => moveToken(t.id)} />
             </div>
-            <div className="flex flex-col items-center gap-8 w-full max-xs">
+            <div className="flex flex-col items-center gap-8 w-full max-w-xs">
                 <div className="bg-slate-900/80 p-8 rounded-[40px] border border-white/5 text-center w-full shadow-2xl backdrop-blur-xl">
                     <p className="text-[10px] font-black uppercase text-sky-400 mb-2 tracking-[0.3em]">Current Turn</p>
                     <div className="flex items-center justify-center gap-3">
