@@ -1,11 +1,16 @@
 
-import React, { useState, useEffect } from 'react';
-import { UserProfile, PendingTransaction } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { UserProfile, PendingTransaction, LiveMatch, PlayerColor } from '../types';
 import { soundManager } from '../services/soundService';
+
+const STORAGE_KEY_LIVE_MATCHES = "LUDO_LIVE_MATCHES";
 
 interface AdminPortalProps {
   user: UserProfile;
+  allUsers: UserProfile[];
+  onUpdateUsersDB: (users: UserProfile[]) => void;
   pendingTransactions: PendingTransaction[];
+  liveMatches: LiveMatch[];
   onUpdateUser: (u: UserProfile) => void;
   onApproveTransaction: (tx: PendingTransaction) => void;
   onRejectTransaction: (txId: string) => void;
@@ -18,16 +23,71 @@ const METHOD_LOGOS: Record<string, string> = {
   'rocket': 'https://www.findlogovector.com/wp-content/uploads/2019/03/dutch-bangla-bank-rocket-logo-vector.png'
 };
 
-const AdminPortal: React.FC<AdminPortalProps> = ({ user, pendingTransactions, onUpdateUser, onApproveTransaction, onRejectTransaction, onExit }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'transactions' | 'settings'>('dashboard');
+const AdminPortal: React.FC<AdminPortalProps> = ({ 
+  user, 
+  allUsers, 
+  onUpdateUsersDB, 
+  pendingTransactions, 
+  liveMatches,
+  onApproveTransaction, 
+  onRejectTransaction, 
+  onExit 
+}) => {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'transactions' | 'arena' | 'settings'>('dashboard');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [adjustAmount, setAdjustAmount] = useState<string>('');
+  const [adjustType, setAdjustType] = useState<'add' | 'subtract'>('add');
   
   const pendingCount = pendingTransactions.length;
+  const arenaCount = liveMatches.length;
 
   useEffect(() => {
-    if (pendingCount > 0) {
-      soundManager.play('six');
-    }
+    if (pendingCount > 0) soundManager.play('six');
   }, [pendingCount]);
+
+  const filteredUsers = useMemo(() => {
+    return allUsers.filter(u => 
+      u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      u.phone?.includes(searchTerm)
+    );
+  }, [allUsers, searchTerm]);
+
+  const handleAdjustBalance = () => {
+    if (!selectedUser || !adjustAmount) return;
+    const amount = parseFloat(adjustAmount);
+    if (isNaN(amount) || amount <= 0) return alert("Please enter a valid positive amount.");
+
+    const updatedDB = allUsers.map(u => {
+      if (u.phone === selectedUser.phone) {
+        const newBalance = adjustType === 'add' ? u.balance + amount : u.balance - amount;
+        return { ...u, balance: Math.max(0, newBalance) };
+      }
+      return u;
+    });
+
+    onUpdateUsersDB(updatedDB);
+    setSelectedUser(updatedDB.find(u => u.phone === selectedUser.phone) || null);
+    setAdjustAmount('');
+    alert("Balance adjusted successfully!");
+    soundManager.play('win');
+  };
+
+  const handleTerminateMatch = (matchId: string) => {
+    if(!confirm("Terminate this match? Players will be kicked to Lobby.")) return;
+    const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
+    const updated = matches.map(m => m.matchId === matchId ? { ...m, status: 'TERMINATED' } as LiveMatch : m);
+    localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(updated));
+    soundManager.play('click');
+  };
+
+  const handleOverrideRoll = (matchId: string, val: number) => {
+    const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
+    const updated = matches.map(m => m.matchId === matchId ? { ...m, nextRollOverride: val } as LiveMatch : m);
+    localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(updated));
+    alert(`Next dice roll for match set to ${val}!`);
+    soundManager.play('win');
+  };
 
   return (
     <div className="h-screen w-full bg-[#020617] flex flex-col text-white font-fredoka overflow-hidden">
@@ -37,23 +97,23 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ user, pendingTransactions, on
             <span className="text-2xl animate-pulse">🛡️</span>
           </div>
           <div>
-            <h1 className="text-xl font-black uppercase tracking-tighter italic">Ludo Money Admin Console</h1>
+            <h1 className="text-xl font-black uppercase tracking-tighter italic">Ludo Club Admin Console</h1>
             <p className="text-[10px] font-black text-sky-400 uppercase tracking-[0.3em] flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                LIVE SERVER CONNECTED
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> SERVER LIVE
             </p>
           </div>
         </div>
-        <button onClick={onExit} className="bg-red-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs border-b-4 border-red-800 active:border-b-0 active:translate-y-1 transition-all">Close Dashboard</button>
+        <button onClick={onExit} className="bg-red-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs border-b-4 border-red-800 active:border-b-0 active:translate-y-1 transition-all">Close Admin</button>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-72 bg-slate-900 border-r border-white/5 flex flex-col p-6 gap-3">
+        <div className="w-72 bg-slate-900 border-r border-white/5 flex flex-col p-6 gap-3 shrink-0">
            {[
              { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-             { id: 'users', label: 'User Management', icon: '👥' },
-             { id: 'transactions', label: 'Live Requests', icon: '💸', badge: pendingCount > 0 ? pendingCount : null },
-             { id: 'settings', label: 'Server Setup', icon: '⚙️' }
+             { id: 'arena', label: 'Live Arena', icon: '🏟️', badge: arenaCount > 0 ? arenaCount : null },
+             { id: 'users', label: 'User Hub', icon: '👥' },
+             { id: 'transactions', label: 'Requests', icon: '💸', badge: pendingCount > 0 ? pendingCount : null },
+             { id: 'settings', label: 'Setup', icon: '⚙️' }
            ].map(tab => (
              <button 
                key={tab.id}
@@ -62,7 +122,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ user, pendingTransactions, on
              >
                <div className="flex items-center gap-4"><span>{tab.icon}</span> {tab.label}</div>
                {tab.badge && (
-                 <span className="bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] animate-bounce shadow-lg shadow-red-500/40">
+                 <span className="bg-red-500 text-white px-2 py-0.5 rounded-full flex items-center justify-center text-[10px] animate-bounce shadow-lg shadow-red-500/40">
                    {tab.badge}
                  </span>
                )}
@@ -74,28 +134,125 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ user, pendingTransactions, on
           {activeTab === 'dashboard' && (
             <div className="space-y-10 animate-in slide-in-from-bottom-8 duration-700">
                <div className="grid grid-cols-3 gap-8">
-                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-2xl group hover:border-sky-500/20 transition-all">
-                     <p className="text-[11px] font-black uppercase text-sky-400 mb-4 tracking-widest">Total Net Profit</p>
-                     <h2 className="text-5xl font-black text-yellow-500 tracking-tighter">৳ 284,500</h2>
+                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-2xl">
+                     <p className="text-[11px] font-black uppercase text-sky-400 mb-4 tracking-widest">Global Vault</p>
+                     <h2 className="text-5xl font-black text-yellow-500 tracking-tighter">৳ {allUsers.reduce((acc, u) => acc + u.balance, 0).toLocaleString()}</h2>
                   </div>
-                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-2xl group hover:border-green-500/20 transition-all">
-                     <p className="text-[11px] font-black uppercase text-green-400 mb-4 tracking-widest">Global Players</p>
-                     <h2 className="text-5xl font-black text-white tracking-tighter">1,242</h2>
+                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-2xl">
+                     <p className="text-[11px] font-black uppercase text-green-400 mb-4 tracking-widest">Players Online</p>
+                     <h2 className="text-5xl font-black text-white tracking-tighter">{allUsers.length}</h2>
                   </div>
-                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-2xl group hover:border-red-500/20 transition-all">
-                     <p className="text-[11px] font-black uppercase text-red-400 mb-4 tracking-widest">Pending Syncs</p>
-                     <h2 className={`text-5xl font-black tracking-tighter ${pendingCount > 0 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{pendingCount}</h2>
+                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-2xl">
+                     <p className="text-[11px] font-black uppercase text-red-400 mb-4 tracking-widest">Active Battles</p>
+                     <h2 className="text-5xl font-black text-white tracking-tighter">{arenaCount}</h2>
                   </div>
                </div>
-               
-               <div className="bg-slate-800/20 p-10 rounded-[60px] border border-white/5">
-                   <h3 className="text-xl font-black mb-8 uppercase italic text-white/50 tracking-widest">Recent Activity Log</h3>
-                   <div className="space-y-4">
-                       {[1,2,3].map(i => (
-                           <div key={i} className="flex items-center gap-4 text-xs font-bold text-white/20 border-b border-white/5 pb-4">
-                               <span className="text-green-500">●</span> System verified user login from IP 103.22.XX.XX
+            </div>
+          )}
+
+          {activeTab === 'arena' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+               <div className="flex justify-between items-end mb-8">
+                   <div>
+                       <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Live Arena Monitoring</h3>
+                       <p className="text-xs font-bold text-white/30 uppercase mt-2">View and Control currently active matches</p>
+                   </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-8">
+                  {liveMatches.length === 0 ? (
+                    <div className="col-span-2 p-32 text-center opacity-10">
+                       <span className="text-[100px] block mb-8">🏟️</span>
+                       <p className="font-black uppercase tracking-[0.5em] italic text-2xl">Arena is Empty</p>
+                    </div>
+                  ) : (
+                    liveMatches.map(match => (
+                        <div key={match.matchId} className="bg-slate-800/40 rounded-[45px] border border-white/5 p-8 space-y-6 shadow-2xl relative overflow-hidden group">
+                           {match.nextRollOverride && <div className="absolute top-4 right-4 bg-yellow-500 text-black px-4 py-1 rounded-full text-[10px] font-black animate-pulse">NEXT: {match.nextRollOverride}</div>}
+                           <div className="flex justify-between items-start">
+                               <div>
+                                   <p className="text-[10px] font-black uppercase tracking-widest text-sky-400 mb-1">{match.matchId}</p>
+                                   <h4 className="text-xl font-black text-white italic">Table Stake: ৳{match.stake}</h4>
+                               </div>
+                               <button onClick={() => handleTerminateMatch(match.matchId)} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white p-3 rounded-2xl transition-all font-black text-xs uppercase">TERMINATE</button>
+                           </div>
+
+                           <div className="space-y-4">
+                               <p className="text-[10px] font-black uppercase text-white/30 tracking-widest">Players Performance</p>
+                               <div className="grid grid-cols-2 gap-4">
+                                   {match.players.map((p, idx) => (
+                                       <div key={idx} className="bg-black/20 p-4 rounded-3xl flex items-center justify-between">
+                                           <div className="flex items-center gap-3">
+                                               <div className={`w-3 h-3 rounded-full ${p.color === PlayerColor.RED ? 'bg-red-500' : p.color === PlayerColor.GREEN ? 'bg-green-500' : p.color === PlayerColor.YELLOW ? 'bg-yellow-400' : 'bg-blue-500'}`}></div>
+                                               <span className={`text-sm font-black ${match.currentPlayer === p.name ? 'text-white underline' : 'text-white/40'}`}>{p.name}</span>
+                                           </div>
+                                           <span className="font-black text-sky-400">{p.score}/4</span>
+                                       </div>
+                                   ))}
+                               </div>
+                           </div>
+
+                           <div className="pt-4 border-t border-white/5 space-y-4">
+                               <p className="text-[10px] font-black uppercase text-yellow-500 tracking-widest text-center">Rig Game: Set Next Roll</p>
+                               <div className="flex gap-2 justify-center">
+                                   {[1, 2, 3, 4, 5, 6].map(v => (
+                                       <button key={v} onClick={() => handleOverrideRoll(match.matchId, v)} className="w-10 h-10 bg-white/5 hover:bg-yellow-500 hover:text-black rounded-xl font-black transition-all border border-white/10">{v}</button>
+                                   ))}
+                               </div>
+                           </div>
+                        </div>
+                    ))
+                  )}
+               </div>
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+               <div className="flex flex-col gap-4">
+                   <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">User Management</h3>
+                   <div className="relative">
+                       <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search Players..." className="w-full bg-slate-900 border border-white/10 p-5 rounded-3xl outline-none focus:border-sky-500 transition-all font-bold placeholder:text-white/10" />
+                       <span className="absolute right-6 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
+                   </div>
+               </div>
+
+               <div className="grid grid-cols-12 gap-8">
+                   <div className="col-span-5 bg-slate-800/30 rounded-[40px] border border-white/5 overflow-hidden max-h-[600px] overflow-y-auto no-scrollbar">
+                       {filteredUsers.length === 0 ? <div className="p-20 text-center opacity-20">No users</div> : filteredUsers.map(u => (
+                           <div key={u.phone} onClick={() => setSelectedUser(u)} className={`p-6 border-b border-white/5 flex items-center gap-4 cursor-pointer transition-all hover:bg-white/5 ${selectedUser?.phone === u.phone ? 'bg-sky-500/10 border-l-4 border-l-sky-500' : ''}`}>
+                               <img src={u.avatar} className="w-12 h-12 rounded-full border border-white/10" alt="" />
+                               <div className="flex-1">
+                                   <h4 className="font-black text-white tracking-tight">{u.name}</h4>
+                                   <p className="text-xs font-bold text-white/30">{u.phone}</p>
+                               </div>
+                               <div className="text-right"><p className="font-black text-yellow-500 italic">৳ {u.balance.toLocaleString()}</p></div>
                            </div>
                        ))}
+                   </div>
+                   <div className="col-span-7">
+                       {selectedUser ? (
+                           <div className="bg-slate-800/30 rounded-[50px] border border-white/5 p-10 space-y-8">
+                               <div className="flex items-center gap-6">
+                                   <img src={selectedUser.avatar} className="w-24 h-24 rounded-full border-4 border-white/10 shadow-2xl" alt="" />
+                                   <div>
+                                       <h3 className="text-3xl font-black tracking-tighter uppercase text-white">{selectedUser.name}</h3>
+                                       <p className="text-sm font-black text-sky-400 tracking-widest uppercase">{selectedUser.phone}</p>
+                                   </div>
+                               </div>
+                               <div className="bg-sky-500/5 p-8 rounded-[40px] border border-sky-500/10 space-y-6">
+                                   <h4 className="font-black uppercase italic text-sky-400 text-sm">Adjust Player Balance</h4>
+                                   <div className="flex gap-4">
+                                       <button onClick={() => setAdjustType('add')} className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase border-2 transition-all ${adjustType === 'add' ? 'bg-sky-500 border-sky-400 text-white shadow-lg' : 'bg-white/5 border-transparent text-white/20'}`}>Add</button>
+                                       <button onClick={() => setAdjustType('subtract')} className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase border-2 transition-all ${adjustType === 'subtract' ? 'bg-red-500 border-red-400 text-white shadow-lg' : 'bg-white/5 border-transparent text-white/20'}`}>Subtract</button>
+                                   </div>
+                                   <div className="flex gap-4">
+                                       <input type="number" value={adjustAmount} onChange={(e) => setAdjustAmount(e.target.value)} placeholder="Amount" className="flex-1 bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-xl text-yellow-500" />
+                                       <button onClick={handleAdjustBalance} className="px-10 bg-green-500 text-black rounded-2xl font-black text-sm uppercase">Apply</button>
+                                   </div>
+                               </div>
+                           </div>
+                       ) : <div className="h-full flex items-center justify-center opacity-10 font-black uppercase tracking-widest">Select a Player</div>}
                    </div>
                </div>
             </div>
@@ -104,49 +261,23 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ user, pendingTransactions, on
           {activeTab === 'transactions' && (
             <div className="space-y-8 animate-in slide-in-from-bottom-8 duration-700">
                <div className="flex justify-between items-end mb-8">
-                   <div>
-                       <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Live Requests</h3>
-                       <p className="text-xs font-bold text-white/30 uppercase mt-2">Manage all incoming deposits and withdrawals</p>
-                   </div>
-                   {pendingCount > 0 && <span className="bg-red-500 text-white text-[11px] px-6 py-2 rounded-full font-black animate-pulse shadow-xl shadow-red-500/20">WAITING FOR ACTION</span>}
+                   <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Live Requests</h3>
+                   {pendingCount > 0 && <span className="bg-red-500 text-white text-[11px] px-6 py-2 rounded-full font-black animate-pulse">ACTION REQUIRED</span>}
                </div>
-
-               <div className="bg-slate-800/30 rounded-[60px] border border-white/5 overflow-hidden shadow-2xl backdrop-blur-xl">
-                  {pendingTransactions.length === 0 ? (
-                    <div className="p-32 text-center opacity-10">
-                       <span className="text-[100px] block mb-8">📭</span>
-                       <p className="font-black uppercase tracking-[0.5em] italic text-2xl">Inbox Empty</p>
-                    </div>
-                  ) : (
+               <div className="bg-slate-800/30 rounded-[60px] border border-white/5 overflow-hidden shadow-2xl">
+                  {pendingTransactions.length === 0 ? <div className="p-32 text-center opacity-10 font-black uppercase italic text-2xl">Inbox Empty</div> : (
                     <table className="w-full text-left">
-                       <thead className="bg-slate-900/80 border-b border-white/5 text-[11px] font-black uppercase tracking-[0.2em] text-white/40">
-                          <tr>
-                             <th className="p-8">Player / Type</th>
-                             <th className="p-8">Amount</th>
-                             <th className="p-8">Gateway</th>
-                             <th className="p-8">Reference/Phone</th>
-                             <th className="p-8">Actions</th>
-                          </tr>
+                       <thead className="bg-slate-900/80 border-b border-white/5 text-[11px] font-black uppercase text-white/40">
+                          <tr><th className="p-8">Player / Type</th><th className="p-8">Amount</th><th className="p-8">Gateway</th><th className="p-8">Ref</th><th className="p-8">Actions</th></tr>
                        </thead>
                        <tbody className="divide-y divide-white/5">
                           {pendingTransactions.map((tx) => (
                              <tr key={tx.id} className="hover:bg-white/5 transition-all">
-                                <td className="p-8">
-                                   <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase mb-2 block w-fit shadow-lg ${tx.type === 'DEPOSIT' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>{tx.type}</span>
-                                   <div className="font-black text-lg tracking-tight text-white/80">{tx.userName}</div>
-                                </td>
-                                <td className="p-8 font-black text-yellow-500 italic text-2xl tracking-tighter">৳ {tx.amount.toLocaleString()}</td>
-                                <td className="p-8"><img src={METHOD_LOGOS[tx.method]} className="h-10 object-contain drop-shadow-lg" alt={tx.method} /></td>
-                                <td className="p-8">
-                                   <div className="text-[11px] font-black uppercase text-sky-400 mb-1">{tx.trxId || 'WITHDRAWAL REQ'}</div>
-                                   <div className="text-xs font-bold text-white/40">{tx.phone}</div>
-                                </td>
-                                <td className="p-8">
-                                   <div className="flex gap-4">
-                                       <button onClick={() => { soundManager.play('win'); onApproveTransaction(tx); }} className="bg-green-500 text-black px-8 py-3 rounded-2xl text-[11px] font-black uppercase shadow-2xl border-b-4 border-green-800 active:border-b-0 active:translate-y-1 transition-all">Verify & Approve</button>
-                                       <button onClick={() => { soundManager.play('click'); onRejectTransaction(tx.id); }} className="bg-red-500/10 text-red-500 border border-red-500/20 px-8 py-3 rounded-2xl text-[11px] font-black uppercase hover:bg-red-500 hover:text-white transition-all">Reject</button>
-                                   </div>
-                                </td>
+                                <td className="p-8"><span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase mb-2 block w-fit ${tx.type === 'DEPOSIT' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>{tx.type}</span><div className="font-black text-lg text-white/80">{tx.userName}</div></td>
+                                <td className="p-8 font-black text-yellow-500 italic text-2xl">৳ {tx.amount.toLocaleString()}</td>
+                                <td className="p-8"><img src={METHOD_LOGOS[tx.method]} className="h-10 object-contain" alt="" /></td>
+                                <td className="p-8"><div className="text-[11px] font-black uppercase text-sky-400">{tx.trxId || 'WITHDRAW'}</div><div className="text-xs font-bold text-white/40">{tx.phone}</div></td>
+                                <td className="p-8"><div className="flex gap-4"><button onClick={() => onApproveTransaction(tx)} className="bg-green-500 text-black px-8 py-3 rounded-2xl text-[11px] font-black uppercase">Approve</button><button onClick={() => onRejectTransaction(tx.id)} className="bg-red-500/10 text-red-500 px-8 py-3 rounded-2xl text-[11px] font-black uppercase">Reject</button></div></td>
                              </tr>
                           ))}
                        </tbody>

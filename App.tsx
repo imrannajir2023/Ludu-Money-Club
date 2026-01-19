@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction } from './types';
+import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction, LiveMatch } from './types';
 import LudoBoard from './components/LudoBoard';
 import WalletModal from './components/WalletModal';
 import AdminPortal from './components/AdminPortal';
@@ -13,6 +13,7 @@ const STORAGE_KEY_USER = "LUDO_USER_PROFILE";
 const STORAGE_KEY_USERS_DB = "LUDO_USERS_DATABASE"; 
 const STORAGE_KEY_TXS = "LUDO_PENDING_TRANSACTIONS";
 const STORAGE_KEY_ADMIN = "LUDO_ADMIN_SESSION";
+const STORAGE_KEY_LIVE_MATCHES = "LUDO_LIVE_MATCHES";
 
 const INITIAL_USER: UserProfile = {
   name: "Guest Player",
@@ -29,10 +30,12 @@ const App: React.FC = () => {
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP' | 'ADMIN_LOGIN'>('LOGIN');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [user, setUser] = useState<UserProfile>(INITIAL_USER);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isWalletOpen, setWalletOpen] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
+  const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
   
   const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -40,6 +43,7 @@ const App: React.FC = () => {
   
   const [selectedStake, setSelectedStake] = useState(100);
   const [selectedPlayerCount, setSelectedPlayerCount] = useState(4);
+  const matchIdRef = useRef<string | null>(null);
 
   const botActionTimeoutRef = useRef<number | null>(null);
 
@@ -51,22 +55,54 @@ const App: React.FC = () => {
       
       const savedTxs = localStorage.getItem(STORAGE_KEY_TXS);
       if (savedTxs) setPendingTransactions(JSON.parse(savedTxs));
+
+      const savedUsersDB = localStorage.getItem(STORAGE_KEY_USERS_DB);
+      if (savedUsersDB) setAllUsers(JSON.parse(savedUsersDB));
+
+      const savedMatches = localStorage.getItem(STORAGE_KEY_LIVE_MATCHES);
+      if (savedMatches) setLiveMatches(JSON.parse(savedMatches));
     };
 
     loadData();
 
-    // Listener for real-time updates across tabs (e.g. User sends, Admin receives)
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY_TXS) {
-        if (e.newValue) setPendingTransactions(JSON.parse(e.newValue));
-      }
-      if (e.key === STORAGE_KEY_USER && e.newValue) {
-        setUser(JSON.parse(e.newValue));
+      if (e.key === STORAGE_KEY_TXS && e.newValue) setPendingTransactions(JSON.parse(e.newValue));
+      if (e.key === STORAGE_KEY_USER && e.newValue) setUser(JSON.parse(e.newValue));
+      if (e.key === STORAGE_KEY_USERS_DB && e.newValue) setAllUsers(JSON.parse(e.newValue));
+      if (e.key === STORAGE_KEY_LIVE_MATCHES && e.newValue) {
+        const matches: LiveMatch[] = JSON.parse(e.newValue);
+        setLiveMatches(matches);
+        
+        // Check if admin terminated current game
+        if (matchIdRef.current) {
+          const myMatch = matches.find(m => m.matchId === matchIdRef.current);
+          if (myMatch && myMatch.status === 'TERMINATED') {
+            alert("Match terminated by Admin!");
+            matchIdRef.current = null;
+            setView('LOBBY');
+          }
+        }
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Sync current match state to global store
+  const syncMatchState = useCallback((currentGS: GameState) => {
+    if (!matchIdRef.current) return;
+    const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
+    const matchIdx = matches.findIndex(m => m.matchId === matchIdRef.current);
+    if (matchIdx !== -1) {
+      matches[matchIdx].currentPlayer = currentGS.players[currentGS.currentPlayerIndex].name;
+      matches[matchIdx].players = currentGS.players.map(p => ({
+        name: p.name,
+        color: p.color,
+        score: p.tokens.filter(t => t.state === TokenState.WIN).length
+      }));
+      localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(matches));
+    }
   }, []);
 
   // 2. Persistent View Redirection in Splash
@@ -139,6 +175,7 @@ const App: React.FC = () => {
       localStorage.setItem(STORAGE_KEY_USERS_DB, JSON.stringify(usersDB));
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newUser));
       setUser(newUser);
+      setAllUsers(usersDB);
       setView('LOBBY');
     } else {
       const existingUser = usersDB.find(u => u.phone === loginPhone && u.password === loginPassword);
@@ -147,6 +184,16 @@ const App: React.FC = () => {
         setUser(existingUser);
         setView('LOBBY');
       } else alert("ভুল ফোন নম্বর বা পাসওয়ার্ড!");
+    }
+  };
+
+  const handleUpdateUsersDB = (updatedUsers: UserProfile[]) => {
+    localStorage.setItem(STORAGE_KEY_USERS_DB, JSON.stringify(updatedUsers));
+    setAllUsers(updatedUsers);
+    const currentUserInDB = updatedUsers.find(u => u.phone === user.phone);
+    if (currentUserInDB) {
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentUserInDB));
+      setUser(currentUserInDB);
     }
   };
 
@@ -161,20 +208,13 @@ const App: React.FC = () => {
   const approveTransaction = (tx: PendingTransaction) => {
     const usersDB: UserProfile[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS_DB) || '[]');
     const targetIdx = usersDB.findIndex(u => u.phone === tx.phone);
-    
     if (targetIdx !== -1) {
       if (tx.type === 'DEPOSIT') usersDB[targetIdx].balance += tx.amount;
       else if (tx.type === 'WITHDRAW') usersDB[targetIdx].balance -= tx.amount;
-      
-      localStorage.setItem(STORAGE_KEY_USERS_DB, JSON.stringify(usersDB));
-      
-      if (user.phone === usersDB[targetIdx].phone) {
-        const updatedUser = { ...user, balance: usersDB[targetIdx].balance };
-        setUser(updatedUser);
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedUser));
-      }
+      if (!usersDB[targetIdx].history) usersDB[targetIdx].history = [];
+      usersDB[targetIdx].history.unshift({ ...tx, status: 'APPROVED' });
+      handleUpdateUsersDB(usersDB);
     }
-
     setPendingTransactions(prev => {
       const remaining = prev.filter(t => t.id !== tx.id);
       localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
@@ -184,6 +224,16 @@ const App: React.FC = () => {
   };
 
   const rejectTransaction = (txId: string) => {
+    const tx = pendingTransactions.find(t => t.id === txId);
+    if (tx) {
+        const usersDB: UserProfile[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS_DB) || '[]');
+        const targetIdx = usersDB.findIndex(u => u.phone === tx.phone);
+        if (targetIdx !== -1) {
+            if (!usersDB[targetIdx].history) usersDB[targetIdx].history = [];
+            usersDB[targetIdx].history.unshift({ ...tx, status: 'REJECTED' });
+            handleUpdateUsersDB(usersDB);
+        }
+    }
     setPendingTransactions(prev => {
       const remaining = prev.filter(t => t.id !== txId);
       localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
@@ -212,11 +262,16 @@ const App: React.FC = () => {
   const switchTurn = useCallback((bonus: boolean) => {
     setGameState(prev => {
       if (!prev) return null;
-      if (bonus) return { ...prev, isDiceRolled: false, diceValue: null };
-      const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
-      return { ...prev, currentPlayerIndex: nextIndex, consecutiveSixes: 0, diceValue: null, isDiceRolled: false };
+      let nextState: GameState;
+      if (bonus) nextState = { ...prev, isDiceRolled: false, diceValue: null };
+      else {
+        const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
+        nextState = { ...prev, currentPlayerIndex: nextIndex, consecutiveSixes: 0, diceValue: null, isDiceRolled: false };
+      }
+      syncMatchState(nextState);
+      return nextState;
     });
-  }, []);
+  }, [syncMatchState]);
 
   const moveToken = async (tokenId: number) => {
     if (!gameState || !gameState.diceValue || animating) return;
@@ -233,14 +288,22 @@ const App: React.FC = () => {
       token.position = 0; 
       token.distanceTraveled = 0;
       soundManager.play('move');
-      setGameState(prev => prev ? ({ ...prev, players: [...players] }) : null);
+      setGameState(prev => {
+        const gs = prev ? ({ ...prev, players: [...players] }) : null;
+        if (gs) syncMatchState(gs);
+        return gs;
+      });
       await new Promise(resolve => setTimeout(resolve, 400));
     } else {
       for (let i = 0; i < dice; i++) {
         token.distanceTraveled += 1;
         token.position = (token.position + 1) % 52;
         soundManager.play('move');
-        setGameState(prev => prev ? ({ ...prev, players: [...players] }) : null);
+        setGameState(prev => {
+            const gs = prev ? ({ ...prev, players: [...players] }) : null;
+            if (gs) syncMatchState(gs);
+            return gs;
+        });
         await new Promise(resolve => setTimeout(resolve, 250));
       }
     }
@@ -270,11 +333,19 @@ const App: React.FC = () => {
         });
       }
     }
-    setGameState(prev => prev ? ({ ...prev, players: [...players] }) : null);
+    setGameState(prev => {
+        const gs = prev ? ({ ...prev, players: [...players] }) : null;
+        if (gs) syncMatchState(gs);
+        return gs;
+    });
     setTimeout(() => {
       setAnimating(false);
       if (player.tokens.every(t => t.state === TokenState.WIN)) {
         alert(`${player.name} Won!`);
+        // Clean up match from storage
+        const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
+        localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(matches.filter(m => m.matchId !== matchIdRef.current)));
+        matchIdRef.current = null;
         setView('LOBBY');
         return;
       }
@@ -286,8 +357,20 @@ const App: React.FC = () => {
     if (animating || (gameState && gameState.isDiceRolled)) return;
     setAnimating(true);
     soundManager.play('dice');
+    
+    // Check for admin override
+    let override: number | null = null;
+    const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
+    const myMatch = matches.find(m => m.matchId === matchIdRef.current);
+    if (myMatch && myMatch.nextRollOverride) {
+        override = myMatch.nextRollOverride;
+        // Consume override
+        myMatch.nextRollOverride = null;
+        localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(matches));
+    }
+
     setTimeout(() => {
-      const val = Math.floor(Math.random() * 6) + 1;
+      const val = override || Math.floor(Math.random() * 6) + 1;
       setAnimating(false);
       soundManager.play('dice_stop');
       if (val === 6) soundManager.play('six');
@@ -296,10 +379,12 @@ const App: React.FC = () => {
         const player = prev.players[prev.currentPlayerIndex];
         const canMove = player.tokens.some(t => (t.state === TokenState.HOME && val === 6) || (t.state === TokenState.PATH && (t.distanceTraveled + val) <= 57));
         if (!canMove) setTimeout(() => switchTurn(false), 1000);
-        return { ...prev, diceValue: val, isDiceRolled: true };
+        const nextState = { ...prev, diceValue: val, isDiceRolled: true };
+        syncMatchState(nextState);
+        return nextState;
       });
     }, 700); 
-  }, [animating, gameState, switchTurn]);
+  }, [animating, gameState, switchTurn, syncMatchState]);
 
   useEffect(() => {
     if (view !== 'GAME' || !gameState || animating) return;
@@ -328,8 +413,33 @@ const App: React.FC = () => {
         tokens: [0,1,2,3].map(id => ({ id, color: colors[i], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
       });
     }
-    setGameState({ players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: "", consecutiveSixes: 0 });
+    const matchId = `match_${Date.now()}`;
+    matchIdRef.current = matchId;
+    const initialGS: GameState = { players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: "", consecutiveSixes: 0 };
+    setGameState(initialGS);
+
+    // Register Match Globally for Admin
+    const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
+    matches.push({
+        matchId,
+        players: players.map(p => ({ name: p.name, color: p.color, score: 0 })),
+        currentPlayer: players[0].name,
+        stake: selectedStake,
+        startTime: new Date().toLocaleTimeString(),
+        status: 'ACTIVE'
+    });
+    localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(matches));
+    
     setView('GAME');
+  };
+
+  const surrenderGame = () => {
+    if(confirm("Surrender? Entry stake will be lost.")) {
+        const matches: LiveMatch[] = JSON.parse(localStorage.getItem(STORAGE_KEY_LIVE_MATCHES) || '[]');
+        localStorage.setItem(STORAGE_KEY_LIVE_MATCHES, JSON.stringify(matches.filter(m => m.matchId !== matchIdRef.current)));
+        matchIdRef.current = null;
+        setView('LOBBY');
+    }
   };
 
   if (view === 'SPLASH') return (
@@ -339,7 +449,7 @@ const App: React.FC = () => {
       <div className="w-64 bg-white/5 h-2 rounded-full overflow-hidden border border-white/10">
         <div className="bg-sky-500 h-full transition-all duration-500" style={{width:`${loadingProgress}%`}}></div>
       </div>
-      <p className="mt-4 text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Verifying Session...</p>
+      <p className="mt-4 text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Verifying Server Connection...</p>
     </div>
   );
 
@@ -369,7 +479,17 @@ const App: React.FC = () => {
   );
 
   if (view === 'ADMIN') return (
-    <AdminPortal user={user} pendingTransactions={pendingTransactions} onUpdateUser={setUser} onApproveTransaction={approveTransaction} onRejectTransaction={rejectTransaction} onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} />
+    <AdminPortal 
+      user={user} 
+      allUsers={allUsers}
+      onUpdateUsersDB={handleUpdateUsersDB}
+      pendingTransactions={pendingTransactions} 
+      liveMatches={liveMatches}
+      onUpdateUser={setUser} 
+      onApproveTransaction={approveTransaction} 
+      onRejectTransaction={rejectTransaction} 
+      onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} 
+    />
   );
 
   if (view === 'LOBBY') return (
@@ -391,7 +511,6 @@ const App: React.FC = () => {
                   <span className="font-black text-2xl tracking-tighter">{user.balance.toLocaleString()}</span>
                   <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-10 h-10 rounded-xl font-black text-3xl flex items-center justify-center shadow-lg hover:bg-yellow-400 hover:scale-110 active:scale-90 transition-all ml-2">+</button>
               </div>
-              
               <button onClick={handleLogout} className="bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white w-14 h-14 rounded-2xl flex items-center justify-center border border-red-500/30 shadow-2xl backdrop-blur-md transition-all group">
                 <span className="text-2xl font-black group-hover:rotate-90 transition-transform duration-300">✕</span>
               </button>
@@ -430,7 +549,6 @@ const App: React.FC = () => {
               </div>
            </div>
         </div>
-
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={handleAddTransaction} />
     </div>
   );
@@ -466,7 +584,7 @@ const App: React.FC = () => {
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden">
         <div className="w-full h-20 bg-[#0f172a]/90 backdrop-blur-md flex justify-between items-center px-8 border-b border-white/10 shrink-0 shadow-2xl z-50">
-           <button onClick={() => { if(confirm("Surrender? Entry stake will be lost.")) setView('LOBBY'); }} className="text-red-500 font-black text-sm uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 transition-all">Surrender</button>
+           <button onClick={surrenderGame} className="text-red-500 font-black text-sm uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 transition-all">Surrender</button>
            <div className="font-black text-sky-400 italic text-2xl uppercase tracking-tighter drop-shadow-lg">Ludo Arena</div>
            <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-lg border border-yellow-500/20 shadow-inner">৳{selectedStake}</div>
         </div>

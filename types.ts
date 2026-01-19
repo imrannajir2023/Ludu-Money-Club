@@ -65,3 +65,13 @@ export interface UserProfile {
   };
   history: PendingTransaction[];
 }
+
+export interface LiveMatch {
+  matchId: string;
+  players: { name: string, color: PlayerColor, score: number }[];
+  currentPlayer: string;
+  stake: number;
+  startTime: string;
+  nextRollOverride?: number | null;
+  status: 'ACTIVE' | 'TERMINATED';
+}
