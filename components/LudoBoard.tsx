@@ -153,13 +153,13 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
                   };
               }
 
-              const zIndex = isClickable ? 200 : 10 + index;
+              // Clickable/Current turn tokens always on top of others in same cell
+              const zIndex = isClickable ? 300 : 10 + index;
 
               return (
                   <div 
                      key={`${token.color}-${token.id}`}
-                     // SMOOTH MOVEMENT: Increased duration to 500ms for natural feel
-                     className={`absolute w-[6.66%] h-[6.66%] transition-all duration-500 ease-out pointer-events-none`}
+                     className={`absolute w-[6.66%] h-[6.66%] transition-all duration-300 ease-out pointer-events-none`}
                      style={{ 
                         top: `${r * 6.666}%`, 
                         left: `${c * 6.666}%`,
@@ -174,7 +174,7 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
                           if (isClickable) onTokenClick(token);
                         }}
                       >
-                        <div className={`w-full h-full rounded-full shadow-lg border-[1.5px] border-white flex items-center justify-center ${COLORS[token.color].base} ${isClickable ? 'animate-bounce ring-4 ring-yellow-400' : ''} transition-transform hover:scale-110 active:scale-95`}>
+                        <div className={`w-full h-full rounded-full shadow-lg border-[1.5px] border-white flex items-center justify-center ${COLORS[token.color].base} ${isClickable ? 'animate-bounce ring-4 ring-yellow-400 z-[400]' : ''} transition-transform hover:scale-110 active:scale-95`}>
                             <div className="w-[40%] h-[20%] bg-white/30 rounded-full mb-1"></div>
                         </div>
                       </div>
