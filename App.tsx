@@ -43,27 +43,33 @@ const App: React.FC = () => {
 
   const botActionTimeoutRef = useRef<number | null>(null);
 
-  // Load everything on start
+  // 1. Initial Load and Cross-Tab Real-time Sync
   useEffect(() => {
-    const savedUser = localStorage.getItem(STORAGE_KEY_USER);
-    if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      setUser(parsedUser);
-    }
-    
-    const savedTxs = localStorage.getItem(STORAGE_KEY_TXS);
-    if (savedTxs) {
-      setPendingTransactions(JSON.parse(savedTxs));
-    }
+    const loadData = () => {
+      const savedUser = localStorage.getItem(STORAGE_KEY_USER);
+      if (savedUser) setUser(JSON.parse(savedUser));
+      
+      const savedTxs = localStorage.getItem(STORAGE_KEY_TXS);
+      if (savedTxs) setPendingTransactions(JSON.parse(savedTxs));
+    };
+
+    loadData();
+
+    // Listener for real-time updates across tabs (e.g. User sends, Admin receives)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_TXS) {
+        if (e.newValue) setPendingTransactions(JSON.parse(e.newValue));
+      }
+      if (e.key === STORAGE_KEY_USER && e.newValue) {
+        setUser(JSON.parse(e.newValue));
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Sync state to local storage whenever it changes
-  useEffect(() => {
-    if (user && user.phone) {
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
-    }
-  }, [user]);
-
+  // 2. Persistent View Redirection in Splash
   useEffect(() => {
     if (view === 'SPLASH') {
       const interval = setInterval(() => {
@@ -76,21 +82,21 @@ const App: React.FC = () => {
                   setView('ADMIN');
                   return 100;
               }
-              const saved = localStorage.getItem(STORAGE_KEY_USER);
-              if (saved) {
-                  const u = JSON.parse(saved);
-                  if (u && u.phone) {
+              const savedUser = localStorage.getItem(STORAGE_KEY_USER);
+              if (savedUser) {
+                  const parsed = JSON.parse(savedUser);
+                  if (parsed.phone) {
                       setView('LOBBY');
                       return 100;
                   }
               }
               setView('LOGIN');
-            }, 600);
+            }, 500);
             return 100;
           }
           return prev + 5;
         });
-      }, 30);
+      }, 20);
       return () => clearInterval(interval);
     }
   }, [view]);
@@ -145,10 +151,11 @@ const App: React.FC = () => {
   };
 
   const handleAddTransaction = (tx: PendingTransaction) => {
-    const savedTxs = JSON.parse(localStorage.getItem(STORAGE_KEY_TXS) || '[]');
-    const updated = [...savedTxs, tx];
-    localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(updated));
-    setPendingTransactions(updated);
+    setPendingTransactions(prev => {
+      const updated = [...prev, tx];
+      localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const approveTransaction = (tx: PendingTransaction) => {
@@ -161,7 +168,6 @@ const App: React.FC = () => {
       
       localStorage.setItem(STORAGE_KEY_USERS_DB, JSON.stringify(usersDB));
       
-      // Update session if it's the current user
       if (user.phone === usersDB[targetIdx].phone) {
         const updatedUser = { ...user, balance: usersDB[targetIdx].balance };
         setUser(updatedUser);
@@ -169,16 +175,20 @@ const App: React.FC = () => {
       }
     }
 
-    const remaining = pendingTransactions.filter(t => t.id !== tx.id);
-    localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
-    setPendingTransactions(remaining);
+    setPendingTransactions(prev => {
+      const remaining = prev.filter(t => t.id !== tx.id);
+      localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
+      return remaining;
+    });
     soundManager.play('win');
   };
 
   const rejectTransaction = (txId: string) => {
-    const remaining = pendingTransactions.filter(t => t.id !== txId);
-    localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
-    setPendingTransactions(remaining);
+    setPendingTransactions(prev => {
+      const remaining = prev.filter(t => t.id !== txId);
+      localStorage.setItem(STORAGE_KEY_TXS, JSON.stringify(remaining));
+      return remaining;
+    });
     soundManager.play('click');
   };
 
@@ -329,7 +339,7 @@ const App: React.FC = () => {
       <div className="w-64 bg-white/5 h-2 rounded-full overflow-hidden border border-white/10">
         <div className="bg-sky-500 h-full transition-all duration-500" style={{width:`${loadingProgress}%`}}></div>
       </div>
-      <p className="mt-4 text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Server Synching...</p>
+      <p className="mt-4 text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Verifying Session...</p>
     </div>
   );
 
@@ -364,7 +374,6 @@ const App: React.FC = () => {
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white font-fredoka overflow-hidden dotted-bg">
-        {/* TOP GORGEOUS BAR */}
         <div className="p-6 flex items-center justify-between z-[100] relative bg-gradient-to-b from-black/60 to-transparent">
             <div className="flex items-center gap-4 bg-white/10 p-2 pr-6 rounded-full border border-white/20 backdrop-blur-xl shadow-2xl">
                 <img src={user.avatar} className="w-14 h-14 rounded-full border-2 border-yellow-500 shadow-xl" />
@@ -383,22 +392,14 @@ const App: React.FC = () => {
                   <button onClick={() => setWalletOpen(true)} className="bg-yellow-500 text-black w-10 h-10 rounded-xl font-black text-3xl flex items-center justify-center shadow-lg hover:bg-yellow-400 hover:scale-110 active:scale-90 transition-all ml-2">+</button>
               </div>
               
-              <button 
-                onClick={handleLogout} 
-                className="bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white w-14 h-14 rounded-2xl flex items-center justify-center border border-red-500/30 shadow-2xl backdrop-blur-md transition-all group"
-                title="Logout"
-              >
+              <button onClick={handleLogout} className="bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white w-14 h-14 rounded-2xl flex items-center justify-center border border-red-500/30 shadow-2xl backdrop-blur-md transition-all group">
                 <span className="text-2xl font-black group-hover:rotate-90 transition-transform duration-300">✕</span>
               </button>
             </div>
         </div>
 
-        {/* MAIN CARDS */}
         <div className="flex-1 px-8 space-y-8 overflow-y-auto no-scrollbar pb-32 pt-6 relative z-10">
-            <div 
-              className="bg-gradient-to-br from-[#243494] via-[#1e297a] to-[#0a192f] rounded-[50px] p-12 shadow-[0_30px_60px_rgba(0,0,0,0.6)] relative overflow-hidden group cursor-pointer border-2 border-white/10 active:scale-95 transition-all"
-              onClick={() => setView('MATCH_CONFIG')}
-            >
+            <div className="bg-gradient-to-br from-[#243494] via-[#1e297a] to-[#0a192f] rounded-[50px] p-12 shadow-[0_30px_60px_rgba(0,0,0,0.6)] relative overflow-hidden group cursor-pointer border-2 border-white/10 active:scale-95 transition-all" onClick={() => setView('MATCH_CONFIG')}>
                 <div className="absolute -top-10 -right-10 w-52 h-52 bg-sky-500/10 rounded-full blur-3xl group-hover:bg-sky-500/20 transition-all"></div>
                 <div className="relative z-10">
                   <h2 className="text-5xl font-black italic text-[#FFD700] mb-3 uppercase tracking-tighter drop-shadow-[0_4px_8px_rgba(0,0,0,0.6)]">PLAY ONLINE</h2>
@@ -420,11 +421,8 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* LIVE WINNER TICKER */}
         <div className="fixed bottom-0 w-full h-12 bg-yellow-500/90 backdrop-blur-sm flex items-center overflow-hidden z-[200]">
-           <div className="bg-black text-yellow-500 px-4 h-full flex items-center font-black text-xs italic uppercase tracking-tighter shrink-0 border-r border-yellow-500/30">
-              🏆 RECENT WINNERS
-           </div>
+           <div className="bg-black text-yellow-500 px-4 h-full flex items-center font-black text-xs italic uppercase tracking-tighter shrink-0 border-r border-yellow-500/30">🏆 RECENT WINNERS</div>
            <div className="flex-1 overflow-hidden whitespace-nowrap">
               <div className="inline-block animate-marquee pl-[100%] hover:pause">
                  {winners.map((win, idx) => <span key={idx} className="inline-block px-10 text-black font-black text-sm uppercase italic">{win} •</span>)}
@@ -442,18 +440,14 @@ const App: React.FC = () => {
         <div className="bg-[#1e293b] p-12 rounded-[55px] w-full max-w-sm shadow-[0_40px_80px_rgba(0,0,0,0.7)] border border-white/10 backdrop-blur-md">
            <h2 className="text-3xl font-black italic uppercase text-center mb-10 text-yellow-500 tracking-tighter">Table Settings</h2>
            <div className="grid grid-cols-2 gap-5 mb-10">
-              {[2, 4].map(c => (
-                <button key={c} onClick={() => { soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-8 rounded-[30px] font-black text-lg border-2 transition-all transform ${selectedPlayerCount === c ? 'bg-sky-500 border-sky-300 shadow-[0_0_30px_rgba(14,165,233,0.4)] scale-105' : 'bg-white/5 border-transparent text-white/30 hover:bg-white/10 hover:text-white/60'}`}>{c} Players</button>
-              ))}
+              {[2, 4].map(c => <button key={c} onClick={() => { soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-8 rounded-[30px] font-black text-lg border-2 transition-all transform ${selectedPlayerCount === c ? 'bg-sky-500 border-sky-300 shadow-[0_0_30px_rgba(14,165,233,0.4)] scale-105' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
            </div>
            <p className="text-[12px] font-black text-white/40 uppercase tracking-[0.4em] mb-4 text-center">Entry Stake (৳)</p>
            <div className="grid grid-cols-3 gap-3 mb-12">
-              {STAKE_OPTIONS.map(s => (
-                <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all transform ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_25px_rgba(234,179,8,0.4)] scale-110' : 'bg-white/5 border-transparent text-white/30 hover:bg-white/10 hover:text-white/60'}`}>{s}</button>
-              ))}
+              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all transform ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_25px_rgba(234,179,8,0.4)] scale-110' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
            </div>
-           <button onClick={() => { soundManager.play('click'); setView('MATCHING'); setTimeout(initGame, 1500); }} className="w-full bg-green-500 py-8 rounded-[30px] font-black text-2xl shadow-[0_15px_30px_rgba(34,197,94,0.4)] active:scale-95 hover:bg-green-400 transition-all uppercase tracking-widest border-b-8 border-green-700 active:border-b-0">START GAME</button>
-           <button onClick={() => setView('LOBBY')} className="w-full mt-8 text-white/30 uppercase font-black text-xs tracking-widest hover:text-white transition-all">Cancel</button>
+           <button onClick={() => { soundManager.play('click'); setView('MATCHING'); setTimeout(initGame, 1500); }} className="w-full bg-green-500 py-8 rounded-[30px] font-black text-2xl shadow-2xl active:scale-95 hover:bg-green-400 transition-all uppercase tracking-widest border-b-8 border-green-700">START GAME</button>
+           <button onClick={() => setView('LOBBY')} className="w-full mt-8 text-white/30 uppercase font-black text-xs tracking-widest">Cancel</button>
         </div>
     </div>
   );
@@ -481,13 +475,8 @@ const App: React.FC = () => {
                 <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} validTokens={validTokens} onTokenClick={(t) => moveToken(t.id)} />
             </div>
             <div className="flex flex-col items-center gap-6 shrink-0 pb-10">
-                <div className="text-center h-8">
-                    <p className="text-lg font-black uppercase text-sky-400 tracking-[0.4em] animate-pulse drop-shadow-lg">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
-                </div>
-                <div 
-                   onClick={!gameState.players[gameState.currentPlayerIndex].isBot ? rollDice : undefined} 
-                   className={`w-28 h-28 bg-white rounded-[40px] shadow-[0_20px_40px_rgba(0,0,0,0.6)] flex items-center justify-center text-6xl font-black text-gray-800 border-b-[10px] border-gray-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer hover:scale-105 active:scale-90 active:border-b-0'}`}
-                >
+                <div className="text-center h-8"><p className="text-lg font-black uppercase text-sky-400 tracking-[0.4em] animate-pulse drop-shadow-lg">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p></div>
+                <div onClick={!gameState.players[gameState.currentPlayerIndex].isBot ? rollDice : undefined} className={`w-28 h-28 bg-white rounded-[40px] shadow-[0_20px_40px_rgba(0,0,0,0.6)] flex items-center justify-center text-6xl font-black text-gray-800 border-b-[10px] border-gray-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer hover:scale-105 active:scale-90 active:border-b-0'}`}>
                    {gameState.diceValue || '🎲'}
                 </div>
             </div>
