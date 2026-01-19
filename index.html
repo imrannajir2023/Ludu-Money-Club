@@ -57,30 +57,6 @@
 </head>
   <body>
     <div id="root"></div>
-    
-    <!-- FB SDK Script -->
-    <div id="fb-root"></div>
-    <script>
-      window.fbAsyncInit = function() {
-        FB.init({
-          appId      : 'YOUR_APP_ID', // Replace with your Real FB App ID from Developers Console
-          cookie     : true,
-          xfbml      : true,
-          version    : 'v18.0'
-        });
-        window.isFBReady = true;
-        console.log("Facebook SDK Initialized Successfully.");
-      };
-
-      (function(d, s, id) {
-        var js, fjs = d.getElementsByTagName(s)[0];
-        if (d.getElementById(id)) return;
-        js = d.createElement(s); js.id = id;
-        js.src = "https://connect.facebook.net/en_US/sdk.js";
-        fjs.parentNode.insertBefore(js, fjs);
-      }(document, 'script', 'facebook-jssdk'));
-    </script>
-    
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

@@ -30,6 +30,12 @@ const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isWalletOpen, setWalletOpen] = useState(false);
   const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
+  
+  // Login form state
+  const [loginName, setLoginName] = useState('');
+  const [loginPhone, setLoginPhone] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [animating, setAnimating] = useState(false);
@@ -90,71 +96,27 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Robust Facebook Login Handler
-  const handleFacebookLogin = () => {
+  // Manual Signup Handler
+  const handleManualSignup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginName.trim().length < 3) return alert("দয়া করে আপনার সঠিক নাম লিখুন (কমপক্ষে ৩ অক্ষর)");
+    if (!/^\d{11}$/.test(loginPhone)) return alert("দয়া করে ১১ অক্ষরের সঠিক ফোন নম্বর দিন");
+    if (loginPassword.length < 4) return alert("পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে");
+
     soundManager.play('click');
-    
-    const FB = (window as any).FB;
-    const isSDKReady = (window as any).isFBReady;
-
-    // ERROR 2 FIX: Check if SDK is initialized
-    if (!isSDKReady || !FB) {
-      console.warn("FB SDK is not ready yet.");
-      alert("ফেসবুক লোড হতে একটু সময় নিচ্ছে, কয়েক সেকেন্ড পর আবার ক্লিক করুন।");
-      return;
-    }
-
-    // ERROR 1 FIX: HTTPS Protocol Enforcement Check
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (window.location.protocol !== 'https:' && !isLocalhost) {
-      alert("ফেসবুক লগইন এর জন্য HTTPS সিকিউরিটি প্রয়োজন। বর্তমানে এটি সাধারণ HTTP পেজ, তাই গেমটি সরাসরি ডেমো প্রোফাইল মোডে শুরু হচ্ছে।");
-      performDemoLogin();
-      return;
-    }
-
-    try {
-      FB.login((response: any) => {
-        if (response.status === 'connected') {
-          console.log('FB Auth Successful, fetching user details...');
-          FB.api('/me', { fields: 'name,picture.type(large)' }, (userData: any) => {
-            if (userData && !userData.error) {
-              const fbUser: UserProfile = {
-                name: userData.name,
-                balance: 500, // Initial Bonus
-                avatar: userData.picture?.data?.url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.name}`,
-                stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
-                history: []
-              };
-              setUser(fbUser);
-              setView('LOBBY');
-              soundManager.play('win');
-            } else {
-              console.error("Failed to fetch FB profile details", userData.error);
-              performDemoLogin();
-            }
-          });
-        } else {
-          console.warn("User cancelled login or didn't authorize.");
-          alert("লগইন বাতিল করা হয়েছে।");
-        }
-      }, { scope: 'public_profile' });
-    } catch (err) {
-      console.error("FB Login Runtime Error:", err);
-      alert("ফেসবুক লগইন সিস্টেমে সমস্যা হয়েছে। ডেমো মোডে লগইন করা হচ্ছে।");
-      performDemoLogin();
-    }
-  };
-
-  const performDemoLogin = () => {
-    const demoUser: UserProfile = {
-      name: "Imran Hossain (FB Demo)",
-      balance: 1000,
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Imran",
-      stats: { totalGames: 5, wins: 2, totalWinnings: 2000 },
+    const newUser: UserProfile = {
+      name: loginName.trim(),
+      phone: loginPhone,
+      password: loginPassword,
+      balance: 500, // Starting Bonus
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${loginName.trim()}`,
+      stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
       history: []
     };
-    setUser(demoUser);
+    
+    setUser(newUser);
     setView('LOBBY');
+    soundManager.play('win');
   };
 
   const handleAdminAuth = (e: React.FormEvent) => {
@@ -376,16 +338,58 @@ const App: React.FC = () => {
   );
 
   if (view === 'LOGIN') return (
-    <div className="h-screen w-full bg-[#1877F2] flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="bg-white p-10 rounded-[60px] shadow-2xl w-full max-w-sm flex flex-col items-center border-[12px] border-white/40 z-10">
-        <img src={LOGO_URL} className="w-32 h-32 mb-8 drop-shadow-2xl animate-bounce-slow" />
-        <h2 className="text-4xl font-black text-gray-800 mb-2 italic uppercase tracking-tighter text-center">Ludo Money</h2>
-        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.2em] mb-12">Earn Real Cash Daily</p>
-        <button onClick={handleFacebookLogin} className="w-full bg-[#1877F2] text-white py-6 rounded-[30px] font-black shadow-xl flex items-center justify-center gap-4 active:scale-95 transition-all hover:brightness-110">
-           <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-           LOGIN WITH FACEBOOK
-        </button>
+    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-6 relative overflow-hidden dotted-bg">
+      <div className="bg-[#1e293b] p-8 md:p-12 rounded-[60px] shadow-2xl w-full max-w-md flex flex-col items-center border border-white/10 z-10 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-10 bg-sky-500/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+        <img src={LOGO_URL} className="w-24 h-24 mb-6 drop-shadow-2xl animate-bounce-slow" />
+        <h2 className="text-3xl font-black text-white mb-2 italic uppercase tracking-tighter text-center">Join Ludo Club</h2>
+        <p className="text-sky-400 font-bold text-[10px] uppercase tracking-[0.2em] mb-10">Win real cash tournaments</p>
+        
+        <form onSubmit={handleManualSignup} className="w-full space-y-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase text-white/40 tracking-widest ml-4">Full Name</label>
+            <input 
+              type="text" 
+              required
+              value={loginName}
+              onChange={(e) => setLoginName(e.target.value)}
+              placeholder="আপনার নাম লিখুন" 
+              className="w-full bg-white/5 border border-white/10 p-5 rounded-[25px] text-white font-bold focus:outline-none focus:border-sky-500 transition-all placeholder:text-white/10" 
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase text-white/40 tracking-widest ml-4">Phone Number</label>
+            <input 
+              type="tel" 
+              required
+              maxLength={11}
+              value={loginPhone}
+              onChange={(e) => setLoginPhone(e.target.value.replace(/\D/g, ''))}
+              placeholder="মোবাইল নম্বর (১১ ডিজিট)" 
+              className="w-full bg-white/5 border border-white/10 p-5 rounded-[25px] text-white font-bold focus:outline-none focus:border-sky-500 transition-all placeholder:text-white/10" 
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase text-white/40 tracking-widest ml-4">Password</label>
+            <input 
+              type="password" 
+              required
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="পাসওয়ার্ড দিন" 
+              className="w-full bg-white/5 border border-white/10 p-5 rounded-[25px] text-white font-bold focus:outline-none focus:border-sky-500 transition-all placeholder:text-white/10" 
+            />
+          </div>
+          <button 
+            type="submit" 
+            className="w-full bg-sky-500 text-white py-6 rounded-[30px] font-black shadow-xl border-b-8 border-sky-700 active:translate-y-2 active:border-b-0 transition-all uppercase tracking-widest text-lg mt-6"
+          >
+            Start Playing
+          </button>
+        </form>
+        <p className="mt-8 text-[9px] text-white/30 font-bold text-center uppercase tracking-widest px-4">By signing up, you agree to our fair play policy and age restrictions.</p>
       </div>
+      
       <button onClick={() => setIsAdminAuthOpen(true)} className="mt-12 text-white/20 hover:text-white/80 font-bold uppercase tracking-[0.3em] text-[10px] bg-white/5 px-8 py-3 rounded-full border border-white/5 transition-all">ADMIN DASHBOARD</button>
 
       {isAdminAuthOpen && (

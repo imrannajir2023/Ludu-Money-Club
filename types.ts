@@ -54,6 +54,8 @@ export interface PendingTransaction {
 
 export interface UserProfile {
   name: string;
+  phone?: string;
+  password?: string;
   balance: number;
   avatar: string;
   stats: {
