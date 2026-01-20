@@ -17,8 +17,8 @@ export const databaseService = {
       const { data, error } = await supabase.from('users').select('*');
       if (error) throw error;
       return data || [];
-    } catch (error) {
-      console.error("Supabase Get Users Error:", error);
+    } catch (error: any) {
+      console.error("Supabase Get Users Error:", error?.message || JSON.stringify(error));
       return JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
     }
   },
@@ -27,8 +27,8 @@ export const databaseService = {
     try {
       const { error } = await supabase.from('users').upsert(user);
       if (error) throw error;
-    } catch (error) {
-      console.error("Supabase Update User Error:", error);
+    } catch (error: any) {
+      console.error("Supabase Update User Error:", error?.message || JSON.stringify(error));
       const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
       const idx = db.findIndex((u: any) => u.phone === user.phone);
       if (idx !== -1) db[idx] = user; else db.push(user);
@@ -41,18 +41,25 @@ export const databaseService = {
       const { data, error } = await supabase.from('matches').select('*');
       if (error) throw error;
       return data || [];
-    } catch (error) {
-      console.error("Supabase Get Matches Error:", error);
+    } catch (error: any) {
+      console.error("Supabase Get Matches Error:", error?.message || JSON.stringify(error));
       return JSON.parse(localStorage.getItem("LUDO_LIVE_MATCHES") || '[]');
     }
   },
 
   async syncMatch(match: LiveMatch) {
     try {
-      const { error } = await supabase.from('matches').upsert(match);
+      // Explicitly telling Supabase to handle conflict on 'matchId'
+      const { error } = await supabase
+        .from('matches')
+        .upsert(match, { onConflict: 'matchId' });
+      
       if (error) throw error;
-    } catch (error) {
-      console.error("Supabase Sync Match Error:", error);
+    } catch (error: any) {
+      // Using error.message to avoid [object Object] in logs
+      console.error("Supabase Sync Match Error:", error?.message || JSON.stringify(error));
+      
+      // Fallback to local storage so the game doesn't break
       const matches = JSON.parse(localStorage.getItem("LUDO_LIVE_MATCHES") || '[]');
       const idx = matches.findIndex((m: any) => m.matchId === match.matchId);
       if (idx !== -1) matches[idx] = match; else matches.push(match);
@@ -64,8 +71,8 @@ export const databaseService = {
     try {
       const { error } = await supabase.from('matches').delete().eq('matchId', matchId);
       if (error) throw error;
-    } catch (error) {
-      console.error("Supabase Delete Match Error:", error);
+    } catch (error: any) {
+      console.error("Supabase Delete Match Error:", error?.message || JSON.stringify(error));
       const matches = JSON.parse(localStorage.getItem("LUDO_LIVE_MATCHES") || '[]');
       localStorage.setItem("LUDO_LIVE_MATCHES", JSON.stringify(matches.filter((m: any) => m.matchId !== matchId)));
     }
@@ -76,8 +83,8 @@ export const databaseService = {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING');
       if (error) throw error;
       return data || [];
-    } catch (error) {
-      console.error("Supabase Get Txs Error:", error);
+    } catch (error: any) {
+      console.error("Supabase Get Txs Error:", error?.message || JSON.stringify(error));
       return JSON.parse(localStorage.getItem("LUDO_PENDING_TRANSACTIONS") || '[]');
     }
   },
@@ -86,8 +93,8 @@ export const databaseService = {
     try {
       const { error } = await supabase.from('transactions').insert(tx);
       if (error) throw error;
-    } catch (error) {
-      console.error("Supabase Submit Tx Error:", error);
+    } catch (error: any) {
+      console.error("Supabase Submit Tx Error:", error?.message || JSON.stringify(error));
       const txs = JSON.parse(localStorage.getItem("LUDO_PENDING_TRANSACTIONS") || '[]');
       txs.push(tx);
       localStorage.setItem("LUDO_PENDING_TRANSACTIONS", JSON.stringify(txs));
@@ -98,8 +105,8 @@ export const databaseService = {
     try {
       const { error } = await supabase.from('transactions').update({ status }).eq('id', txId);
       if (error) throw error;
-    } catch (error) {
-      console.error("Supabase Update Tx Status Error:", error);
+    } catch (error: any) {
+      console.error("Supabase Update Tx Status Error:", error?.message || JSON.stringify(error));
       const txs = JSON.parse(localStorage.getItem("LUDO_PENDING_TRANSACTIONS") || '[]');
       localStorage.setItem("LUDO_PENDING_TRANSACTIONS", JSON.stringify(txs.filter((t: any) => t.id !== txId)));
     }

@@ -7,7 +7,7 @@ import AdminPortal from './components/AdminPortal';
 import { soundManager } from './services/soundService';
 import { getRandomBotName } from './services/botService';
 import { SAFE_SPOTS, START_POSITIONS, HOME_ENTRANCE } from './constants';
-import { databaseService } from './services/database.ts';
+import { databaseService } from './services/database';
 
 const LOGO_ICON = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
 const STORAGE_KEY_USER = "LUDO_USER_PROFILE";
@@ -49,7 +49,6 @@ const App: React.FC = () => {
   const matchIdRef = useRef<string | null>(null);
   const botActionTimeoutRef = useRef<number | null>(null);
 
-  // Cloud Sync Polling
   const refreshCloudData = useCallback(async () => {
     const users = await databaseService.getUsers();
     setAllUsers(users);
@@ -263,11 +262,22 @@ const App: React.FC = () => {
         return gs;
     });
 
-    setTimeout(() => {
+    setTimeout(async () => {
       setAnimating(false);
       if (player.tokens.every(t => t.state === TokenState.WIN)) {
-        alert(`${player.name} Won! Entry Stake: ৳${selectedStake}`);
-        databaseService.deleteMatch(matchIdRef.current || '');
+        // Player Wins!
+        const winningAmount = selectedStake * 1.8;
+        if (!player.isBot) {
+            const updatedUser = { 
+                ...user, 
+                balance: user.balance + winningAmount,
+                stats: { ...user.stats, wins: user.stats.wins + 1, totalWinnings: user.stats.totalWinnings + winningAmount }
+            };
+            setUser(updatedUser);
+            await databaseService.updateUser(updatedUser);
+        }
+        alert(`${player.name} Won ৳${winningAmount}!`);
+        await databaseService.deleteMatch(matchIdRef.current || '');
         setView('LOBBY');
         return;
       }
@@ -325,6 +335,12 @@ const App: React.FC = () => {
   const initGame = async () => {
     if (user.balance < selectedStake) return alert("Insufficient Balance");
     soundManager.play('click');
+
+    // Deduct Stake
+    const updatedUser = { ...user, balance: user.balance - selectedStake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
+    setUser(updatedUser);
+    await databaseService.updateUser(updatedUser);
+
     const players: Player[] = [];
     let colors = selectedPlayerCount === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
     
