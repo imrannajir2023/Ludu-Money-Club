@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, PendingTransaction } from '../types';
 import { soundManager } from '../services/soundService';
+import { databaseService } from '../services/database';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -23,11 +24,18 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
   const [trxId, setTrxId] = useState<string>('');
   const [phone, setPhone] = useState<string>(user.phone || '');
   const [processing, setProcessing] = useState(false);
+  const [paymentNumbers, setPaymentNumbers] = useState<any>({});
 
-  // Update phone if user profile updates
   useEffect(() => {
     if (user.phone && !phone) setPhone(user.phone);
-  }, [user.phone]);
+    
+    // Fetch payment numbers from DB
+    const fetchSettings = async () => {
+        const settings = await databaseService.getSettings();
+        setPaymentNumbers(settings);
+    };
+    if (isOpen) fetchSettings();
+  }, [user.phone, isOpen]);
 
   if (!isOpen) return null;
 
@@ -53,7 +61,6 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
       timestamp: new Date().toLocaleTimeString()
     };
 
-    // Reduced delay for better reliability
     setTimeout(() => {
       onSubmitTransaction(newTx);
       soundManager.play('six');
@@ -64,6 +71,13 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
   };
 
   const selectedMethod = METHODS.find(m => m.id === method);
+  const adminNumber = paymentNumbers[`${method}_number`] || "Not Set";
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    soundManager.play('click');
+    alert("Number copied to clipboard!");
+  };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in">
@@ -107,6 +121,16 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                     ))}
                 </div>
              </div>
+
+             {activeTab === 'deposit' && (
+                <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-2xl flex items-center justify-between group">
+                    <div>
+                        <p className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-1">{selectedMethod?.name} (Personal)</p>
+                        <p className="text-xl font-black text-white tracking-tighter">{adminNumber}</p>
+                    </div>
+                    <button onClick={() => copyToClipboard(adminNumber)} className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-black text-xs uppercase shadow-lg hover:scale-105 transition-transform active:scale-95">Copy</button>
+                </div>
+             )}
 
              <div className="space-y-4">
                 <div className="relative">

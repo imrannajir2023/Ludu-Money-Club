@@ -68,7 +68,6 @@ export const databaseService = {
 
   async syncMatch(match: LiveMatch) {
     try {
-      // Map camelCase keys to snake_case columns
       const dbMatch = {
         match_id: match.matchId,
         players: match.players,
@@ -93,14 +92,14 @@ export const databaseService = {
     }
   },
 
-  async deleteMatch(matchId: string) {
+  async deleteMatch(match_id: string) {
     try {
-      const { error } = await supabase.from('matches').delete().eq('match_id', matchId);
+      const { error } = await supabase.from('matches').delete().eq('match_id', match_id);
       if (error) throw error;
     } catch (error: any) {
       console.error("Supabase Delete Match Error:", error?.message);
       const matches = JSON.parse(localStorage.getItem("LUDO_LIVE_MATCHES") || '[]');
-      localStorage.setItem("LUDO_LIVE_MATCHES", JSON.stringify(matches.filter((m: any) => m.matchId !== matchId)));
+      localStorage.setItem("LUDO_LIVE_MATCHES", JSON.stringify(matches.filter((m: any) => m.matchId !== match_id)));
     }
   },
 
@@ -127,14 +126,40 @@ export const databaseService = {
     }
   },
 
-  async updateTransactionStatus(txId: string, status: string) {
+  async updateTransactionStatus(id: string, status: string) {
     try {
-      const { error } = await supabase.from('transactions').update({ status }).eq('id', txId);
+      const { error } = await supabase.from('transactions').update({ status }).eq('id', id);
       if (error) throw error;
     } catch (error: any) {
       console.error("Supabase Update Tx Status Error:", error?.message);
       const txs = JSON.parse(localStorage.getItem("LUDO_PENDING_TRANSACTIONS") || '[]');
-      localStorage.setItem("LUDO_PENDING_TRANSACTIONS", JSON.stringify(txs.filter((t: any) => t.id !== txId)));
+      localStorage.setItem("LUDO_PENDING_TRANSACTIONS", JSON.stringify(txs.filter((t: any) => t.id !== id)));
+    }
+  },
+
+  // Settings for Payment Numbers
+  async getSettings(): Promise<any> {
+    try {
+      const { data, error } = await supabase.from('settings').select('*');
+      if (error) throw error;
+      const settingsMap: any = {};
+      data?.forEach(s => { settingsMap[s.key] = s.value; });
+      return settingsMap;
+    } catch (error: any) {
+      console.error("Supabase Get Settings Error:", error?.message);
+      return JSON.parse(localStorage.getItem("LUDO_SETTINGS") || '{}');
+    }
+  },
+
+  async updateSetting(key: string, value: string) {
+    try {
+      const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
+      if (error) throw error;
+      const local = JSON.parse(localStorage.getItem("LUDO_SETTINGS") || '{}');
+      local[key] = value;
+      localStorage.setItem("LUDO_SETTINGS", JSON.stringify(local));
+    } catch (error: any) {
+      console.error("Supabase Update Setting Error:", error?.message);
     }
   }
 };

@@ -38,12 +38,27 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const [adjustAmount, setAdjustAmount] = useState<string>('');
   const [adjustType, setAdjustType] = useState<'add' | 'subtract'>('add');
   
+  // Payment Settings State
+  const [bkashNum, setBkashNum] = useState('');
+  const [nagadNum, setNagadNum] = useState('');
+  const [rocketNum, setRocketNum] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
   const pendingCount = pendingTransactions.length;
   const arenaCount = liveMatches.length;
 
   useEffect(() => {
     if (pendingCount > 0) soundManager.play('six');
-  }, [pendingCount]);
+    
+    // Load current settings
+    const loadSettings = async () => {
+        const settings = await databaseService.getSettings();
+        setBkashNum(settings.bkash_number || '');
+        setNagadNum(settings.nagad_number || '');
+        setRocketNum(settings.rocket_number || '');
+    };
+    if (activeTab === 'settings') loadSettings();
+  }, [pendingCount, activeTab]);
 
   const filteredUsers = useMemo(() => {
     return allUsers.filter(u => 
@@ -85,6 +100,17 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
         alert(`Next dice roll for match set to ${val}!`);
         soundManager.play('win');
     }
+  };
+
+  const handleSaveSettings = async () => {
+      setIsSaving(true);
+      soundManager.play('click');
+      await databaseService.updateSetting('bkash_number', bkashNum);
+      await databaseService.updateSetting('nagad_number', nagadNum);
+      await databaseService.updateSetting('rocket_number', rocketNum);
+      setIsSaving(false);
+      alert("Payment numbers updated successfully!");
+      soundManager.play('win');
   };
 
   return (
@@ -281,6 +307,47 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                        </tbody>
                     </table>
                   )}
+               </div>
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+                <div className="flex flex-col gap-4">
+                   <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Payment Gateway Setup</h3>
+                   <p className="text-xs font-bold text-white/30 uppercase">Set official Personal numbers for user deposits</p>
+               </div>
+
+               <div className="bg-slate-800/30 rounded-[50px] border border-white/5 p-12 space-y-10 max-w-2xl">
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-6">
+                            <img src={METHOD_LOGOS['bkash']} className="h-12 w-12 object-contain" alt="bKash" />
+                            <div className="flex-1">
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-widest">bKash Personal Number</label>
+                                <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} placeholder="e.g. 017XXXXXXXX" className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-pink-500 transition-all" />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                            <img src={METHOD_LOGOS['nagad']} className="h-12 w-12 object-contain" alt="Nagad" />
+                            <div className="flex-1">
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-widest">Nagad Personal Number</label>
+                                <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} placeholder="e.g. 018XXXXXXXX" className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-orange-500 transition-all" />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                            <img src={METHOD_LOGOS['rocket']} className="h-12 w-12 object-contain" alt="Rocket" />
+                            <div className="flex-1">
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-widest">Rocket Personal Number</label>
+                                <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} placeholder="e.g. 019XXXXXXXX" className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-purple-500 transition-all" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-sky-500 hover:bg-sky-400 text-white py-6 rounded-3xl font-black text-lg uppercase tracking-widest shadow-2xl transition-all active:scale-95 disabled:opacity-50">
+                        {isSaving ? "Saving Settings..." : "Save Payment Numbers"}
+                    </button>
                </div>
             </div>
           )}
