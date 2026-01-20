@@ -46,6 +46,8 @@ const App: React.FC = () => {
   
   const [selectedStake, setSelectedStake] = useState(100);
   const [selectedPlayerCount, setSelectedPlayerCount] = useState(4);
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  
   const matchIdRef = useRef<string | null>(null);
   const botActionTimeoutRef = useRef<number | null>(null);
 
@@ -175,7 +177,7 @@ const App: React.FC = () => {
   };
 
   const syncMatchState = useCallback(async (currentGS: GameState) => {
-    if (!matchIdRef.current) return;
+    if (!matchIdRef.current || isPracticeMode) return;
     const match: LiveMatch = {
         matchId: matchIdRef.current,
         players: currentGS.players.map(p => ({ name: p.name, color: p.color, score: p.tokens.filter(t => t.state === TokenState.WIN).length })),
@@ -185,7 +187,7 @@ const App: React.FC = () => {
         status: 'ACTIVE'
     };
     await databaseService.syncMatch(match);
-  }, [selectedStake]);
+  }, [selectedStake, isPracticeMode]);
 
   const switchTurn = useCallback((bonus: boolean) => {
     setGameState(prev => {
@@ -265,9 +267,8 @@ const App: React.FC = () => {
     setTimeout(async () => {
       setAnimating(false);
       if (player.tokens.every(t => t.state === TokenState.WIN)) {
-        // Player Wins!
-        const winningAmount = selectedStake * 1.8;
-        if (!player.isBot) {
+        const winningAmount = isPracticeMode ? 0 : selectedStake * 1.8;
+        if (!player.isBot && !isPracticeMode) {
             const updatedUser = { 
                 ...user, 
                 balance: user.balance + winningAmount,
@@ -276,8 +277,8 @@ const App: React.FC = () => {
             setUser(updatedUser);
             await databaseService.updateUser(updatedUser);
         }
-        alert(`${player.name} Won ৳${winningAmount}!`);
-        await databaseService.deleteMatch(matchIdRef.current || '');
+        alert(`${player.name} Won ${winningAmount > 0 ? `৳${winningAmount}` : 'the Practice Match'}!`);
+        if (!isPracticeMode) await databaseService.deleteMatch(matchIdRef.current || '');
         setView('LOBBY');
         return;
       }
@@ -290,12 +291,15 @@ const App: React.FC = () => {
     setAnimating(true);
     soundManager.play('dice');
     
-    const matches = await databaseService.getLiveMatches();
-    const myMatch = matches.find(m => m.matchId === matchIdRef.current);
-    let override = myMatch?.nextRollOverride;
-    if (override) {
-        myMatch!.nextRollOverride = null;
-        await databaseService.syncMatch(myMatch!);
+    let override = null;
+    if (!isPracticeMode) {
+        const matches = await databaseService.getLiveMatches();
+        const myMatch = matches.find(m => m.matchId === matchIdRef.current);
+        override = myMatch?.nextRollOverride;
+        if (override) {
+            myMatch!.nextRollOverride = null;
+            await databaseService.syncMatch(myMatch!);
+        }
     }
 
     setTimeout(() => {
@@ -314,7 +318,7 @@ const App: React.FC = () => {
         return nextState;
       });
     }, 700); 
-  }, [animating, gameState, syncMatchState, switchTurn]);
+  }, [animating, gameState, syncMatchState, switchTurn, isPracticeMode]);
 
   useEffect(() => {
     if (view !== 'GAME' || !gameState || animating) return;
@@ -332,14 +336,18 @@ const App: React.FC = () => {
     return () => { if (botActionTimeoutRef.current) clearTimeout(botActionTimeoutRef.current); };
   }, [view, gameState, animating, rollDice, moveToken]);
 
-  const initGame = async () => {
-    if (user.balance < selectedStake) return alert("Insufficient Balance");
+  const initGame = async (practice: boolean = false) => {
+    const stake = practice ? 0 : selectedStake;
+    if (!practice && user.balance < stake) return alert("Insufficient Balance");
     soundManager.play('click');
 
-    // Deduct Stake
-    const updatedUser = { ...user, balance: user.balance - selectedStake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
-    setUser(updatedUser);
-    await databaseService.updateUser(updatedUser);
+    setIsPracticeMode(practice);
+
+    if (!practice) {
+        const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
+        setUser(updatedUser);
+        await databaseService.updateUser(updatedUser);
+    }
 
     const players: Player[] = [];
     let colors = selectedPlayerCount === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
@@ -361,7 +369,11 @@ const App: React.FC = () => {
     matchIdRef.current = matchId;
     const initialGS: GameState = { players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: "", consecutiveSixes: 0 };
     setGameState(initialGS);
-    await syncMatchState(initialGS);
+    
+    if (!practice) {
+        await syncMatchState(initialGS);
+    }
+    
     setView('GAME');
   };
 
@@ -429,7 +441,6 @@ const App: React.FC = () => {
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white dotted-bg overflow-hidden">
-        {/* Header */}
         <div className="p-6 flex items-center justify-between z-[100] relative bg-slate-900/90 backdrop-blur-2xl border-b border-yellow-500/10 shadow-xl">
             <div className="flex items-center gap-4">
                 <div className="relative">
@@ -453,7 +464,6 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* Live Winners Ticker */}
         <div className="w-full bg-yellow-500/5 py-2 border-b border-yellow-500/10 overflow-hidden">
           <div className="animate-marquee whitespace-nowrap inline-block">
              {LATEST_WINNERS.concat(LATEST_WINNERS).map((msg, i) => (
@@ -462,10 +472,9 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Content */}
         <div className="flex-1 flex flex-col items-center justify-center gap-12 p-8 max-w-4xl mx-auto w-full pb-20">
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-12 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.6)] text-center border-b-[15px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center" onClick={() => setView('MATCH_CONFIG')}>
+               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-12 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.6)] text-center border-b-[15px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center" onClick={() => { setIsPracticeMode(false); setView('MATCH_CONFIG'); }}>
                   <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1)_0%,transparent_60%)]"></div>
                   <span className="text-7xl block mb-6 animate-float drop-shadow-2xl">🎲</span>
                   <h2 className="text-4xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
@@ -474,7 +483,7 @@ const App: React.FC = () => {
                </div>
 
                <div className="grid grid-rows-2 gap-8">
-                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group">
+                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => { setSelectedPlayerCount(2); initGame(true); }}>
                       <div className="flex items-center gap-6">
                         <span className="text-5xl group-hover:scale-110 transition-transform">🤖</span>
                         <div>
@@ -482,9 +491,9 @@ const App: React.FC = () => {
                           <p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Train for free</p>
                         </div>
                       </div>
-                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
+                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">→</div>
                   </div>
-                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group">
+                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => alert("Private Room feature is coming soon! Use Battle Online to play with others.")}>
                       <div className="flex items-center gap-6">
                         <span className="text-5xl group-hover:scale-110 transition-transform">👬</span>
                         <div>
@@ -492,7 +501,7 @@ const App: React.FC = () => {
                           <p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Play with friends</p>
                         </div>
                       </div>
-                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
+                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">→</div>
                   </div>
                </div>
             </div>
@@ -525,7 +534,7 @@ const App: React.FC = () => {
            <div className="grid grid-cols-3 gap-3 mb-12">
               {STAKE_OPTIONS.map(s => <button key={s} onClick={() => setSelectedStake(s)} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-xl scale-110' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
            </div>
-           <button onClick={initGame} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black">Start Battle</button>
+           <button onClick={() => initGame(false)} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black">Start Battle</button>
            <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer hover:text-white transition-colors" onClick={() => setView('LOBBY')}>Cancel & Return</p>
         </div>
     </div>
@@ -536,7 +545,7 @@ const App: React.FC = () => {
         <div className="w-full h-20 bg-slate-900/95 backdrop-blur-xl flex justify-between items-center px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
            <button onClick={() => { if(confirm("Surrender?")) setView('LOBBY'); }} className="text-red-500 font-black text-[10px] uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all tracking-widest border border-red-500/20">Surrender</button>
            <div className="ludo-money-logo text-3xl tracking-tighter">LUDO MONEY</div>
-           <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-xl border border-yellow-500/20 shadow-inner">৳{selectedStake}</div>
+           <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-xl border border-yellow-500/20 shadow-inner">{isPracticeMode ? 'Practice' : `৳${selectedStake}`}</div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8 w-full max-h-[calc(100vh-80px)]">
             <div className="w-full max-w-[500px] aspect-square shadow-[0_60px_120px_rgba(0,0,0,0.8)] rounded-[50px] overflow-hidden border-[12px] border-white/5 bg-white/5 relative">
