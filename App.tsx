@@ -499,12 +499,12 @@ const App: React.FC = () => {
 
             <div className="flex items-center gap-8 w-full justify-center">
                <div className="text-center">
-                  <p className="text-[40px] font-black text-white">১০কে+</p>
+                  <p className="text-[40px] font-black text-white">10K+</p>
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Total Active</p>
                </div>
                <div className="w-[1px] h-12 bg-white/10"></div>
                <div className="text-center">
-                  <p className="text-[40px] font-black text-yellow-500">৳১এম+</p>
+                  <p className="text-[40px] font-black text-yellow-500">৳1M+</p>
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Payouts</p>
                </div>
             </div>
