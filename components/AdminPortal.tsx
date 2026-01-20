@@ -43,22 +43,32 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const [nagadNum, setNagadNum] = useState('');
   const [rocketNum, setRocketNum] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isInitialLoaded, setIsInitialLoaded] = useState(false);
 
   const pendingCount = pendingTransactions.length;
   const arenaCount = liveMatches.length;
 
+  // Play sound on new transaction
   useEffect(() => {
     if (pendingCount > 0) soundManager.play('six');
-    
-    // Load current settings
+  }, [pendingCount]);
+
+  // Load current settings ONLY when switching to settings tab or on initial mount
+  useEffect(() => {
     const loadSettings = async () => {
         const settings = await databaseService.getSettings();
-        setBkashNum(settings.bkash_number || '');
-        setNagadNum(settings.nagad_number || '');
-        setRocketNum(settings.rocket_number || '');
+        if (settings) {
+            setBkashNum(settings.bkash_number || '');
+            setNagadNum(settings.nagad_number || '');
+            setRocketNum(settings.rocket_number || '');
+            setIsInitialLoaded(true);
+        }
     };
-    if (activeTab === 'settings') loadSettings();
-  }, [pendingCount, activeTab]);
+    
+    if (activeTab === 'settings' && !isInitialLoaded) {
+        loadSettings();
+    }
+  }, [activeTab, isInitialLoaded]);
 
   const filteredUsers = useMemo(() => {
     return allUsers.filter(u => 
@@ -105,12 +115,19 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const handleSaveSettings = async () => {
       setIsSaving(true);
       soundManager.play('click');
-      await databaseService.updateSetting('bkash_number', bkashNum);
-      await databaseService.updateSetting('nagad_number', nagadNum);
-      await databaseService.updateSetting('rocket_number', rocketNum);
-      setIsSaving(false);
-      alert("Payment numbers updated successfully!");
-      soundManager.play('win');
+      try {
+          await Promise.all([
+              databaseService.updateSetting('bkash_number', bkashNum),
+              databaseService.updateSetting('nagad_number', nagadNum),
+              databaseService.updateSetting('rocket_number', rocketNum)
+          ]);
+          alert("Payment numbers updated successfully!");
+          soundManager.play('win');
+      } catch (err) {
+          alert("Error saving settings. Please try again.");
+      } finally {
+          setIsSaving(false);
+      }
   };
 
   return (
@@ -345,9 +362,12 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                         </div>
                     </div>
 
-                    <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-sky-500 hover:bg-sky-400 text-white py-6 rounded-3xl font-black text-lg uppercase tracking-widest shadow-2xl transition-all active:scale-95 disabled:opacity-50">
+                    <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-sky-500 hover:bg-sky-400 text-white py-6 rounded-3xl font-black text-lg uppercase tracking-widest shadow-2xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">
+                        {isSaving ? <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin"></div> : null}
                         {isSaving ? "Saving Settings..." : "Save Payment Numbers"}
                     </button>
+                    
+                    <p className="text-[10px] text-center text-white/20 font-bold uppercase tracking-widest">Changes will be reflected immediately for all users</p>
                </div>
             </div>
           )}
