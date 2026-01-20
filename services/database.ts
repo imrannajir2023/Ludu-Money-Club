@@ -7,6 +7,8 @@ const supabaseKey = 'sb_publishable_IymvinlNRCFKhicLAUXqFw_cc_xiOm6';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const STORAGE_KEY_SETTINGS = "LUDO_SETTINGS_BACKUP";
+
 // Utility to convert camelCase object to snake_case for Supabase
 const toSnakeCase = (obj: any) => {
   const snakeObj: any = {};
@@ -137,29 +139,37 @@ export const databaseService = {
     }
   },
 
-  // Settings for Payment Numbers
+  // Settings for Payment Numbers - With guaranteed LocalStorage Fallback
   async getSettings(): Promise<any> {
+    const localBackup = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}');
     try {
       const { data, error } = await supabase.from('settings').select('*');
       if (error) throw error;
-      const settingsMap: any = {};
+      
+      const settingsMap: any = { ...localBackup };
       data?.forEach(s => { settingsMap[s.key] = s.value; });
+      
+      // Update local backup with fresh cloud data if available
+      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settingsMap));
       return settingsMap;
     } catch (error: any) {
-      console.error("Supabase Get Settings Error:", error?.message);
-      return JSON.parse(localStorage.getItem("LUDO_SETTINGS") || '{}');
+      // Return local data silently if table is missing
+      return localBackup;
     }
   },
 
   async updateSetting(key: string, value: string) {
+    // ALWAYS update local storage first to ensure it doesn't "disappear"
+    const local = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}');
+    local[key] = value;
+    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(local));
+
     try {
       const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
       if (error) throw error;
-      const local = JSON.parse(localStorage.getItem("LUDO_SETTINGS") || '{}');
-      local[key] = value;
-      localStorage.setItem("LUDO_SETTINGS", JSON.stringify(local));
     } catch (error: any) {
-      console.error("Supabase Update Setting Error:", error?.message);
+      // Table might not exist, but we already saved locally
+      console.warn("Cloud save skipped (Table 'settings' missing), saved to Local Storage.");
     }
   }
 };

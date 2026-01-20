@@ -45,8 +45,9 @@ const App: React.FC = () => {
   const [loginName, setLoginName] = useState('');
   
   const [selectedStake, setSelectedStake] = useState(100);
-  const [selectedPlayerCount, setSelectedPlayerCount] = useState(4);
+  const [selectedPlayerCount, setSelectedPlayerCount] = useState(2);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [matchingPlayers, setMatchingPlayers] = useState<any[]>([]);
   
   const matchIdRef = useRef<string | null>(null);
   const botActionTimeoutRef = useRef<number | null>(null);
@@ -106,6 +107,38 @@ const App: React.FC = () => {
       return () => clearInterval(interval);
     }
   }, [view]);
+
+  // Online Matching Animation Logic
+  useEffect(() => {
+    if (view === 'MATCHING') {
+      soundManager.play('click');
+      setMatchingPlayers([{ name: user.name, avatar: user.avatar, isReady: true }]);
+      
+      const matchTimers: number[] = [];
+      
+      // Simulating other players joining
+      for (let i = 1; i < selectedPlayerCount; i++) {
+        const timer = window.setTimeout(() => {
+          const bName = getRandomBotName();
+          setMatchingPlayers(prev => [
+            ...prev, 
+            { name: bName, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`, isReady: true }
+          ]);
+          soundManager.play('move');
+        }, 1000 + (i * 1200) + Math.random() * 500);
+        matchTimers.push(timer);
+      }
+
+      const finalTimer = window.setTimeout(() => {
+        initGame(isPracticeMode);
+      }, 1500 + (selectedPlayerCount * 1300));
+
+      return () => {
+        matchTimers.forEach(t => clearTimeout(t));
+        clearTimeout(finalTimer);
+      };
+    }
+  }, [view, selectedPlayerCount]);
 
   const handleLogout = () => {
     if (confirm("Logout?")) {
@@ -338,29 +371,20 @@ const App: React.FC = () => {
 
   const initGame = async (practice: boolean = false) => {
     const stake = practice ? 0 : selectedStake;
-    if (!practice && user.balance < stake) return alert("Insufficient Balance");
-    soundManager.play('click');
-
-    setIsPracticeMode(practice);
-
-    if (!practice) {
-        const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
-        setUser(updatedUser);
-        await databaseService.updateUser(updatedUser);
-    }
-
+    
     const players: Player[] = [];
     let colors = selectedPlayerCount === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
     
+    // In actual game, matchingPlayers are already generated in MATCHING view
     players.push({
       id: 'p1', name: user.name, color: colors[0], isBot: false, avatarUrl: user.avatar,
       tokens: [0,1,2,3].map(id => ({ id, color: colors[0], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
     });
 
     for (let i = 1; i < selectedPlayerCount; i++) {
-        const bName = getRandomBotName();
+        const opponent = matchingPlayers[i] || { name: getRandomBotName() };
         players.push({
-            id: `p${i+1}`, name: bName, color: colors[i], isBot: true, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`,
+            id: `p${i+1}`, name: opponent.name, color: colors[i], isBot: true, avatarUrl: opponent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${opponent.name}`,
             tokens: [0,1,2,3].map(id => ({ id, color: colors[i], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
         });
     }
@@ -375,6 +399,20 @@ const App: React.FC = () => {
     }
     
     setView('GAME');
+  };
+
+  const startBattleRequest = (practice: boolean) => {
+    const stake = practice ? 0 : selectedStake;
+    if (!practice && user.balance < stake) return alert("Insufficient Balance");
+    
+    setIsPracticeMode(practice);
+    if (!practice) {
+        // Deduction happens right when starting matching to simulate real stake commitment
+        const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
+        setUser(updatedUser);
+        databaseService.updateUser(updatedUser);
+    }
+    setView('MATCHING');
   };
 
   const validTokens = useMemo(() => {
@@ -474,16 +512,16 @@ const App: React.FC = () => {
 
         <div className="flex-1 flex flex-col items-center justify-center gap-12 p-8 max-w-4xl mx-auto w-full pb-20">
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-12 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.6)] text-center border-b-[15px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center" onClick={() => { setIsPracticeMode(false); setView('MATCH_CONFIG'); }}>
+               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-12 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.6)] text-center border-b-[15px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center" onClick={() => { setView('MATCH_CONFIG'); }}>
                   <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1)_0%,transparent_60%)]"></div>
-                  <span className="text-7xl block mb-6 animate-float drop-shadow-2xl">🎲</span>
+                  <img src="https://cdn-icons-png.flaticon.com/512/806/806131.png" className="w-24 h-24 mb-6 drop-shadow-2xl animate-float" />
                   <h2 className="text-4xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
                   <p className="text-yellow-400 text-[10px] uppercase font-black tracking-[0.4em] mb-8">Win Huge Real Money</p>
                   <div className="gold-button text-black px-12 py-5 rounded-3xl font-black uppercase text-sm tracking-widest shadow-2xl">Join Table</div>
                </div>
 
                <div className="grid grid-rows-2 gap-8">
-                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => { setSelectedPlayerCount(2); initGame(true); }}>
+                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => { setSelectedPlayerCount(2); startBattleRequest(true); }}>
                       <div className="flex items-center gap-6">
                         <span className="text-5xl group-hover:scale-110 transition-transform">🤖</span>
                         <div>
@@ -493,7 +531,7 @@ const App: React.FC = () => {
                       </div>
                       <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">→</div>
                   </div>
-                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => alert("Private Room feature is coming soon! Use Battle Online to play with others.")}>
+                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => alert("Private Room feature is coming soon!")}>
                       <div className="flex items-center gap-6">
                         <span className="text-5xl group-hover:scale-110 transition-transform">👬</span>
                         <div>
@@ -505,18 +543,6 @@ const App: React.FC = () => {
                   </div>
                </div>
             </div>
-
-            <div className="flex items-center gap-8 w-full justify-center">
-               <div className="text-center">
-                  <p className="text-[40px] font-black text-white">10K+</p>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Total Active</p>
-               </div>
-               <div className="w-[1px] h-12 bg-white/10"></div>
-               <div className="text-center">
-                  <p className="text-[40px] font-black text-yellow-500">৳1M+</p>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Payouts</p>
-               </div>
-            </div>
         </div>
         
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { databaseService.submitTransaction(tx); refreshCloudData(); }} />
@@ -525,17 +551,60 @@ const App: React.FC = () => {
 
   if (view === 'MATCH_CONFIG') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg">
-        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10">
-           <h2 className="ludo-money-logo text-3xl text-center mb-10 tracking-tighter">SELECT STAKE</h2>
-           <div className="grid grid-cols-2 gap-5 mb-10">
-              {[2, 4].map(c => <button key={c} onClick={() => setSelectedPlayerCount(c)} className={`py-8 rounded-[35px] font-black text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 shadow-xl scale-105' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
+        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center">
+           <h2 className="ludo-money-logo text-3xl text-center mb-10 tracking-tighter uppercase italic">Select Stake</h2>
+           <div className="grid grid-cols-2 gap-5 mb-10 w-full">
+              {[2, 4].map(c => <button key={c} onClick={() => { soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-8 rounded-[35px] font-black text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 shadow-xl scale-105 text-white' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
            </div>
-           <p className="text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-4 text-center">Entry Fee (৳)</p>
-           <div className="grid grid-cols-3 gap-3 mb-12">
-              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => setSelectedStake(s)} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-xl scale-110' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
+           <p className="text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-6 text-center">Entry Fee (৳)</p>
+           <div className="grid grid-cols-3 gap-3 mb-12 w-full">
+              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-xl scale-110' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
            </div>
-           <button onClick={() => initGame(false)} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black">Start Battle</button>
+           <button onClick={() => startBattleRequest(false)} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black shadow-2xl">Start Battle</button>
            <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer hover:text-white transition-colors" onClick={() => setView('LOBBY')}>Cancel & Return</p>
+        </div>
+    </div>
+  );
+
+  if (view === 'MATCHING') return (
+    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.3)_0%,transparent_70%)] animate-pulse"></div>
+        </div>
+        
+        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
+            <h2 className="ludo-money-logo text-3xl text-center mb-4 tracking-tighter italic">Matching...</h2>
+            <p className="text-[10px] font-black text-sky-400 uppercase tracking-[0.4em] mb-12 text-center animate-pulse">Finding Active Opponents</p>
+            
+            <div className="grid grid-cols-2 gap-8 mb-12">
+                {[...Array(selectedPlayerCount)].map((_, i) => (
+                    <div key={i} className="flex flex-col items-center gap-4">
+                        <div className={`w-24 h-24 rounded-full border-4 transition-all duration-500 flex items-center justify-center relative overflow-hidden ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10 shadow-[0_0_30px_rgba(251,191,36,0.3)]' : 'border-white/5 bg-white/5'}`}>
+                            {matchingPlayers[i] ? (
+                                <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover animate-in zoom-in-50 duration-500" />
+                            ) : (
+                                <div className="w-12 h-12 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>
+                            )}
+                            {matchingPlayers[i] && (
+                                <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 rounded-full border-2 border-slate-900 flex items-center justify-center text-[10px]">✓</div>
+                            )}
+                        </div>
+                        <p className={`font-black uppercase text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>
+                            {matchingPlayers[i] ? matchingPlayers[i].name : 'Searching...'}
+                        </p>
+                    </div>
+                ))}
+            </div>
+
+            <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden mb-4">
+                <div className="h-full bg-yellow-500 transition-all duration-1000 ease-linear" style={{ width: `${(matchingPlayers.length / selectedPlayerCount) * 100}%` }}></div>
+            </div>
+            
+            <p className="text-[9px] font-black uppercase text-white/20 tracking-widest">
+                Stake: <span className="text-yellow-500">৳{selectedStake}</span> • Reward: <span className="text-green-500">৳{selectedStake * 1.8}</span>
+            </p>
+            
+            <button onClick={() => setView('LOBBY')} className="mt-12 text-red-500/40 text-[10px] font-black uppercase hover:text-red-500 transition-colors">Cancel Search</button>
         </div>
     </div>
   );

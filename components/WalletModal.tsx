@@ -25,11 +25,11 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
   const [phone, setPhone] = useState<string>(user.phone || '');
   const [processing, setProcessing] = useState(false);
   const [paymentNumbers, setPaymentNumbers] = useState<any>({});
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (user.phone && !phone) setPhone(user.phone);
     
-    // Fetch payment numbers from DB
     const fetchSettings = async () => {
         const settings = await databaseService.getSettings();
         setPaymentNumbers(settings);
@@ -76,7 +76,8 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     soundManager.play('click');
-    alert("Number copied to clipboard!");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -91,61 +92,64 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
         </div>
 
         <div className="flex p-4 gap-2 bg-slate-900/50">
-           <button onClick={() => setActiveTab('deposit')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'deposit' ? 'bg-yellow-500 text-black' : 'bg-white/5 text-white/40'}`}>
+           <button onClick={() => setActiveTab('deposit')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'deposit' ? 'bg-yellow-500 text-black shadow-lg scale-[1.02]' : 'bg-white/5 text-white/40'}`}>
               📥 Deposit
            </button>
-           <button onClick={() => setActiveTab('withdraw')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'withdraw' ? 'bg-yellow-500 text-black' : 'bg-white/5 text-white/40'}`}>
+           <button onClick={() => setActiveTab('withdraw')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'withdraw' ? 'bg-yellow-500 text-black shadow-lg scale-[1.02]' : 'bg-white/5 text-white/40'}`}>
               📤 Withdraw
            </button>
         </div>
 
         <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto no-scrollbar">
-          <div className="bg-white/5 p-6 rounded-[30px] text-center border border-white/5">
-             <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 opacity-60">Current Balance</p>
+          <div className="bg-white/5 p-6 rounded-[30px] text-center border border-white/5 shadow-inner">
+             <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 opacity-60">Available Balance</p>
              <h2 className="text-4xl font-black text-white italic tracking-tighter">৳ {user.balance.toLocaleString()}</h2>
           </div>
 
           <div className="space-y-4">
              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-2">Select Gateway</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-2">Select Payment Method</label>
                 <div className="grid grid-cols-3 gap-3">
                     {METHODS.map(m => (
                       <button 
                         key={m.id} 
-                        onClick={() => setMethod(m.id)} 
-                        className={`relative h-16 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 ${method === m.id ? 'border-yellow-500 ring-2 ring-yellow-500/20 shadow-lg' : 'border-white/5 bg-white/5 opacity-40 hover:opacity-100'}`}
+                        onClick={() => { soundManager.play('click'); setMethod(m.id); }} 
+                        className={`relative h-16 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 ${method === m.id ? 'border-yellow-500 bg-yellow-500/5 shadow-lg' : 'border-white/5 bg-white/5 opacity-40 hover:opacity-100'}`}
                       >
                          <img src={m.logo} className="h-full w-full object-contain" alt={m.name} />
-                         {method === m.id && <div className="absolute top-1 right-1 bg-yellow-500 text-black rounded-full w-4 h-4 flex items-center justify-center text-[10px]">✓</div>}
                       </button>
                     ))}
                 </div>
              </div>
 
              {activeTab === 'deposit' && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-2xl flex items-center justify-between group">
+                <div className="bg-yellow-500/10 border border-yellow-500/20 p-5 rounded-[30px] flex items-center justify-between group animate-in slide-in-from-left-4">
                     <div>
-                        <p className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-1">{selectedMethod?.name} (Personal)</p>
+                        <p className="text-[9px] font-black text-yellow-500 uppercase tracking-widest mb-1">{selectedMethod?.name} (Personal)</p>
                         <p className="text-xl font-black text-white tracking-tighter">{adminNumber}</p>
                     </div>
-                    <button onClick={() => copyToClipboard(adminNumber)} className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-black text-xs uppercase shadow-lg hover:scale-105 transition-transform active:scale-95">Copy</button>
+                    <button onClick={() => copyToClipboard(adminNumber)} className={`px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all active:scale-95 ${copied ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black'}`}>
+                        {copied ? '✓ Copied' : 'Copy'}
+                    </button>
                 </div>
              )}
 
              <div className="space-y-4">
-                <div className="relative">
-                   <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-white/20">৳</span>
-                   <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount" className="w-full bg-white/5 border border-white/10 p-6 pl-12 rounded-3xl text-2xl font-black text-yellow-500 focus:outline-none focus:border-yellow-500 transition-all placeholder:text-white/10" />
+                <div className="relative group">
+                   <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-white/20 group-focus-within:text-yellow-500 transition-colors">৳</span>
+                   <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full bg-white/5 border border-white/10 p-6 pl-12 rounded-3xl text-2xl font-black text-yellow-500 focus:outline-none focus:border-yellow-500 focus:ring-4 focus:ring-yellow-500/5 transition-all placeholder:text-white/10" />
                 </div>
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={`${selectedMethod?.name} Number`} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" />
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={`${selectedMethod?.name} Mobile Number`} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" />
                 {activeTab === 'deposit' && (
-                  <input type="text" value={trxId} onChange={(e) => setTrxId(e.target.value)} placeholder="TrxID (Transaction ID)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all uppercase" />
+                  <input type="text" value={trxId} onChange={(e) => setTrxId(e.target.value)} placeholder="Transaction ID (TrxID)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all uppercase" />
                 )}
              </div>
 
-             <button onClick={handleTransaction} disabled={processing} className={`w-full py-6 rounded-3xl font-black text-xl text-black bg-yellow-500 border-b-8 border-yellow-700 active:translate-y-2 active:border-b-0 transition-all flex items-center justify-center gap-3 ${processing ? 'opacity-50' : ''}`}>
-                {processing ? <div className="w-6 h-6 border-4 border-black/20 border-t-black rounded-full animate-spin"></div> : (activeTab === 'deposit' ? 'SEND REQUEST' : 'WITHDRAW NOW')}
+             <button onClick={handleTransaction} disabled={processing} className={`w-full py-6 rounded-3xl font-black text-xl text-black bg-yellow-500 border-b-8 border-yellow-700 active:translate-y-2 active:border-b-0 transition-all flex items-center justify-center gap-3 mt-4 ${processing ? 'opacity-50' : 'shadow-2xl shadow-yellow-500/20'}`}>
+                {processing ? <div className="w-6 h-6 border-4 border-black/20 border-t-black rounded-full animate-spin"></div> : (activeTab === 'deposit' ? 'DEPOSIT NOW' : 'WITHDRAW NOW')}
              </button>
+             
+             <p className="text-[9px] text-center text-white/20 font-black uppercase tracking-widest mt-4">Safe & Secure Transactions</p>
           </div>
         </div>
       </div>
