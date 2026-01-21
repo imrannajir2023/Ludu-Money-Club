@@ -48,10 +48,12 @@ const App: React.FC = () => {
   const [selectedPlayerCount, setSelectedPlayerCount] = useState(2);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [matchingPlayers, setMatchingPlayers] = useState<any[]>([]);
+  const [matchingTimeLeft, setMatchingTimeLeft] = useState(20);
   
   const matchIdRef = useRef<string | null>(null);
   const botActionTimeoutRef = useRef<number | null>(null);
   const matchingStartTimeRef = useRef<number>(0);
+  const autoPlayTimeoutRef = useRef<number | null>(null);
 
   const refreshCloudData = useCallback(async () => {
     const users = await databaseService.getUsers();
@@ -90,7 +92,7 @@ const App: React.FC = () => {
   }, [view, gameState]);
 
   useEffect(() => {
-    const interval = setInterval(refreshCloudData, 2000); // Polling slightly faster for real-time feel
+    const interval = setInterval(refreshCloudData, 1500); 
     refreshCloudData();
     return () => clearInterval(interval);
   }, [refreshCloudData]);
@@ -117,17 +119,19 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Matchmaking Bot Timeout Logic
+  // Matchmaking 20s Countdown Logic
   useEffect(() => {
     if (view === 'MATCHING') {
       soundManager.play('click');
       matchingStartTimeRef.current = Date.now();
+      setMatchingTimeLeft(20);
       
       const botCheckInterval = setInterval(async () => {
         const elapsed = Date.now() - matchingStartTimeRef.current;
+        const remaining = Math.max(0, 20 - Math.floor(elapsed / 1000));
+        setMatchingTimeLeft(remaining);
         
-        // Match already active or waiting? Driven by Cloud refresh
-        if (elapsed >= 20000 && view === 'MATCHING' && matchingPlayers.length < selectedPlayerCount) {
+        if (remaining === 0 && view === 'MATCHING' && matchingPlayers.length < selectedPlayerCount) {
           clearInterval(botCheckInterval);
           
           const updatedPlayers = [...matchingPlayers];
@@ -370,19 +374,40 @@ const App: React.FC = () => {
     }, 700); 
   }, [animating, gameState, syncMatchState, switchTurn, isPracticeMode]);
 
+  // Auto-play / Bot Action / Inactivity Logic
   useEffect(() => {
     if (view !== 'GAME' || !gameState || animating) return;
     const cp = gameState.players[gameState.currentPlayerIndex];
-    if (!cp || !cp.isBot) return;
-    if (!gameState.isDiceRolled) {
-        botActionTimeoutRef.current = window.setTimeout(rollDice, 1500);
-    } else if (gameState.diceValue !== null) {
-        const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 57)).map(t => t.id);
-        if (possibleMoves.length > 0) {
-            botActionTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), 1000);
+    if (!cp) return;
+
+    // Clear existing auto-play timer
+    if (autoPlayTimeoutRef.current) clearTimeout(autoPlayTimeoutRef.current);
+
+    if (cp.isBot) {
+        if (!gameState.isDiceRolled) {
+            botActionTimeoutRef.current = window.setTimeout(rollDice, 1500);
+        } else if (gameState.diceValue !== null) {
+            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 57)).map(t => t.id);
+            if (possibleMoves.length > 0) {
+                botActionTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), 1000);
+            }
+        }
+    } else {
+        // Real Player Auto-play if they wait more than 12 seconds
+        if (!gameState.isDiceRolled) {
+            autoPlayTimeoutRef.current = window.setTimeout(rollDice, 12000);
+        } else if (gameState.diceValue !== null) {
+            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 57)).map(t => t.id);
+            if (possibleMoves.length > 0) {
+                autoPlayTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), 10000);
+            }
         }
     }
-    return () => { if (botActionTimeoutRef.current) clearTimeout(botActionTimeoutRef.current); };
+
+    return () => { 
+        if (botActionTimeoutRef.current) clearTimeout(botActionTimeoutRef.current); 
+        if (autoPlayTimeoutRef.current) clearTimeout(autoPlayTimeoutRef.current);
+    };
   }, [view, gameState, animating, rollDice, moveToken]);
 
   const initGameLocal = (matchPlayers: any[]) => {
@@ -582,18 +607,36 @@ const App: React.FC = () => {
   if (view === 'MATCHING') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg relative overflow-hidden">
         <div className="premium-card p-10 md:p-12 rounded-[50px] md:rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
-            <h2 className="ludo-money-logo text-2xl md:text-3xl text-center mb-4 tracking-tighter italic">Matching...</h2>
+            <h2 className="ludo-money-logo text-2xl md:text-3xl text-center mb-2 tracking-tighter italic">Matching...</h2>
+            <div className="bg-yellow-500/10 px-4 py-1 rounded-full border border-yellow-500/20 mb-6">
+                <p className="text-[12px] font-black text-yellow-500 uppercase tracking-[0.2em]">{matchingTimeLeft}s Left</p>
+            </div>
+            
             <p className="text-[9px] md:text-[10px] font-black text-sky-400 uppercase tracking-[0.4em] mb-10 text-center animate-pulse">Finding Active Opponents</p>
+            
             <div className="grid grid-cols-2 gap-6 md:gap-8 mb-10">
                 {[...Array(selectedPlayerCount)].map((_, i) => (
                     <div key={i} className="flex flex-col items-center gap-3">
                         <div className={`w-20 h-20 md:w-24 md:h-24 rounded-full border-4 flex items-center justify-center relative ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10 shadow-lg' : 'border-white/5 bg-white/5'}`}>
-                            {matchingPlayers[i] ? <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover rounded-full" /> : <div className="w-10 h-10 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>}
+                            {matchingPlayers[i] ? (
+                                <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover rounded-full" />
+                            ) : (
+                                <div className="flex flex-col items-center">
+                                    <div className="w-8 h-8 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>
+                                </div>
+                            )}
                         </div>
-                        <p className={`font-black uppercase text-[9px] md:text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>{matchingPlayers[i] ? (matchingPlayers[i].name === user.name ? 'আপনি' : matchingPlayers[i].name) : 'Searching...'}</p>
+                        <p className={`font-black uppercase text-[9px] md:text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>
+                           {matchingPlayers[i] ? (matchingPlayers[i].name === user.name ? 'আপনি' : matchingPlayers[i].name) : 'Searching...'}
+                        </p>
                     </div>
                 ))}
             </div>
+            
+            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mb-6">
+                <div className="h-full bg-yellow-500 transition-all duration-1000" style={{ width: `${(matchingTimeLeft / 20) * 100}%` }}></div>
+            </div>
+
             <p className="text-[8px] md:text-[9px] font-black uppercase text-white/20 tracking-widest">Stake: <span className="text-yellow-500">৳{selectedStake}</span></p>
             <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); }} className="mt-10 text-red-500/40 text-[10px] font-black uppercase">Cancel Search</button>
         </div>
