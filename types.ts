@@ -68,10 +68,10 @@ export interface UserProfile {
 
 export interface LiveMatch {
   matchId: string;
-  players: { name: string, color: PlayerColor, score: number }[];
+  players: { name: string, color: PlayerColor, score: number, avatar: string, isBot: boolean }[];
   currentPlayer: string;
   stake: number;
   startTime: string;
   nextRollOverride?: number | null;
-  status: 'ACTIVE' | 'TERMINATED';
+  status: 'WAITING' | 'ACTIVE' | 'TERMINATED';
 }

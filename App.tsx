@@ -76,10 +76,12 @@ const App: React.FC = () => {
             if (myMatch.status === 'TERMINATED') {
                 alert("Match closed by Admin.");
                 matchIdRef.current = null;
+                setGameState(null);
                 setView('LOBBY');
             } else if (view === 'MATCHING' && myMatch.status === 'ACTIVE') {
                 setMatchingPlayers(myMatch.players);
-                setTimeout(() => initGameFromCloud(myMatch), 1000);
+                // Important: Initiate game if we are still on matching screen but match is ACTIVE
+                initGameFromCloud(myMatch);
             } else if (view === 'MATCHING') {
                 setMatchingPlayers(myMatch.players);
             }
@@ -118,40 +120,37 @@ const App: React.FC = () => {
   useEffect(() => {
     if (view === 'MATCHING') {
       soundManager.play('click');
-      const botInjectionTimer = setTimeout(() => {
+      const botInjectionTimer = setTimeout(async () => {
         if (matchingPlayers.length < selectedPlayerCount) {
           const updatedPlayers = [...matchingPlayers];
+          const colors = [PlayerColor.RED, PlayerColor.YELLOW, PlayerColor.GREEN, PlayerColor.BLUE];
           while (updatedPlayers.length < selectedPlayerCount) {
             const bName = getRandomBotName();
             updatedPlayers.push({ 
               name: bName, 
-              color: [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE][updatedPlayers.length], 
+              color: colors[updatedPlayers.length], 
               score: 0, 
               avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`,
               isBot: true 
             });
           }
           setMatchingPlayers(updatedPlayers);
-          startActualGame(updatedPlayers);
+          
+          if (!isPracticeMode && matchIdRef.current) {
+              const matches = await databaseService.getLiveMatches();
+              const m = matches.find(m => m.matchId === matchIdRef.current);
+              if (m) {
+                  m.status = 'ACTIVE';
+                  m.players = updatedPlayers;
+                  await databaseService.syncMatch(m);
+              }
+          }
+          initGameLocal(updatedPlayers);
         }
       }, 8000);
       return () => clearTimeout(botInjectionTimer);
     }
-  }, [view, matchingPlayers.length, selectedPlayerCount]);
-
-  const startActualGame = async (players: any[]) => {
-    if (isPracticeMode) {
-      initGameLocal(players);
-    } else {
-      const match = liveMatches.find(m => m.matchId === matchIdRef.current);
-      if (match) {
-        match.status = 'ACTIVE';
-        match.players = players;
-        await databaseService.syncMatch(match);
-        initGameLocal(players);
-      }
-    }
-  };
+  }, [view, matchingPlayers.length, selectedPlayerCount, isPracticeMode]);
 
   const handleLogout = () => {
     if (confirm("Logout?")) {
@@ -222,7 +221,7 @@ const App: React.FC = () => {
     if (!matchIdRef.current || isPracticeMode) return;
     const match: LiveMatch = {
         matchId: matchIdRef.current,
-        players: currentGS.players.map(p => ({ name: p.name, color: p.color, score: p.tokens.filter(t => t.state === TokenState.WIN).length })),
+        players: currentGS.players.map(p => ({ name: p.name, color: p.color, score: p.tokens.filter(t => t.state === TokenState.WIN).length, avatar: p.avatarUrl, isBot: p.isBot })),
         currentPlayer: currentGS.players[currentGS.currentPlayerIndex].name,
         stake: selectedStake,
         startTime: new Date().toLocaleTimeString(),
@@ -321,6 +320,7 @@ const App: React.FC = () => {
         }
         alert(`${player.name} Won ${winningAmount > 0 ? `৳${winningAmount}` : 'the Practice Match'}!`);
         if (!isPracticeMode) await databaseService.deleteMatch(matchIdRef.current || '');
+        setGameState(null);
         setView('LOBBY');
         return;
       }
@@ -392,16 +392,20 @@ const App: React.FC = () => {
   const startBattleRequest = async (practice: boolean) => {
     const stake = practice ? 0 : selectedStake;
     if (!practice && user.balance < stake) return alert("Insufficient Balance");
+    setGameState(null); // Clear any previous state
     setIsPracticeMode(practice);
-    setMatchingPlayers([{ name: user.name, avatar: user.avatar, isReady: true, color: PlayerColor.RED }]);
+    const initialPlayer = { name: user.name, avatar: user.avatar, isBot: false, score: 0, color: PlayerColor.RED };
+    setMatchingPlayers([initialPlayer]);
+    
     if (!practice) {
         const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
         setUser(updatedUser);
         await databaseService.updateUser(updatedUser);
+        
         const waitingMatch = await databaseService.findWaitingMatch(selectedStake, selectedPlayerCount);
         if (waitingMatch) {
             matchIdRef.current = waitingMatch.matchId;
-            const updatedMatchPlayers = [...waitingMatch.players, { name: user.name, avatar: user.avatar, isBot: false }];
+            const updatedMatchPlayers = [...waitingMatch.players, initialPlayer];
             const updatedMatch = { ...waitingMatch, players: updatedMatchPlayers };
             if (updatedMatchPlayers.length === selectedPlayerCount) {
                 updatedMatch.status = 'ACTIVE';
@@ -414,7 +418,7 @@ const App: React.FC = () => {
             matchIdRef.current = matchId;
             const newMatch: any = {
                 matchId,
-                players: [{ name: user.name, avatar: user.avatar, isBot: false }],
+                players: [initialPlayer],
                 currentPlayer: user.name,
                 stake: selectedStake,
                 startTime: new Date().toLocaleTimeString(),
@@ -492,7 +496,6 @@ const App: React.FC = () => {
             </div>
         </div>
         
-        {/* ENHANCED NOTIFICATION BAR FOR MOBILE */}
         <div className="w-full bg-black/90 py-3 border-y border-yellow-500/20 overflow-hidden relative z-[90] shadow-lg">
           <div className="animate-marquee whitespace-nowrap inline-block">
              {LATEST_WINNERS.concat(LATEST_WINNERS).map((msg, i) => (
@@ -572,7 +575,7 @@ const App: React.FC = () => {
                 ))}
             </div>
             <p className="text-[8px] md:text-[9px] font-black uppercase text-white/20 tracking-widest">Stake: <span className="text-yellow-500">৳{selectedStake}</span></p>
-            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setView('LOBBY'); }} className="mt-10 text-red-500/40 text-[10px] font-black uppercase">Cancel Search</button>
+            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); }} className="mt-10 text-red-500/40 text-[10px] font-black uppercase">Cancel Search</button>
         </div>
     </div>
   );
@@ -580,7 +583,7 @@ const App: React.FC = () => {
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden">
         <div className="w-full h-16 md:h-20 bg-slate-900 flex justify-between items-center px-4 md:px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
-           <button onClick={() => { if(confirm("Surrender?")) { if(!isPracticeMode) databaseService.deleteMatch(matchIdRef.current || ''); setView('LOBBY'); } }} className="text-red-500 font-black text-[8px] md:text-[10px] uppercase bg-red-500/10 px-4 py-2 md:px-6 md:py-3 rounded-xl">Surrender</button>
+           <button onClick={() => { if(confirm("Surrender?")) { if(!isPracticeMode && matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); } }} className="text-red-500 font-black text-[8px] md:text-[10px] uppercase bg-red-500/10 px-4 py-2 md:px-6 md:py-3 rounded-xl">Surrender</button>
            <div className="ludo-money-logo text-xl md:text-3xl tracking-tighter">LUDO MONEY</div>
            <div className="bg-yellow-500/10 px-4 py-2 rounded-xl text-yellow-500 font-black text-sm md:text-xl">৳{selectedStake}</div>
         </div>
