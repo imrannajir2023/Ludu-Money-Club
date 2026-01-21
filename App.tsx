@@ -51,6 +51,7 @@ const App: React.FC = () => {
   
   const matchIdRef = useRef<string | null>(null);
   const botActionTimeoutRef = useRef<number | null>(null);
+  const matchingStartTimeRef = useRef<number>(0);
 
   const refreshCloudData = useCallback(async () => {
     const users = await databaseService.getUsers();
@@ -80,7 +81,6 @@ const App: React.FC = () => {
                 setView('LOBBY');
             } else if (view === 'MATCHING' && myMatch.status === 'ACTIVE') {
                 setMatchingPlayers(myMatch.players);
-                // Important: Initiate game if we are still on matching screen but match is ACTIVE
                 initGameFromCloud(myMatch);
             } else if (view === 'MATCHING') {
                 setMatchingPlayers(myMatch.players);
@@ -117,13 +117,23 @@ const App: React.FC = () => {
     }
   }, [view]);
 
+  // Unified Matchmaking Logic
   useEffect(() => {
     if (view === 'MATCHING') {
       soundManager.play('click');
-      const botInjectionTimer = setTimeout(async () => {
-        if (matchingPlayers.length < selectedPlayerCount) {
+      matchingStartTimeRef.current = Date.now();
+      
+      const botCheckInterval = setInterval(async () => {
+        const elapsed = Date.now() - matchingStartTimeRef.current;
+        
+        // If match is already full with real players, logic handled in refreshCloudData
+        // INCREASED TO 20 SECONDS AS REQUESTED
+        if (elapsed >= 20000 && view === 'MATCHING') {
+          clearInterval(botCheckInterval);
+          
           const updatedPlayers = [...matchingPlayers];
           const colors = [PlayerColor.RED, PlayerColor.YELLOW, PlayerColor.GREEN, PlayerColor.BLUE];
+          
           while (updatedPlayers.length < selectedPlayerCount) {
             const bName = getRandomBotName();
             updatedPlayers.push({ 
@@ -134,23 +144,25 @@ const App: React.FC = () => {
               isBot: true 
             });
           }
+          
           setMatchingPlayers(updatedPlayers);
           
           if (!isPracticeMode && matchIdRef.current) {
-              const matches = await databaseService.getLiveMatches();
-              const m = matches.find(m => m.matchId === matchIdRef.current);
-              if (m) {
-                  m.status = 'ACTIVE';
-                  m.players = updatedPlayers;
-                  await databaseService.syncMatch(m);
-              }
+            const matches = await databaseService.getLiveMatches();
+            const m = matches.find(m => m.matchId === matchIdRef.current);
+            if (m) {
+                m.status = 'ACTIVE';
+                m.players = updatedPlayers;
+                await databaseService.syncMatch(m);
+            }
           }
           initGameLocal(updatedPlayers);
         }
-      }, 8000);
-      return () => clearTimeout(botInjectionTimer);
+      }, 1000);
+
+      return () => clearInterval(botCheckInterval);
     }
-  }, [view, matchingPlayers.length, selectedPlayerCount, isPracticeMode]);
+  }, [view, selectedPlayerCount, isPracticeMode]);
 
   const handleLogout = () => {
     if (confirm("Logout?")) {
@@ -392,7 +404,7 @@ const App: React.FC = () => {
   const startBattleRequest = async (practice: boolean) => {
     const stake = practice ? 0 : selectedStake;
     if (!practice && user.balance < stake) return alert("Insufficient Balance");
-    setGameState(null); // Clear any previous state
+    setGameState(null);
     setIsPracticeMode(practice);
     const initialPlayer = { name: user.name, avatar: user.avatar, isBot: false, score: 0, color: PlayerColor.RED };
     setMatchingPlayers([initialPlayer]);
@@ -412,7 +424,7 @@ const App: React.FC = () => {
             }
             await databaseService.syncMatch(updatedMatch);
             setMatchingPlayers(updatedMatchPlayers);
-            if (updatedMatch.status === 'ACTIVE') setTimeout(() => initGameLocal(updatedMatchPlayers), 1000);
+            if (updatedMatch.status === 'ACTIVE') initGameLocal(updatedMatchPlayers);
         } else {
             const matchId = `match_${Date.now()}`;
             matchIdRef.current = matchId;
