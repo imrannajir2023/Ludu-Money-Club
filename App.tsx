@@ -72,16 +72,24 @@ const App: React.FC = () => {
 
     if (matchIdRef.current) {
         const myMatch = matches.find(m => m.matchId === matchIdRef.current);
-        if (myMatch && myMatch.status === 'TERMINATED') {
-            alert("Match closed by Admin.");
-            matchIdRef.current = null;
-            setView('LOBBY');
+        if (myMatch) {
+            if (myMatch.status === 'TERMINATED') {
+                alert("Match closed by Admin.");
+                matchIdRef.current = null;
+                setView('LOBBY');
+            } else if (view === 'MATCHING' && myMatch.status === 'ACTIVE') {
+                // If match started by someone else
+                setMatchingPlayers(myMatch.players);
+                setTimeout(() => initGameFromCloud(myMatch), 1000);
+            } else if (view === 'MATCHING') {
+                setMatchingPlayers(myMatch.players);
+            }
         }
     }
-  }, []);
+  }, [view]);
 
   useEffect(() => {
-    const interval = setInterval(refreshCloudData, 5000);
+    const interval = setInterval(refreshCloudData, 3000);
     refreshCloudData();
     return () => clearInterval(interval);
   }, [refreshCloudData]);
@@ -108,37 +116,47 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Online Matching Animation Logic
+  // Handle Online Matching & Bot Injection
   useEffect(() => {
     if (view === 'MATCHING') {
       soundManager.play('click');
-      setMatchingPlayers([{ name: user.name, avatar: user.avatar, isReady: true }]);
       
-      const matchTimers: number[] = [];
-      
-      // Simulating other players joining
-      for (let i = 1; i < selectedPlayerCount; i++) {
-        const timer = window.setTimeout(() => {
-          const bName = getRandomBotName();
-          setMatchingPlayers(prev => [
-            ...prev, 
-            { name: bName, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`, isReady: true }
-          ]);
-          soundManager.play('move');
-        }, 1000 + (i * 1200) + Math.random() * 500);
-        matchTimers.push(timer);
-      }
+      const botInjectionTimer = setTimeout(() => {
+        if (matchingPlayers.length < selectedPlayerCount) {
+          // Fill remaining slots with bots if no real player joined after 8s
+          const updatedPlayers = [...matchingPlayers];
+          while (updatedPlayers.length < selectedPlayerCount) {
+            const bName = getRandomBotName();
+            updatedPlayers.push({ 
+              name: bName, 
+              color: [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE][updatedPlayers.length], 
+              score: 0, 
+              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`,
+              isBot: true 
+            });
+          }
+          setMatchingPlayers(updatedPlayers);
+          startActualGame(updatedPlayers);
+        }
+      }, 8000);
 
-      const finalTimer = window.setTimeout(() => {
-        initGame(isPracticeMode);
-      }, 1500 + (selectedPlayerCount * 1300));
-
-      return () => {
-        matchTimers.forEach(t => clearTimeout(t));
-        clearTimeout(finalTimer);
-      };
+      return () => clearTimeout(botInjectionTimer);
     }
-  }, [view, selectedPlayerCount]);
+  }, [view, matchingPlayers.length, selectedPlayerCount]);
+
+  const startActualGame = async (players: any[]) => {
+    if (isPracticeMode) {
+      initGameLocal(players);
+    } else {
+      const match = liveMatches.find(m => m.matchId === matchIdRef.current);
+      if (match) {
+        match.status = 'ACTIVE';
+        match.players = players;
+        await databaseService.syncMatch(match);
+        initGameLocal(players);
+      }
+    }
+  };
 
   const handleLogout = () => {
     if (confirm("Logout?")) {
@@ -151,7 +169,6 @@ const App: React.FC = () => {
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
     soundManager.play('click');
-    
     if (authMode === 'ADMIN_LOGIN') {
       if (loginPhone === 'emukhan580' && loginPassword === 'Imran2015@!@!') {
         localStorage.setItem(STORAGE_KEY_ADMIN, 'true');
@@ -159,7 +176,6 @@ const App: React.FC = () => {
       } else alert("Wrong Admin ID/Password");
       return;
     }
-
     if (authMode === 'SIGNUP') {
       const existing = allUsers.find(u => u.phone === loginPhone);
       if (existing) return alert("Phone already registered!");
@@ -200,13 +216,11 @@ const App: React.FC = () => {
     await databaseService.updateUser(updatedUser);
     await databaseService.updateTransactionStatus(tx.id, 'APPROVED');
     refreshCloudData();
-    alert("Transaction Approved!");
   };
 
   const handleRejectTransaction = async (txId: string) => {
     await databaseService.updateTransactionStatus(txId, 'REJECTED');
     refreshCloudData();
-    alert("Transaction Rejected!");
   };
 
   const syncMatchState = useCallback(async (currentGS: GameState) => {
@@ -357,7 +371,6 @@ const App: React.FC = () => {
     if (view !== 'GAME' || !gameState || animating) return;
     const cp = gameState.players[gameState.currentPlayerIndex];
     if (!cp || !cp.isBot) return;
-    
     if (!gameState.isDiceRolled) {
         botActionTimeoutRef.current = window.setTimeout(rollDice, 1500);
     } else if (gameState.diceValue !== null) {
@@ -369,48 +382,60 @@ const App: React.FC = () => {
     return () => { if (botActionTimeoutRef.current) clearTimeout(botActionTimeoutRef.current); };
   }, [view, gameState, animating, rollDice, moveToken]);
 
-  const initGame = async (practice: boolean = false) => {
-    const stake = practice ? 0 : selectedStake;
-    
-    const players: Player[] = [];
-    let colors = selectedPlayerCount === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
-    
-    // In actual game, matchingPlayers are already generated in MATCHING view
-    players.push({
-      id: 'p1', name: user.name, color: colors[0], isBot: false, avatarUrl: user.avatar,
-      tokens: [0,1,2,3].map(id => ({ id, color: colors[0], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
-    });
-
-    for (let i = 1; i < selectedPlayerCount; i++) {
-        const opponent = matchingPlayers[i] || { name: getRandomBotName() };
-        players.push({
-            id: `p${i+1}`, name: opponent.name, color: colors[i], isBot: true, avatarUrl: opponent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${opponent.name}`,
-            tokens: [0,1,2,3].map(id => ({ id, color: colors[i], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
-        });
-    }
-
-    const matchId = `match_${Date.now()}`;
-    matchIdRef.current = matchId;
-    const initialGS: GameState = { players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: "", consecutiveSixes: 0 };
-    setGameState(initialGS);
-    
-    if (!practice) {
-        await syncMatchState(initialGS);
-    }
-    
+  const initGameLocal = (matchPlayers: any[]) => {
+    const colors = selectedPlayerCount === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+    const players: Player[] = matchPlayers.map((p, i) => ({
+        id: `p${i+1}`, name: p.name, color: colors[i], isBot: !!p.isBot, avatarUrl: p.avatar,
+        tokens: [0,1,2,3].map(id => ({ id, color: colors[i], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
+    }));
+    setGameState({ players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: "", consecutiveSixes: 0 });
     setView('GAME');
   };
 
-  const startBattleRequest = (practice: boolean) => {
+  const initGameFromCloud = (match: LiveMatch) => {
+    if (gameState) return; // already started
+    initGameLocal(match.players);
+  };
+
+  const startBattleRequest = async (practice: boolean) => {
     const stake = practice ? 0 : selectedStake;
     if (!practice && user.balance < stake) return alert("Insufficient Balance");
     
     setIsPracticeMode(practice);
+    setMatchingPlayers([{ name: user.name, avatar: user.avatar, isReady: true, color: PlayerColor.RED }]);
+    
     if (!practice) {
-        // Deduction happens right when starting matching to simulate real stake commitment
         const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
         setUser(updatedUser);
-        databaseService.updateUser(updatedUser);
+        await databaseService.updateUser(updatedUser);
+
+        // REAL ONLINE MATCHING LOGIC
+        const waitingMatch = await databaseService.findWaitingMatch(selectedStake, selectedPlayerCount);
+        if (waitingMatch) {
+            // Join existing
+            matchIdRef.current = waitingMatch.matchId;
+            const updatedMatchPlayers = [...waitingMatch.players, { name: user.name, avatar: user.avatar, isBot: false }];
+            const updatedMatch = { ...waitingMatch, players: updatedMatchPlayers };
+            if (updatedMatchPlayers.length === selectedPlayerCount) {
+                updatedMatch.status = 'ACTIVE';
+            }
+            await databaseService.syncMatch(updatedMatch);
+            setMatchingPlayers(updatedMatchPlayers);
+            if (updatedMatch.status === 'ACTIVE') setTimeout(() => initGameLocal(updatedMatchPlayers), 1000);
+        } else {
+            // Create new
+            const matchId = `match_${Date.now()}`;
+            matchIdRef.current = matchId;
+            const newMatch: any = {
+                matchId,
+                players: [{ name: user.name, avatar: user.avatar, isBot: false }],
+                currentPlayer: user.name,
+                stake: selectedStake,
+                startTime: new Date().toLocaleTimeString(),
+                status: 'WAITING'
+            };
+            await databaseService.createMatch(newMatch);
+        }
     }
     setView('MATCHING');
   };
@@ -444,7 +469,7 @@ const App: React.FC = () => {
           <h1 className="ludo-money-logo text-5xl tracking-tight">LUDO MONEY</h1>
           <p className="text-sky-400 font-black text-[10px] uppercase tracking-[0.4em] mt-2">Win Real Cash Rewards</p>
         </div>
-        <form onSubmit={handleAuthAction} className="premium-card p-10 rounded-[50px] w-full max-w-sm border border-yellow-500/20 space-y-5 shadow-[0_50px_100px_rgba(0,0,0,0.6)] relative z-10">
+        <form onSubmit={handleAuthAction} className="premium-card p-10 rounded-[50px] w-full max-sm border border-yellow-500/20 space-y-5 shadow-[0_50px_100px_rgba(0,0,0,0.6)] relative z-10">
           <div className="text-center mb-6">
               <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Arena Access</h2>
               <div className="h-1 w-20 bg-yellow-500 mx-auto mt-2 rounded-full"></div>
@@ -501,7 +526,6 @@ const App: React.FC = () => {
                 <button onClick={handleLogout} className="bg-red-500/10 text-red-500 w-12 h-12 rounded-2xl flex items-center justify-center border border-red-500/10 hover:bg-red-500 hover:text-white transition-all shadow-lg">✕</button>
             </div>
         </div>
-
         <div className="w-full bg-yellow-500/5 py-2 border-b border-yellow-500/10 overflow-hidden">
           <div className="animate-marquee whitespace-nowrap inline-block">
              {LATEST_WINNERS.concat(LATEST_WINNERS).map((msg, i) => (
@@ -509,7 +533,6 @@ const App: React.FC = () => {
              ))}
           </div>
         </div>
-
         <div className="flex-1 flex flex-col items-center justify-center gap-12 p-8 max-w-4xl mx-auto w-full pb-20">
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8">
                <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-12 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.6)] text-center border-b-[15px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center" onClick={() => { setView('MATCH_CONFIG'); }}>
@@ -519,7 +542,6 @@ const App: React.FC = () => {
                   <p className="text-yellow-400 text-[10px] uppercase font-black tracking-[0.4em] mb-8">Win Huge Real Money</p>
                   <div className="gold-button text-black px-12 py-5 rounded-3xl font-black uppercase text-sm tracking-widest shadow-2xl">Join Table</div>
                </div>
-
                <div className="grid grid-rows-2 gap-8">
                   <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => { setSelectedPlayerCount(2); startBattleRequest(true); }}>
                       <div className="flex items-center gap-6">
@@ -544,7 +566,6 @@ const App: React.FC = () => {
                </div>
             </div>
         </div>
-        
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { databaseService.submitTransaction(tx); refreshCloudData(); }} />
     </div>
   );
@@ -571,11 +592,9 @@ const App: React.FC = () => {
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.3)_0%,transparent_70%)] animate-pulse"></div>
         </div>
-        
         <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
             <h2 className="ludo-money-logo text-3xl text-center mb-4 tracking-tighter italic">Matching...</h2>
             <p className="text-[10px] font-black text-sky-400 uppercase tracking-[0.4em] mb-12 text-center animate-pulse">Finding Active Opponents</p>
-            
             <div className="grid grid-cols-2 gap-8 mb-12">
                 {[...Array(selectedPlayerCount)].map((_, i) => (
                     <div key={i} className="flex flex-col items-center gap-4">
@@ -595,16 +614,13 @@ const App: React.FC = () => {
                     </div>
                 ))}
             </div>
-
             <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden mb-4">
                 <div className="h-full bg-yellow-500 transition-all duration-1000 ease-linear" style={{ width: `${(matchingPlayers.length / selectedPlayerCount) * 100}%` }}></div>
             </div>
-            
             <p className="text-[9px] font-black uppercase text-white/20 tracking-widest">
                 Stake: <span className="text-yellow-500">৳{selectedStake}</span> • Reward: <span className="text-green-500">৳{selectedStake * 1.8}</span>
             </p>
-            
-            <button onClick={() => setView('LOBBY')} className="mt-12 text-red-500/40 text-[10px] font-black uppercase hover:text-red-500 transition-colors">Cancel Search</button>
+            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setView('LOBBY'); }} className="mt-12 text-red-500/40 text-[10px] font-black uppercase hover:text-red-500 transition-colors">Cancel Search</button>
         </div>
     </div>
   );
@@ -612,7 +628,7 @@ const App: React.FC = () => {
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden">
         <div className="w-full h-20 bg-slate-900/95 backdrop-blur-xl flex justify-between items-center px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
-           <button onClick={() => { if(confirm("Surrender?")) setView('LOBBY'); }} className="text-red-500 font-black text-[10px] uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all tracking-widest border border-red-500/20">Surrender</button>
+           <button onClick={() => { if(confirm("Surrender?")) { if(!isPracticeMode) databaseService.deleteMatch(matchIdRef.current || ''); setView('LOBBY'); } }} className="text-red-500 font-black text-[10px] uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all tracking-widest border border-red-500/20">Surrender</button>
            <div className="ludo-money-logo text-3xl tracking-tighter">LUDO MONEY</div>
            <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-xl border border-yellow-500/20 shadow-inner">{isPracticeMode ? 'Practice' : `৳${selectedStake}`}</div>
         </div>
