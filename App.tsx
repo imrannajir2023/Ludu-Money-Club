@@ -79,18 +79,18 @@ const App: React.FC = () => {
                 matchIdRef.current = null;
                 setGameState(null);
                 setView('LOBBY');
-            } else if (view === 'MATCHING' && myMatch.status === 'ACTIVE') {
-                setMatchingPlayers(myMatch.players);
-                initGameFromCloud(myMatch);
             } else if (view === 'MATCHING') {
                 setMatchingPlayers(myMatch.players);
+                if (myMatch.status === 'ACTIVE') {
+                  initGameFromCloud(myMatch);
+                }
             }
         }
     }
-  }, [view]);
+  }, [view, gameState]);
 
   useEffect(() => {
-    const interval = setInterval(refreshCloudData, 3000);
+    const interval = setInterval(refreshCloudData, 2000); // Polling slightly faster for real-time feel
     refreshCloudData();
     return () => clearInterval(interval);
   }, [refreshCloudData]);
@@ -117,7 +117,7 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Unified Matchmaking Logic
+  // Matchmaking Bot Timeout Logic
   useEffect(() => {
     if (view === 'MATCHING') {
       soundManager.play('click');
@@ -126,9 +126,8 @@ const App: React.FC = () => {
       const botCheckInterval = setInterval(async () => {
         const elapsed = Date.now() - matchingStartTimeRef.current;
         
-        // If match is already full with real players, logic handled in refreshCloudData
-        // INCREASED TO 20 SECONDS AS REQUESTED
-        if (elapsed >= 20000 && view === 'MATCHING') {
+        // Match already active or waiting? Driven by Cloud refresh
+        if (elapsed >= 20000 && view === 'MATCHING' && matchingPlayers.length < selectedPlayerCount) {
           clearInterval(botCheckInterval);
           
           const updatedPlayers = [...matchingPlayers];
@@ -162,7 +161,7 @@ const App: React.FC = () => {
 
       return () => clearInterval(botCheckInterval);
     }
-  }, [view, selectedPlayerCount, isPracticeMode]);
+  }, [view, selectedPlayerCount, isPracticeMode, matchingPlayers.length]);
 
   const handleLogout = () => {
     if (confirm("Logout?")) {
@@ -404,28 +403,34 @@ const App: React.FC = () => {
   const startBattleRequest = async (practice: boolean) => {
     const stake = practice ? 0 : selectedStake;
     if (!practice && user.balance < stake) return alert("Insufficient Balance");
+    
     setGameState(null);
+    setMatchingPlayers([]);
     setIsPracticeMode(practice);
+    
     const initialPlayer = { name: user.name, avatar: user.avatar, isBot: false, score: 0, color: PlayerColor.RED };
-    setMatchingPlayers([initialPlayer]);
     
     if (!practice) {
         const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
         setUser(updatedUser);
         await databaseService.updateUser(updatedUser);
         
+        // Try finding a match first
         const waitingMatch = await databaseService.findWaitingMatch(selectedStake, selectedPlayerCount);
         if (waitingMatch) {
             matchIdRef.current = waitingMatch.matchId;
             const updatedMatchPlayers = [...waitingMatch.players, initialPlayer];
             const updatedMatch = { ...waitingMatch, players: updatedMatchPlayers };
-            if (updatedMatchPlayers.length === selectedPlayerCount) {
+            
+            if (updatedMatchPlayers.length >= selectedPlayerCount) {
                 updatedMatch.status = 'ACTIVE';
             }
+            
             await databaseService.syncMatch(updatedMatch);
             setMatchingPlayers(updatedMatchPlayers);
             if (updatedMatch.status === 'ACTIVE') initGameLocal(updatedMatchPlayers);
         } else {
+            // Create a new match if none found
             const matchId = `match_${Date.now()}`;
             matchIdRef.current = matchId;
             const newMatch: any = {
@@ -436,8 +441,11 @@ const App: React.FC = () => {
                 startTime: new Date().toLocaleTimeString(),
                 status: 'WAITING'
             };
+            setMatchingPlayers([initialPlayer]);
             await databaseService.createMatch(newMatch);
         }
+    } else {
+      setMatchingPlayers([initialPlayer]);
     }
     setView('MATCHING');
   };
@@ -582,7 +590,7 @@ const App: React.FC = () => {
                         <div className={`w-20 h-20 md:w-24 md:h-24 rounded-full border-4 flex items-center justify-center relative ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10 shadow-lg' : 'border-white/5 bg-white/5'}`}>
                             {matchingPlayers[i] ? <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover rounded-full" /> : <div className="w-10 h-10 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>}
                         </div>
-                        <p className={`font-black uppercase text-[9px] md:text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>{matchingPlayers[i] ? matchingPlayers[i].name : 'Searching...'}</p>
+                        <p className={`font-black uppercase text-[9px] md:text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>{matchingPlayers[i] ? (matchingPlayers[i].name === user.name ? 'আপনি' : matchingPlayers[i].name) : 'Searching...'}</p>
                     </div>
                 ))}
             </div>

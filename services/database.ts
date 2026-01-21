@@ -62,22 +62,21 @@ export const databaseService = {
     }
   },
 
-  // Find a match that is waiting for players with same stake
   async findWaitingMatch(stake: number, requiredPlayers: number): Promise<any> {
     try {
+      // Find matches that are WAITING, have same stake, and still need players
       const { data, error } = await supabase
         .from('matches')
         .select('*')
         .eq('status', 'WAITING')
         .eq('stake', stake)
-        .limit(1)
-        .single();
+        .order('start_time', { ascending: true });
       
-      if (error || !data) return null;
-      // Check if it's for the same player count config (simplified check via players array length)
-      if (data.players.length >= requiredPlayers) return null;
+      if (error || !data || data.length === 0) return null;
       
-      return toCamelCase(data);
+      // Return the first match that has space
+      const availableMatch = data.find(m => m.players.length < requiredPlayers);
+      return availableMatch ? toCamelCase(availableMatch) : null;
     } catch {
       return null;
     }
@@ -86,7 +85,7 @@ export const databaseService = {
   async createMatch(match: any) {
     try {
       await supabase.from('matches').insert(toSnakeCase(match));
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Create Match Error:", e); }
   },
 
   async syncMatch(match: LiveMatch) {
@@ -102,10 +101,7 @@ export const databaseService = {
       };
       await supabase.from('matches').upsert(dbMatch, { onConflict: 'match_id' });
     } catch (error: any) {
-      const matches = JSON.parse(localStorage.getItem("LUDO_LIVE_MATCHES") || '[]');
-      const idx = matches.findIndex((m: any) => m.matchId === match.matchId);
-      if (idx !== -1) matches[idx] = match; else matches.push(match);
-      localStorage.setItem("LUDO_LIVE_MATCHES", JSON.stringify(matches));
+      console.error("Sync Match Error:", error);
     }
   },
 
@@ -113,8 +109,7 @@ export const databaseService = {
     try {
       await supabase.from('matches').delete().eq('match_id', match_id);
     } catch (error: any) {
-      const matches = JSON.parse(localStorage.getItem("LUDO_LIVE_MATCHES") || '[]');
-      localStorage.setItem("LUDO_LIVE_MATCHES", JSON.stringify(matches.filter((m: any) => m.matchId !== match_id)));
+      console.error("Delete Match Error:", error);
     }
   },
 
@@ -142,8 +137,7 @@ export const databaseService = {
     try {
       await supabase.from('transactions').update({ status }).eq('id', id);
     } catch (error: any) {
-      const txs = JSON.parse(localStorage.getItem("LUDO_PENDING_TRANSACTIONS") || '[]');
-      localStorage.setItem("LUDO_PENDING_TRANSACTIONS", JSON.stringify(txs.filter((t: any) => t.id !== id)));
+      console.error("TX Update Error:", error);
     }
   },
 
