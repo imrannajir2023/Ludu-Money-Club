@@ -78,7 +78,6 @@ const App: React.FC = () => {
                 matchIdRef.current = null;
                 setView('LOBBY');
             } else if (view === 'MATCHING' && myMatch.status === 'ACTIVE') {
-                // If match started by someone else
                 setMatchingPlayers(myMatch.players);
                 setTimeout(() => initGameFromCloud(myMatch), 1000);
             } else if (view === 'MATCHING') {
@@ -116,14 +115,11 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Handle Online Matching & Bot Injection
   useEffect(() => {
     if (view === 'MATCHING') {
       soundManager.play('click');
-      
       const botInjectionTimer = setTimeout(() => {
         if (matchingPlayers.length < selectedPlayerCount) {
-          // Fill remaining slots with bots if no real player joined after 8s
           const updatedPlayers = [...matchingPlayers];
           while (updatedPlayers.length < selectedPlayerCount) {
             const bName = getRandomBotName();
@@ -139,7 +135,6 @@ const App: React.FC = () => {
           startActualGame(updatedPlayers);
         }
       }, 8000);
-
       return () => clearTimeout(botInjectionTimer);
     }
   }, [view, matchingPlayers.length, selectedPlayerCount]);
@@ -337,7 +332,6 @@ const App: React.FC = () => {
     if (animating || (gameState && gameState.isDiceRolled)) return;
     setAnimating(true);
     soundManager.play('dice');
-    
     let override = null;
     if (!isPracticeMode) {
         const matches = await databaseService.getLiveMatches();
@@ -348,13 +342,11 @@ const App: React.FC = () => {
             await databaseService.syncMatch(myMatch!);
         }
     }
-
     setTimeout(() => {
       const val = override || Math.floor(Math.random() * 6) + 1;
       setAnimating(false);
       soundManager.play('dice_stop');
       if (val === 6) soundManager.play('six');
-      
       setGameState(prev => {
         if (!prev) return null;
         const player = prev.players[prev.currentPlayerIndex];
@@ -393,26 +385,21 @@ const App: React.FC = () => {
   };
 
   const initGameFromCloud = (match: LiveMatch) => {
-    if (gameState) return; // already started
+    if (gameState) return;
     initGameLocal(match.players);
   };
 
   const startBattleRequest = async (practice: boolean) => {
     const stake = practice ? 0 : selectedStake;
     if (!practice && user.balance < stake) return alert("Insufficient Balance");
-    
     setIsPracticeMode(practice);
     setMatchingPlayers([{ name: user.name, avatar: user.avatar, isReady: true, color: PlayerColor.RED }]);
-    
     if (!practice) {
         const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
         setUser(updatedUser);
         await databaseService.updateUser(updatedUser);
-
-        // REAL ONLINE MATCHING LOGIC
         const waitingMatch = await databaseService.findWaitingMatch(selectedStake, selectedPlayerCount);
         if (waitingMatch) {
-            // Join existing
             matchIdRef.current = waitingMatch.matchId;
             const updatedMatchPlayers = [...waitingMatch.players, { name: user.name, avatar: user.avatar, isBot: false }];
             const updatedMatch = { ...waitingMatch, players: updatedMatchPlayers };
@@ -423,7 +410,6 @@ const App: React.FC = () => {
             setMatchingPlayers(updatedMatchPlayers);
             if (updatedMatch.status === 'ACTIVE') setTimeout(() => initGameLocal(updatedMatchPlayers), 1000);
         } else {
-            // Create new
             const matchId = `match_${Date.now()}`;
             matchIdRef.current = matchId;
             const newMatch: any = {
@@ -459,7 +445,6 @@ const App: React.FC = () => {
       <div className="w-72 bg-white/5 h-3 rounded-full overflow-hidden border border-white/10 p-[2px]">
         <div className="bg-gradient-to-r from-yellow-500 to-yellow-300 h-full rounded-full transition-all duration-300" style={{width:`${loadingProgress}%`}}></div>
       </div>
-      <p className="mt-4 text-yellow-500/60 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Loading Arena...</p>
     </div>
   );
 
@@ -467,182 +452,148 @@ const App: React.FC = () => {
     <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-4 dotted-bg overflow-hidden relative">
         <div className="absolute top-10 flex flex-col items-center">
           <h1 className="ludo-money-logo text-5xl tracking-tight">LUDO MONEY</h1>
-          <p className="text-sky-400 font-black text-[10px] uppercase tracking-[0.4em] mt-2">Win Real Cash Rewards</p>
         </div>
-        <form onSubmit={handleAuthAction} className="premium-card p-10 rounded-[50px] w-full max-sm border border-yellow-500/20 space-y-5 shadow-[0_50px_100px_rgba(0,0,0,0.6)] relative z-10">
-          <div className="text-center mb-6">
-              <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Arena Access</h2>
-              <div className="h-1 w-20 bg-yellow-500 mx-auto mt-2 rounded-full"></div>
-          </div>
-          {authMode === 'SIGNUP' && <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Display Name" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all font-bold placeholder:text-white/20" />}
-          <input type="text" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder="Phone Number" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all font-bold placeholder:text-white/20" />
-          <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Security Code" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all font-bold placeholder:text-white/20" />
-          <button type="submit" className="w-full gold-button py-6 rounded-3xl font-black text-black uppercase tracking-[0.2em] text-lg mt-4">
-            {authMode === 'LOGIN' ? 'Login' : 'Create Account'}
-          </button>
+        <form onSubmit={handleAuthAction} className="premium-card p-10 rounded-[50px] w-full max-sm border border-yellow-500/20 space-y-5 shadow-2xl relative z-10">
+          <div className="text-center mb-6"><h2 className="text-2xl font-black text-white uppercase italic">Arena Access</h2></div>
+          {authMode === 'SIGNUP' && <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Display Name" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white font-bold" />}
+          <input type="text" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder="Phone Number" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white font-bold" />
+          <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Security Code" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white font-bold" />
+          <button type="submit" className="w-full gold-button py-6 rounded-3xl font-black text-black uppercase text-lg mt-4">{authMode === 'LOGIN' ? 'Login' : 'Create Account'}</button>
           <div className="flex justify-between px-2 pt-4">
-              <p className="text-yellow-500/40 text-[10px] font-black uppercase cursor-pointer hover:text-yellow-500 transition-colors" onClick={() => setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}>{authMode === 'LOGIN' ? "No account? Signup" : "Already registered? Login"}</p>
-              <p className="text-white/10 text-[10px] font-black uppercase cursor-pointer hover:text-white/30 transition-colors" onClick={() => setAuthMode('ADMIN_LOGIN')}>Admin Access</p>
+              <p className="text-yellow-500/40 text-[10px] font-black uppercase cursor-pointer" onClick={() => setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}>{authMode === 'LOGIN' ? "Signup" : "Login"}</p>
+              <p className="text-white/10 text-[10px] font-black uppercase cursor-pointer" onClick={() => setAuthMode('ADMIN_LOGIN')}>Admin</p>
           </div>
         </form>
     </div>
   );
 
   if (view === 'ADMIN') return (
-    <AdminPortal 
-      user={user} 
-      allUsers={allUsers} 
-      onUpdateUsersDB={handleUpdateUsersDB} 
-      pendingTransactions={pendingTransactions} 
-      liveMatches={liveMatches} 
-      onApproveTransaction={handleApproveTransaction} 
-      onRejectTransaction={handleRejectTransaction} 
-      onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} 
-      onUpdateUser={setUser} 
-    />
+    <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={handleUpdateUsersDB} pendingTransactions={pendingTransactions} liveMatches={liveMatches} onApproveTransaction={handleApproveTransaction} onRejectTransaction={handleRejectTransaction} onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} onUpdateUser={setUser} />
   );
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white dotted-bg overflow-hidden">
-        <div className="p-6 flex items-center justify-between z-[100] relative bg-slate-900/90 backdrop-blur-2xl border-b border-yellow-500/10 shadow-xl">
-            <div className="flex items-center gap-4">
-                <div className="relative">
-                  <img src={user.avatar} className="w-14 h-14 rounded-full border-4 border-yellow-500/30 shadow-2xl" />
-                  <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-[#0a1220] rounded-full"></div>
-                </div>
+        <div className="p-4 md:p-6 flex items-center justify-between z-[100] relative bg-slate-900/90 backdrop-blur-2xl border-b border-yellow-500/10 shadow-xl">
+            <div className="flex items-center gap-3 md:gap-4">
+                <img src={user.avatar} className="w-10 h-10 md:w-14 md:h-14 rounded-full border-4 border-yellow-500/30" />
                 <div>
-                    <h3 className="font-black text-base uppercase tracking-tight italic">{user.name}</h3>
-                    <div className="bg-yellow-500/10 px-3 py-0.5 rounded-full border border-yellow-500/20 inline-block mt-1">
-                      <p className="text-[9px] text-yellow-500 font-black uppercase tracking-widest">VIP Member</p>
+                    <h3 className="font-black text-xs md:text-base uppercase italic">{user.name}</h3>
+                    <div className="bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 inline-block">
+                      <p className="text-[8px] md:text-[9px] text-yellow-500 font-black uppercase">VIP Member</p>
                     </div>
                 </div>
             </div>
-            <div className="flex items-center gap-4">
-                <div className="bg-black/40 px-6 py-3 rounded-3xl border-2 border-yellow-500/30 flex items-center gap-4 shadow-2xl group hover:border-yellow-500 transition-all cursor-pointer" onClick={() => setWalletOpen(true)}>
-                    <div className="w-8 h-8 bg-gradient-to-b from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center text-black font-black text-xl shadow-lg ring-2 ring-yellow-500/20 group-hover:scale-110 transition-transform">৳</div>
-                    <span className="font-black text-2xl tracking-tighter text-yellow-500">{user.balance.toLocaleString()}</span>
-                    <div className="bg-yellow-500 text-black w-6 h-6 rounded-full font-black text-base flex items-center justify-center shadow-lg">+</div>
+            <div className="flex items-center gap-2 md:gap-4">
+                <div className="bg-black/40 px-4 py-2 md:px-6 md:py-3 rounded-2xl md:rounded-3xl border-2 border-yellow-500/30 flex items-center gap-3 cursor-pointer" onClick={() => setWalletOpen(true)}>
+                    <div className="w-6 h-6 md:w-8 md:h-8 bg-gradient-to-b from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center text-black font-black text-xs md:text-xl">৳</div>
+                    <span className="font-black text-sm md:text-2xl tracking-tighter text-yellow-500">{user.balance.toLocaleString()}</span>
                 </div>
-                <button onClick={handleLogout} className="bg-red-500/10 text-red-500 w-12 h-12 rounded-2xl flex items-center justify-center border border-red-500/10 hover:bg-red-500 hover:text-white transition-all shadow-lg">✕</button>
+                <button onClick={handleLogout} className="bg-red-500/10 text-red-500 w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center border border-red-500/10">✕</button>
             </div>
         </div>
-        <div className="w-full bg-yellow-500/5 py-2 border-b border-yellow-500/10 overflow-hidden">
+        
+        {/* ENHANCED NOTIFICATION BAR FOR MOBILE */}
+        <div className="w-full bg-black/90 py-3 border-y border-yellow-500/20 overflow-hidden relative z-[90] shadow-lg">
           <div className="animate-marquee whitespace-nowrap inline-block">
              {LATEST_WINNERS.concat(LATEST_WINNERS).map((msg, i) => (
-               <span key={i} className="mx-12 text-[11px] font-black uppercase tracking-widest text-yellow-500/80">🔥 {msg}</span>
+               <span key={i} className="mx-8 md:mx-12 text-[12px] md:text-[14px] font-black uppercase tracking-widest text-yellow-500 drop-shadow-[0_0_5px_rgba(251,191,36,0.3)]">🔥 {msg}</span>
              ))}
           </div>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center gap-12 p-8 max-w-4xl mx-auto w-full pb-20">
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-12 rounded-[60px] shadow-[0_40px_80px_rgba(0,0,0,0.6)] text-center border-b-[15px] border-indigo-950 hover:scale-[1.02] active:translate-y-2 active:border-b-0 transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center" onClick={() => { setView('MATCH_CONFIG'); }}>
-                  <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1)_0%,transparent_60%)]"></div>
-                  <img src="https://cdn-icons-png.flaticon.com/512/806/806131.png" className="w-24 h-24 mb-6 drop-shadow-2xl animate-float" />
-                  <h2 className="text-4xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
-                  <p className="text-yellow-400 text-[10px] uppercase font-black tracking-[0.4em] mb-8">Win Huge Real Money</p>
-                  <div className="gold-button text-black px-12 py-5 rounded-3xl font-black uppercase text-sm tracking-widest shadow-2xl">Join Table</div>
+
+        <div className="flex-1 overflow-y-auto no-scrollbar pb-10">
+          <div className="flex flex-col items-center gap-8 md:gap-12 p-6 md:p-8 max-w-4xl mx-auto w-full">
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-8 md:p-12 rounded-[40px] md:rounded-[60px] shadow-2xl text-center border-b-[10px] border-indigo-950 flex flex-col items-center justify-center cursor-pointer" onClick={() => setView('MATCH_CONFIG')}>
+                  <img src={LOGO_ICON} className="w-20 h-20 mb-4 md:mb-6 animate-float" />
+                  <h2 className="text-3xl md:text-4xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
+                  <p className="text-yellow-400 text-[9px] md:text-[10px] uppercase font-black tracking-[0.4em] mb-6 md:mb-8">Win Real Money</p>
+                  <div className="gold-button text-black px-10 md:px-12 py-4 md:py-5 rounded-2xl md:rounded-3xl font-black uppercase text-xs md:text-sm tracking-widest">Join Table</div>
                </div>
-               <div className="grid grid-rows-2 gap-8">
-                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => { setSelectedPlayerCount(2); startBattleRequest(true); }}>
-                      <div className="flex items-center gap-6">
-                        <span className="text-5xl group-hover:scale-110 transition-transform">🤖</span>
+               <div className="grid grid-cols-1 gap-4 md:gap-8">
+                  <div className="bg-slate-800/40 p-6 md:p-8 rounded-[35px] md:rounded-[45px] border border-white/5 flex items-center justify-between cursor-pointer" onClick={() => { setSelectedPlayerCount(2); startBattleRequest(true); }}>
+                      <div className="flex items-center gap-4 md:gap-6">
+                        <span className="text-4xl md:text-5xl">🤖</span>
                         <div>
-                          <h4 className="font-black text-xl uppercase italic tracking-tighter">Practice</h4>
-                          <p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Train for free</p>
+                          <h4 className="font-black text-lg md:text-xl uppercase italic tracking-tighter">Practice</h4>
+                          <p className="text-[8px] md:text-[9px] font-black text-white/20 uppercase tracking-widest">Train for free</p>
                         </div>
                       </div>
-                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">→</div>
+                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
                   </div>
-                  <div className="bg-slate-800/40 p-8 rounded-[45px] border border-white/5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer shadow-xl group" onClick={() => alert("Private Room feature is coming soon!")}>
-                      <div className="flex items-center gap-6">
-                        <span className="text-5xl group-hover:scale-110 transition-transform">👬</span>
+                  <div className="bg-slate-800/40 p-6 md:p-8 rounded-[35px] md:rounded-[45px] border border-white/5 flex items-center justify-between cursor-pointer" onClick={() => alert("Coming Soon!")}>
+                      <div className="flex items-center gap-4 md:gap-6">
+                        <span className="text-4xl md:text-5xl">👬</span>
                         <div>
-                          <h4 className="font-black text-xl uppercase italic tracking-tighter">Private</h4>
-                          <p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Play with friends</p>
+                          <h4 className="font-black text-lg md:text-xl uppercase italic tracking-tighter">Private</h4>
+                          <p className="text-[8px] md:text-[9px] font-black text-white/20 uppercase tracking-widest">Play with friends</p>
                         </div>
                       </div>
-                      <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">→</div>
+                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
                   </div>
                </div>
             </div>
+          </div>
         </div>
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { databaseService.submitTransaction(tx); refreshCloudData(); }} />
     </div>
   );
 
   if (view === 'MATCH_CONFIG') return (
-    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg">
-        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center">
-           <h2 className="ludo-money-logo text-3xl text-center mb-10 tracking-tighter uppercase italic">Select Stake</h2>
-           <div className="grid grid-cols-2 gap-5 mb-10 w-full">
-              {[2, 4].map(c => <button key={c} onClick={() => { soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-8 rounded-[35px] font-black text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 shadow-xl scale-105 text-white' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
+    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-4 md:p-6 text-white dotted-bg overflow-hidden">
+        <div className="premium-card p-8 md:p-12 rounded-[40px] md:rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center max-h-[90vh] overflow-y-auto no-scrollbar">
+           <h2 className="ludo-money-logo text-2xl md:text-3xl text-center mb-8 tracking-tighter uppercase italic">Select Stake</h2>
+           <div className="grid grid-cols-2 gap-3 md:gap-5 mb-8 w-full">
+              {[2, 4].map(c => <button key={c} onClick={() => { soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-6 md:py-8 rounded-[25px] md:rounded-[35px] font-black text-base md:text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 text-white' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
            </div>
-           <p className="text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-6 text-center">Entry Fee (৳)</p>
-           <div className="grid grid-cols-3 gap-3 mb-12 w-full">
-              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`py-5 rounded-[22px] font-black text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-xl scale-110' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
+           <p className="text-[9px] md:text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-4 text-center">Entry Fee (৳)</p>
+           <div className="grid grid-cols-3 gap-2 md:gap-3 mb-10 w-full">
+              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`py-4 md:py-5 rounded-[18px] md:rounded-[22px] font-black text-xs md:text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
            </div>
-           <button onClick={() => startBattleRequest(false)} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black shadow-2xl">Start Battle</button>
-           <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer hover:text-white transition-colors" onClick={() => setView('LOBBY')}>Cancel & Return</p>
+           <button onClick={() => startBattleRequest(false)} className="w-full gold-button py-6 md:py-8 rounded-[30px] md:rounded-[40px] font-black text-xl md:text-2xl uppercase tracking-widest text-black shadow-2xl">Start Battle</button>
+           <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer" onClick={() => setView('LOBBY')}>Cancel & Return</p>
         </div>
     </div>
   );
 
   if (view === 'MATCHING') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.3)_0%,transparent_70%)] animate-pulse"></div>
-        </div>
-        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
-            <h2 className="ludo-money-logo text-3xl text-center mb-4 tracking-tighter italic">Matching...</h2>
-            <p className="text-[10px] font-black text-sky-400 uppercase tracking-[0.4em] mb-12 text-center animate-pulse">Finding Active Opponents</p>
-            <div className="grid grid-cols-2 gap-8 mb-12">
+        <div className="premium-card p-10 md:p-12 rounded-[50px] md:rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
+            <h2 className="ludo-money-logo text-2xl md:text-3xl text-center mb-4 tracking-tighter italic">Matching...</h2>
+            <p className="text-[9px] md:text-[10px] font-black text-sky-400 uppercase tracking-[0.4em] mb-10 text-center animate-pulse">Finding Active Opponents</p>
+            <div className="grid grid-cols-2 gap-6 md:gap-8 mb-10">
                 {[...Array(selectedPlayerCount)].map((_, i) => (
-                    <div key={i} className="flex flex-col items-center gap-4">
-                        <div className={`w-24 h-24 rounded-full border-4 transition-all duration-500 flex items-center justify-center relative overflow-hidden ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10 shadow-[0_0_30px_rgba(251,191,36,0.3)]' : 'border-white/5 bg-white/5'}`}>
-                            {matchingPlayers[i] ? (
-                                <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover animate-in zoom-in-50 duration-500" />
-                            ) : (
-                                <div className="w-12 h-12 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>
-                            )}
-                            {matchingPlayers[i] && (
-                                <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 rounded-full border-2 border-slate-900 flex items-center justify-center text-[10px]">✓</div>
-                            )}
+                    <div key={i} className="flex flex-col items-center gap-3">
+                        <div className={`w-20 h-20 md:w-24 md:h-24 rounded-full border-4 flex items-center justify-center relative ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10 shadow-lg' : 'border-white/5 bg-white/5'}`}>
+                            {matchingPlayers[i] ? <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover rounded-full" /> : <div className="w-10 h-10 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>}
                         </div>
-                        <p className={`font-black uppercase text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>
-                            {matchingPlayers[i] ? matchingPlayers[i].name : 'Searching...'}
-                        </p>
+                        <p className={`font-black uppercase text-[9px] md:text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>{matchingPlayers[i] ? matchingPlayers[i].name : 'Searching...'}</p>
                     </div>
                 ))}
             </div>
-            <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden mb-4">
-                <div className="h-full bg-yellow-500 transition-all duration-1000 ease-linear" style={{ width: `${(matchingPlayers.length / selectedPlayerCount) * 100}%` }}></div>
-            </div>
-            <p className="text-[9px] font-black uppercase text-white/20 tracking-widest">
-                Stake: <span className="text-yellow-500">৳{selectedStake}</span> • Reward: <span className="text-green-500">৳{selectedStake * 1.8}</span>
-            </p>
-            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setView('LOBBY'); }} className="mt-12 text-red-500/40 text-[10px] font-black uppercase hover:text-red-500 transition-colors">Cancel Search</button>
+            <p className="text-[8px] md:text-[9px] font-black uppercase text-white/20 tracking-widest">Stake: <span className="text-yellow-500">৳{selectedStake}</span></p>
+            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setView('LOBBY'); }} className="mt-10 text-red-500/40 text-[10px] font-black uppercase">Cancel Search</button>
         </div>
     </div>
   );
 
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden">
-        <div className="w-full h-20 bg-slate-900/95 backdrop-blur-xl flex justify-between items-center px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
-           <button onClick={() => { if(confirm("Surrender?")) { if(!isPracticeMode) databaseService.deleteMatch(matchIdRef.current || ''); setView('LOBBY'); } }} className="text-red-500 font-black text-[10px] uppercase bg-red-500/10 px-6 py-3 rounded-2xl hover:bg-red-500 hover:text-white transition-all tracking-widest border border-red-500/20">Surrender</button>
-           <div className="ludo-money-logo text-3xl tracking-tighter">LUDO MONEY</div>
-           <div className="bg-yellow-500/10 px-6 py-3 rounded-2xl text-yellow-500 font-black text-xl border border-yellow-500/20 shadow-inner">{isPracticeMode ? 'Practice' : `৳${selectedStake}`}</div>
+        <div className="w-full h-16 md:h-20 bg-slate-900 flex justify-between items-center px-4 md:px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
+           <button onClick={() => { if(confirm("Surrender?")) { if(!isPracticeMode) databaseService.deleteMatch(matchIdRef.current || ''); setView('LOBBY'); } }} className="text-red-500 font-black text-[8px] md:text-[10px] uppercase bg-red-500/10 px-4 py-2 md:px-6 md:py-3 rounded-xl">Surrender</button>
+           <div className="ludo-money-logo text-xl md:text-3xl tracking-tighter">LUDO MONEY</div>
+           <div className="bg-yellow-500/10 px-4 py-2 rounded-xl text-yellow-500 font-black text-sm md:text-xl">৳{selectedStake}</div>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8 w-full max-h-[calc(100vh-80px)]">
-            <div className="w-full max-w-[500px] aspect-square shadow-[0_60px_120px_rgba(0,0,0,0.8)] rounded-[50px] overflow-hidden border-[12px] border-white/5 bg-white/5 relative">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.05)_0%,transparent_70%)] pointer-events-none"></div>
+        <div className="flex-1 flex flex-col items-center justify-center p-2 md:p-4 gap-4 md:gap-8 w-full max-h-[calc(100vh-80px)]">
+            <div className="w-full max-w-[95vw] md:max-w-[500px] aspect-square shadow-2xl rounded-[30px] md:rounded-[50px] overflow-hidden border-[6px] md:border-[12px] border-white/5 bg-white/5 relative">
                 <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} validTokens={validTokens} onTokenClick={(t) => moveToken(t.id)} />
             </div>
-            <div className="flex flex-col items-center gap-6 pb-12 w-full max-w-sm">
-                <div className="flex items-center gap-4 bg-slate-800/40 p-4 px-8 rounded-full border border-white/5 shadow-2xl">
-                    <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-10 h-10 rounded-full border-2 border-yellow-500" alt="" />
-                    <p className="text-xl font-black uppercase text-white tracking-tight">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
+            <div className="flex flex-col items-center gap-4 md:gap-6 pb-6 w-full max-w-sm">
+                <div className="flex items-center gap-3 bg-slate-800/40 p-3 px-6 rounded-full border border-white/5">
+                    <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-8 h-8 rounded-full border-2 border-yellow-500" />
+                    <p className="text-sm md:text-xl font-black uppercase text-white">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
                 </div>
-                <div onClick={!gameState.players[gameState.currentPlayerIndex].isBot ? rollDice : undefined} className={`w-36 h-36 bg-white rounded-[50px] shadow-[0_30px_60px_rgba(0,0,0,0.5)] flex items-center justify-center text-8xl font-black text-slate-800 border-b-[15px] border-slate-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer hover:scale-110 active:scale-95 active:border-b-0 active:translate-y-4'}`}>
+                <div onClick={!gameState.players[gameState.currentPlayerIndex].isBot ? rollDice : undefined} className={`w-28 h-28 md:w-36 md:h-36 bg-white rounded-[30px] md:rounded-[50px] shadow-2xl flex items-center justify-center text-6xl md:text-8xl font-black text-slate-800 border-b-[8px] md:border-b-[15px] border-slate-300 transition-all ${animating ? 'animate-bounce-slow' : ''} ${(gameState.isDiceRolled || gameState.players[gameState.currentPlayerIndex].isBot) && !animating ? 'opacity-30' : 'cursor-pointer active:translate-y-2 active:border-b-0'}`}>
                    {gameState.diceValue || '🎲'}
                 </div>
             </div>
