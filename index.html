@@ -3,14 +3,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ludo Money Club</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700;900&display=swap');
       
       :root {
-        --ludo-blue: #0f172a;
+        --ludo-blue: #020617;
         --gold-primary: #fbbf24;
         --gold-secondary: #d97706;
       }
@@ -23,6 +23,7 @@
         overflow: hidden;
         user-select: none;
         color: white;
+        -webkit-tap-highlight-color: transparent;
       }
 
       .ludo-money-logo {
@@ -32,92 +33,109 @@
         background: linear-gradient(to bottom, #fff 20%, #fbbf24 50%, #d97706 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        filter: drop-shadow(0 4px 0 #92400e) drop-shadow(0 8px 15px rgba(0,0,0,0.5));
+        filter: drop-shadow(0 4px 0 #92400e);
         letter-spacing: -0.05em;
         line-height: 0.9;
       }
 
-      .premium-card {
-        background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(251, 191, 36, 0.1);
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      }
-
-      .gold-button {
-        background: linear-gradient(to bottom, #fbbf24, #d97706);
-        box-shadow: 0 4px 0 #92400e, 0 10px 20px rgba(217, 119, 6, 0.3);
-        transition: all 0.1s;
-      }
-      .gold-button:active {
-        transform: translateY(4px);
-        box-shadow: 0 0px 0 #92400e;
-      }
-
       .dotted-bg {
-        background-color: var(--ludo-blue);
-        background-image: radial-gradient(rgba(251, 191, 36, 0.03) 2px, transparent 2px);
-        background-size: 30px 30px;
+        background-color: #050a18;
+        background-image: radial-gradient(rgba(251, 191, 36, 0.05) 1.5px, transparent 1.5px);
+        background-size: 25px 25px;
+      }
+
+      /* REALISTIC 3D RED DICE CSS */
+      .dice-scene {
+        width: 60px;
+        height: 60px;
+        perspective: 600px;
+        margin: 0 auto;
+      }
+
+      .cube {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        transform-style: preserve-3d;
+        transition: transform 0.6s cubic-bezier(0.17, 0.67, 0.83, 0.67);
+      }
+
+      .cube-face {
+        position: absolute;
+        width: 60px;
+        height: 60px;
+        background: radial-gradient(circle at 30% 30%, #ff4d4d, #b30000);
+        border: 2px solid rgba(0,0,0,0.2);
+        border-radius: 12px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        padding: 8px;
+        box-sizing: border-box;
+        box-shadow: inset 0 0 15px rgba(0,0,0,0.4);
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        background-color: white;
+        border-radius: 50%;
+        justify-self: center;
+        align-self: center;
+        box-shadow: inset 0 2px 2px rgba(0,0,0,0.4);
+      }
+
+      /* Face Rotations */
+      .face-1 { transform: rotateY(0deg) translateZ(30px); }
+      .face-2 { transform: rotateY(90deg) translateZ(30px); }
+      .face-3 { transform: rotateY(180deg) translateZ(30px); }
+      .face-4 { transform: rotateY(-90deg) translateZ(30px); }
+      .face-5 { transform: rotateX(90deg) translateZ(30px); }
+      .face-6 { transform: rotateX(-90deg) translateZ(30px); }
+
+      /* Dice Outcomes */
+      .show-1 { transform: rotateX(0deg) rotateY(0deg); }
+      .show-2 { transform: rotateX(0deg) rotateY(-90deg); }
+      .show-3 { transform: rotateX(0deg) rotateY(-180deg); }
+      .show-4 { transform: rotateX(0deg) rotateY(90deg); }
+      .show-5 { transform: rotateX(-90deg) rotateY(0deg); }
+      .show-6 { transform: rotateX(90deg) rotateY(0deg); }
+
+      /* Rolling Animation */
+      @keyframes rolling {
+        0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+        25% { transform: rotateX(180deg) rotateY(90deg) rotateZ(45deg); }
+        50% { transform: rotateX(360deg) rotateY(180deg) rotateZ(90deg); }
+        75% { transform: rotateX(540deg) rotateY(270deg) rotateZ(135deg); }
+        100% { transform: rotateX(720deg) rotateY(360deg) rotateZ(180deg); }
+      }
+
+      .rolling {
+        animation: rolling 0.5s linear infinite;
+      }
+
+      .dice-jump {
+        animation: dice-jump 0.5s ease-out;
+      }
+
+      @keyframes dice-jump {
+        0% { transform: translateY(0) scale(1); }
+        50% { transform: translateY(-30px) scale(1.1); }
+        100% { transform: translateY(0) scale(1); }
       }
 
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
+      .notice-scroll {
+        white-space: nowrap;
+        animation: scroll-notice 25s linear infinite;
+        display: inline-block;
       }
-
-      @keyframes marquee {
+      @keyframes scroll-notice {
         0% { transform: translateX(100%); }
         100% { transform: translateX(-100%); }
       }
-      .animate-marquee {
-        animation: marquee 20s linear infinite;
-      }
-
-      /* Pulse for notifications */
-      @keyframes pulse-red {
-        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-        70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-      }
-      .pulse-notif {
-        animation: pulse-red 2s infinite;
-      }
-
-      .nav-button-active {
-        background: linear-gradient(to bottom, #3b82f6, #1d4ed8);
-        border-top: 3px solid #60a5fa;
-        transform: translateY(-5px);
-      }
-
-      /* 3D DICE SYSTEM */
-      .dice-scene { width: 80px; height: 80px; perspective: 800px; margin: 20px; }
-      .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.5s cubic-bezier(0.17, 0.67, 0.83, 1.2); }
-      .cube.rolling { animation: fast-rolling 0.15s infinite linear; }
-      @keyframes fast-rolling {
-        0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(1.1); }
-        50% { transform: rotateX(180deg) rotateY(180deg) rotateZ(90deg) scale(1.3); }
-        100% { transform: rotateX(360deg) rotateY(360deg) rotateZ(180deg) scale(1.1); }
-      }
-      .cube-face { position: absolute; width: 80px; height: 80px; background: #fff; border: 2px solid #ddd; border-radius: 14px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); padding: 10px; gap: 4px; box-shadow: inset 0 0 10px rgba(0,0,0,0.05), 0 4px 10px rgba(0,0,0,0.1); backface-visibility: hidden; }
-      .dot { background: #1a1a1a; border-radius: 50%; width: 100%; height: 100%; box-shadow: inset 0 2px 2px rgba(255,255,255,0.2); }
-      .face-1 { transform: rotateY(0deg) translateZ(40px); background: #fdfdfd; }
-      .face-2 { transform: rotateY(90deg) translateZ(40px); background: #fafafa; }
-      .face-3 { transform: rotateX(90deg) translateZ(40px); background: #f8f8f8; }
-      .face-4 { transform: rotateX(-90deg) translateZ(40px); background: #f5f5f5; }
-      .face-5 { transform: rotateY(-90deg) translateZ(40px); background: #f2f2f2; }
-      .face-6 { transform: rotateY(180deg) translateZ(40px); background: #efefef; }
-      .show-1 { transform: rotateX(0deg) rotateY(0deg); }
-      .show-2 { transform: rotateX(0deg) rotateY(-90deg); }
-      .show-3 { transform: rotateX(-90deg) rotateY(0deg); }
-      .show-4 { transform: rotateX(90deg) rotateY(0deg); }
-      .show-5 { transform: rotateX(0deg) rotateY(90deg); }
-      .show-6 { transform: rotateX(0deg) rotateY(180deg); }
-      .dice-jump { animation: pro-jump 0.6s ease-out; }
-      @keyframes pro-jump { 0% { transform: translateY(0); } 40% { transform: translateY(-60px); } 70% { transform: translateY(5px); } 100% { transform: translateY(0); } }
-
     </style>
   <script type="importmap">
 {

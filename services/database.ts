@@ -64,19 +64,33 @@ export const databaseService = {
 
   async findWaitingMatch(stake: number, requiredPlayers: number): Promise<any> {
     try {
-      // Find matches that are WAITING, have same stake, and still need players
       const { data, error } = await supabase
         .from('matches')
         .select('*')
         .eq('status', 'WAITING')
         .eq('stake', stake)
+        .eq('is_private', false)
         .order('start_time', { ascending: true });
       
       if (error || !data || data.length === 0) return null;
-      
-      // Return the first match that has space
       const availableMatch = data.find(m => m.players.length < requiredPlayers);
       return availableMatch ? toCamelCase(availableMatch) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async findMatchByCode(code: string): Promise<any> {
+    try {
+      const { data, error } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('invite_code', code)
+        .eq('status', 'WAITING')
+        .single();
+      
+      if (error || !data) return null;
+      return toCamelCase(data);
     } catch {
       return null;
     }
@@ -90,15 +104,7 @@ export const databaseService = {
 
   async syncMatch(match: LiveMatch) {
     try {
-      const dbMatch = {
-        match_id: match.matchId,
-        players: match.players,
-        current_player: match.currentPlayer,
-        stake: match.stake,
-        start_time: match.startTime,
-        next_roll_override: match.nextRollOverride,
-        status: match.status
-      };
+      const dbMatch = toSnakeCase(match);
       await supabase.from('matches').upsert(dbMatch, { onConflict: 'match_id' });
     } catch (error: any) {
       console.error("Sync Match Error:", error);
@@ -113,31 +119,23 @@ export const databaseService = {
     }
   },
 
+  // Added missing method to handle fetching pending transactions from Supabase or local users' histories
   async getPendingTransactions(): Promise<PendingTransaction[]> {
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING');
       if (error) throw error;
       return (data || []).map(t => toCamelCase(t));
     } catch (error: any) {
-      return JSON.parse(localStorage.getItem("LUDO_PENDING_TRANSACTIONS") || '[]');
-    }
-  },
-
-  async submitTransaction(tx: PendingTransaction) {
-    try {
-      await supabase.from('transactions').insert(toSnakeCase(tx));
-    } catch (error: any) {
-      const txs = JSON.parse(localStorage.getItem("LUDO_PENDING_TRANSACTIONS") || '[]');
-      txs.push(tx);
-      localStorage.setItem("LUDO_PENDING_TRANSACTIONS", JSON.stringify(txs));
-    }
-  },
-
-  async updateTransactionStatus(id: string, status: string) {
-    try {
-      await supabase.from('transactions').update({ status }).eq('id', id);
-    } catch (error: any) {
-      console.error("TX Update Error:", error);
+      const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
+      const allPending: PendingTransaction[] = [];
+      db.forEach((u: any) => {
+        if (u.history) {
+          u.history.forEach((tx: any) => {
+            if (tx.status === 'PENDING') allPending.push(tx);
+          });
+        }
+      });
+      return allPending;
     }
   },
 
@@ -148,6 +146,7 @@ export const databaseService = {
       if (error) throw error;
       const settingsMap: any = { ...localBackup };
       data?.forEach(s => { settingsMap[s.key] = s.value; });
+      // Fix: Added missing value argument and removed invalid truthiness check for localStorage.setItem (returns void)
       localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settingsMap));
       return settingsMap;
     } catch (error: any) {

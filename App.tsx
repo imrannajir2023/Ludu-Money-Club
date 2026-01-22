@@ -1,145 +1,116 @@
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction, LiveMatch } from './types';
 import LudoBoard from './components/LudoBoard';
 import WalletModal from './components/WalletModal';
 import AdminPortal from './components/AdminPortal';
 import { soundManager } from './services/soundService';
-import { getRandomBotName } from './services/botService';
-import { SAFE_SPOTS, START_POSITIONS, HOME_ENTRANCE } from './constants';
 import { databaseService } from './services/database';
+import { generateGameCommentary } from './services/geminiService';
+import { getRandomBotIdentity } from './services/botService';
+import { START_POSITIONS, SAFE_SPOTS } from './constants';
 
 const LOGO_ICON = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
-const STORAGE_KEY_USER = "LUDO_USER_PROFILE";
-const STORAGE_KEY_ADMIN = "LUDO_ADMIN_SESSION";
-
-const INITIAL_USER: UserProfile = {
-  name: "Guest Player",
-  balance: 400,
-  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest",
-  stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
-  history: []
-};
-
-const STAKE_OPTIONS = [50, 100, 500, 1000, 5000];
-
-const LATEST_WINNERS = [
-  "Rony Khan withdraw ৳৫০০০", "Sajid Ahmed won ৳২০০০", "Aryan Dev withdraw ৳১০০০", 
-  "Sumaiya won ৳৫০০", "Tanvir withdraw ৳৩০০০", "Mehedi won ৳১০০০০"
-];
-
-const FaceDots: React.FC<{ value: number }> = ({ value }) => {
-    const dots: boolean[] = Array(9).fill(false);
-    if (value === 1) dots[4] = true;
-    if (value === 2) { dots[0] = true; dots[8] = true; }
-    if (value === 3) { dots[0] = true; dots[4] = true; dots[8] = true; }
-    if (value === 4) { dots[0] = true; dots[2] = true; dots[6] = true; dots[8] = true; }
-    if (value === 5) { dots[0] = true; dots[2] = true; dots[4] = true; dots[6] = true; dots[8] = true; }
-    if (value === 6) { dots[0] = true; dots[2] = true; dots[3] = true; dots[5] = true; dots[6] = true; dots[8] = true; }
-    
-    return (
-        <div className={`cube-face face-${value}`}>
-            {dots.map((active, i) => (
-                <div key={i} className={`dot transition-opacity duration-200 ${active ? 'opacity-100' : 'opacity-0'}`}></div>
-            ))}
-        </div>
-    );
-};
 
 const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value, isRolling }) => {
   return (
     <div className={`dice-scene ${isRolling ? 'dice-jump' : ''}`}>
       <div className={`cube ${isRolling ? 'rolling' : `show-${value || 1}`}`}>
-        <FaceDots value={1} />
-        <FaceDots value={2} />
-        <FaceDots value={3} />
-        <FaceDots value={4} />
-        <FaceDots value={5} />
-        <FaceDots value={6} />
+        <div className="cube-face face-1"><div className="dot row-start-2 col-start-2"></div></div>
+        <div className="cube-face face-2"><div className="dot row-start-1 col-start-1"></div><div className="dot row-start-3 col-start-3"></div></div>
+        <div className="cube-face face-3"><div className="dot row-start-1 col-start-1"></div><div className="dot row-start-2 col-start-2"></div><div className="dot row-start-3 col-start-3"></div></div>
+        <div className="cube-face face-4"><div className="dot row-start-1 col-start-1"></div><div className="dot row-start-1 col-start-3"></div><div className="dot row-start-3 col-start-1"></div><div className="dot row-start-3 col-start-3"></div></div>
+        <div className="cube-face face-5"><div className="dot row-start-1 col-start-1"></div><div className="dot row-start-1 col-start-3"></div><div className="dot row-start-2 col-start-2"></div><div className="dot row-start-3 col-start-1"></div><div className="dot row-start-3 col-start-3"></div></div>
+        <div className="cube-face face-6"><div className="dot row-start-1 col-start-1"></div><div className="dot row-start-1 col-start-3"></div><div className="dot row-start-2 col-start-1"></div><div className="dot row-start-2 col-start-3"></div><div className="dot row-start-3 col-start-1"></div><div className="dot row-start-3 col-start-3"></div></div>
       </div>
     </div>
   );
 };
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'LOBBY' | 'MATCH_CONFIG' | 'MATCHING' | 'GAME' | 'ADMIN'>('SPLASH');
-  const [activeTab, setActiveTab] = useState<'HOME' | 'STORE' | 'INVENTORY' | 'FRIENDS' | 'CLUB'>('HOME');
-  const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP' | 'ADMIN_LOGIN'>('LOGIN');
+  const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'LOBBY' | 'MATCH_CONFIG' | 'MATCHING' | 'GAME'>('SPLASH');
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [user, setUser] = useState<UserProfile>(INITIAL_USER);
-  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [user, setUser] = useState<UserProfile>({ 
+    name: "HAMIM KING", 
+    balance: 6650, 
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Hamim", 
+    flag: "🇧🇩",
+    country: "Bangladesh",
+    history: [], 
+    stats: { totalGames: 0, wins: 0, totalWinnings: 0 } 
+  });
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isWalletOpen, setWalletOpen] = useState(false);
-  const [animating, setAnimating] = useState(false);
   const [isRolling, setIsRolling] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
-  const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
+  const [commentary, setCommentary] = useState<string>("Welcome to the Arena! Let the games begin!");
+  const [isAiThinking, setIsAiThinking] = useState(false);
   
-  const [loginPhone, setLoginPhone] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginName, setLoginName] = useState('');
-  
-  const [selectedStake, setSelectedStake] = useState(100);
-  const [selectedPlayerCount, setSelectedPlayerCount] = useState(2);
-  const [isPracticeMode, setIsPracticeMode] = useState(false);
-  const [matchingPlayers, setMatchingPlayers] = useState<any[]>([]);
-  const [matchingTimeLeft, setMatchingTimeLeft] = useState(20);
-  
-  const matchIdRef = useRef<string | null>(null);
-  const matchingStartTimeRef = useRef<number>(0);
-  const turnTimeoutRef = useRef<number | null>(null);
+  const [selectedStake, setSelectedStake] = useState(50);
+  const [playerCount, setPlayerCount] = useState<2 | 4>(2);
+  const [matchingTimer, setMatchingTimer] = useState(35);
+  const [matchedBots, setMatchedBots] = useState<any[]>([]);
+  const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
 
-  const handleInteraction = useCallback(() => {
+  const updateCommentary = async (event: string, playerName: string) => {
+    setIsAiThinking(true);
+    const msg = await generateGameCommentary(event, playerName);
+    setCommentary(msg);
+    setIsAiThinking(false);
+  };
+
+  const unlockAudio = () => {
     soundManager.unlock();
-  }, []);
-
-  const toggleSound = useCallback(() => {
-    const muted = soundManager.toggleMute();
-    setIsMuted(muted);
-  }, []);
-
-  const refreshCloudData = useCallback(async () => {
-    const users = await databaseService.getUsers();
-    setAllUsers(users);
-    const txs = await databaseService.getPendingTransactions();
-    setPendingTransactions(txs);
-    const matches = await databaseService.getLiveMatches();
-    setLiveMatches(matches);
-
-    const savedUserStr = localStorage.getItem(STORAGE_KEY_USER);
-    if (savedUserStr) {
-        const saved = JSON.parse(savedUserStr);
-        const upToDateUser = users.find(u => u.phone === saved.phone);
-        if (upToDateUser) {
-            setUser(upToDateUser);
-            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(upToDateUser));
-        }
-    }
-
-    if (matchIdRef.current) {
-        const myMatch = matches.find(m => m.matchId === matchIdRef.current);
-        if (myMatch) {
-            if (myMatch.status === 'TERMINATED') {
-                alert("Match closed by Admin.");
-                matchIdRef.current = null;
-                setGameState(null);
-                setView('LOBBY');
-            } else if (view === 'MATCHING') {
-                setMatchingPlayers(myMatch.players);
-                if (myMatch.status === 'ACTIVE') {
-                  initGameFromCloud(myMatch);
-                }
-            }
-        }
-    }
-  }, [view, gameState]);
+    document.removeEventListener('click', unlockAudio);
+    document.removeEventListener('touchstart', unlockAudio);
+  };
 
   useEffect(() => {
-    const interval = setInterval(refreshCloudData, 1500); 
-    refreshCloudData();
-    return () => clearInterval(interval);
-  }, [refreshCloudData]);
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio);
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
+  const initGame = (count: number, isPractice: boolean = false) => {
+    const colors = count === 2 
+      ? [PlayerColor.RED, PlayerColor.YELLOW] 
+      : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+    
+    const players: Player[] = colors.map((color, idx) => {
+      const botIdentity = idx === 0 ? null : (matchedBots[idx-1] || getRandomBotIdentity());
+      return {
+        id: idx === 0 ? 'player-1' : `bot-${idx}`,
+        name: idx === 0 ? user.name : botIdentity.name,
+        country: idx === 0 ? (user.country || "Bangladesh") : botIdentity.country,
+        flag: idx === 0 ? (user.flag || "🇧🇩") : botIdentity.flag,
+        color,
+        isBot: idx !== 0,
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${idx === 0 ? 'user' : (botIdentity.name || 'bot')}`,
+        tokens: Array.from({ length: 4 }).map((_, tIdx) => ({
+          id: (idx + 1) * 100 + tIdx,
+          color: color,
+          state: TokenState.HOME,
+          position: 0,
+          distanceTraveled: 0
+        }))
+      };
+    });
+
+    setGameState({
+      players,
+      currentPlayerIndex: 0,
+      diceValue: null,
+      isDiceRolled: false,
+      winner: null,
+      log: ['Game started!'],
+      lastAction: 'Waiting for roll',
+      consecutiveSixes: 0
+    });
+    updateCommentary(isPractice ? "Practice mode started!" : "High stakes match started!", user.name);
+    setView('GAME');
+  };
 
   useEffect(() => {
     if (view === 'SPLASH') {
@@ -147,512 +118,429 @@ const App: React.FC = () => {
         setLoadingProgress(prev => {
           if (prev >= 100) {
             clearInterval(interval);
-            setTimeout(() => {
-              const isAdmin = localStorage.getItem(STORAGE_KEY_ADMIN);
-              if (isAdmin === 'true') { setView('ADMIN'); return 100; }
-              const savedUser = localStorage.getItem(STORAGE_KEY_USER);
-              if (savedUser) { setView('LOBBY'); return 100; }
-              setView('LOGIN');
-            }, 800);
+            setTimeout(() => setView('LOBBY'), 500);
             return 100;
           }
-          return prev + 5;
+          return prev + 10;
         });
-      }, 30);
+      }, 50);
       return () => clearInterval(interval);
     }
   }, [view]);
 
+  // Matchmaking logic with priority window
   useEffect(() => {
+    let timerInterval: any;
+    let botInjectionInterval: any;
+    let dbSyncInterval: any;
+
     if (view === 'MATCHING') {
-      soundManager.play('click');
-      matchingStartTimeRef.current = Date.now();
-      setMatchingTimeLeft(20);
-      
-      const botCheckInterval = setInterval(async () => {
-        const elapsed = Date.now() - matchingStartTimeRef.current;
-        const remaining = Math.max(0, 20 - Math.floor(elapsed / 1000));
-        setMatchingTimeLeft(remaining);
-        
-        if (remaining === 0 && view === 'MATCHING' && matchingPlayers.length < selectedPlayerCount) {
-          clearInterval(botCheckInterval);
-          const updatedPlayers = [...matchingPlayers];
-          const colors = [PlayerColor.RED, PlayerColor.YELLOW, PlayerColor.GREEN, PlayerColor.BLUE];
-          while (updatedPlayers.length < selectedPlayerCount) {
-            const bName = getRandomBotName();
-            updatedPlayers.push({ name: bName, color: colors[updatedPlayers.length], score: 0, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bName}`, isBot: true });
-          }
-          setMatchingPlayers(updatedPlayers);
-          if (!isPracticeMode && matchIdRef.current) {
-            const matches = await databaseService.getLiveMatches();
-            const m = matches.find(m => m.matchId === matchIdRef.current);
-            if (m) {
-                m.status = 'ACTIVE'; m.players = updatedPlayers; await databaseService.syncMatch(m);
-            }
-          }
-          initGameLocal(updatedPlayers);
-        }
-      }, 1000);
-      return () => clearInterval(botCheckInterval);
-    }
-  }, [view, selectedPlayerCount, isPracticeMode, matchingPlayers.length]);
+      setMatchedBots([]);
+      setMatchingTimer(35); // 20s for real players, 15s buffer for bot filling
 
-  const handleLogout = () => {
-    handleInteraction();
-    if (confirm("Logout?")) {
-        localStorage.removeItem(STORAGE_KEY_USER); localStorage.removeItem(STORAGE_KEY_ADMIN); window.location.reload();
-    }
-  };
-
-  const handleAuthAction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    handleInteraction();
-    soundManager.play('click');
-    if (authMode === 'ADMIN_LOGIN') {
-      if (loginPhone === 'emukhan580' && loginPassword === 'Imran2015@!@!') {
-        localStorage.setItem(STORAGE_KEY_ADMIN, 'true'); setView('ADMIN');
-      } else alert("Wrong Admin ID/Password");
-      return;
-    }
-    if (authMode === 'SIGNUP') {
-      const existing = allUsers.find(u => u.phone === loginPhone);
-      if (existing) return alert("Phone already registered!");
-      const newUser: UserProfile = {
-        name: loginName || "Player", phone: loginPhone, password: loginPassword, balance: 400, 
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${loginPhone}`,
-        stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: []
-      };
-      await databaseService.updateUser(newUser); localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newUser)); setUser(newUser); setView('LOBBY');
-    } else {
-      const existingUser = allUsers.find(u => u.phone === loginPhone && u.password === loginPassword);
-      if (existingUser) {
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(existingUser)); setUser(existingUser); setView('LOBBY');
-      } else alert("Wrong credentials!");
-    }
-  };
-
-  const handleUpdateUsersDB = async (updatedUsers: UserProfile[]) => {
-    setAllUsers(updatedUsers);
-    const currentUserInDB = updatedUsers.find(u => u.phone === user.phone);
-    if (currentUserInDB) {
-      setUser(currentUserInDB); localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentUserInDB)); await databaseService.updateUser(currentUserInDB);
-    }
-  };
-
-  const handleApproveTransaction = async (tx: PendingTransaction) => {
-    const targetUser = allUsers.find(u => u.phone === tx.phone);
-    if (!targetUser) return alert("User not found!");
-    const newBalance = tx.type === 'DEPOSIT' ? targetUser.balance + tx.amount : targetUser.balance - tx.amount;
-    const updatedUser = { ...targetUser, balance: Math.max(0, newBalance) };
-    await databaseService.updateUser(updatedUser); await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); refreshCloudData();
-  };
-
-  const handleRejectTransaction = async (txId: string) => {
-    await databaseService.updateTransactionStatus(txId, 'REJECTED'); refreshCloudData();
-  };
-
-  const syncMatchState = useCallback(async (currentGS: GameState) => {
-    if (!matchIdRef.current || isPracticeMode) return;
-    const match: LiveMatch = {
-        matchId: matchIdRef.current,
-        players: currentGS.players.map(p => ({ name: p.name, color: p.color, score: p.tokens.filter(t => t.state === TokenState.WIN).length, avatar: p.avatarUrl, isBot: p.isBot })),
-        currentPlayer: currentGS.players[currentGS.currentPlayerIndex].name,
-        stake: selectedStake, startTime: new Date().toLocaleTimeString(), status: 'ACTIVE'
-    };
-    await databaseService.syncMatch(match);
-  }, [selectedStake, isPracticeMode]);
-
-  const switchTurn = useCallback((bonus: boolean) => {
-    setGameState(prev => {
-      if (!prev) return null;
-      let nextIdx = prev.currentPlayerIndex;
-      if (!bonus) { nextIdx = (prev.currentPlayerIndex + 1) % prev.players.length; }
-      const nextState = { ...prev, currentPlayerIndex: nextIdx, isDiceRolled: false, diceValue: null, consecutiveSixes: bonus && prev.diceValue === 6 ? prev.consecutiveSixes + 1 : 0 };
-      syncMatchState(nextState);
-      return nextState;
-    });
-  }, [syncMatchState]);
-
-  const moveToken = async (tokenId: number) => {
-    if (!gameState || !gameState.diceValue || animating) return;
-    handleInteraction();
-    setAnimating(true);
-    const dice = gameState.diceValue;
-    const players = [...gameState.players];
-    const playerIndex = gameState.currentPlayerIndex;
-    const player = players[playerIndex];
-    const token = player.tokens.find(t => t.id === tokenId);
-    if (!token) { setAnimating(false); return; }
-
-    if (token.state === TokenState.HOME && dice === 6) {
-      token.state = TokenState.PATH; token.position = 0; token.distanceTraveled = 0; soundManager.play('move');
-    } else {
-      for (let i = 0; i < dice; i++) {
-        token.distanceTraveled += 1;
-        if (token.distanceTraveled >= 51) { 
-            token.position = 100 + (token.distanceTraveled - 51); 
-        } else { 
-            token.position = (token.position + 1) % 52; 
-        }
-        
-        soundManager.play('move'); 
-        setGameState(prev => prev ? ({ ...prev, players: [...players] }) : null);
-        await new Promise(r => setTimeout(r, 100)); 
-      }
-    }
-
-    let didCapture = false; let didReachFinish = false;
-    if (token.distanceTraveled === 56) { 
-        token.state = TokenState.WIN; 
-        didReachFinish = true; 
-        soundManager.play('win'); 
-    } else if (token.distanceTraveled < 51) {
-        const myAbs = (token.position + START_POSITIONS[player.color]) % 52;
-        if (!SAFE_SPOTS.includes(myAbs)) {
-            players.forEach((p, pIdx) => {
-                if (pIdx !== playerIndex) {
-                    p.tokens.forEach(ot => {
-                        const otAbs = (ot.position + START_POSITIONS[p.color]) % 52;
-                        if (ot.state === TokenState.PATH && otAbs === myAbs) {
-                            ot.state = TokenState.HOME; ot.position = -1; ot.distanceTraveled = 0; didCapture = true; soundManager.play('kill');
-                        }
-                    });
-                }
+      const findAndJoinMatch = async () => {
+        const existingMatch = await databaseService.findWaitingMatch(selectedStake, playerCount);
+        if (existingMatch) {
+            setCurrentMatchId(existingMatch.matchId);
+        } else {
+            const newId = Math.random().toString(36).substring(7);
+            setCurrentMatchId(newId);
+            await databaseService.createMatch({
+                matchId: newId,
+                stake: selectedStake,
+                players: [{ name: user.name, avatar: user.avatar, flag: user.flag, color: PlayerColor.RED, isBot: false }],
+                status: 'WAITING',
+                startTime: new Date().toISOString()
             });
         }
+      };
+
+      findAndJoinMatch();
+
+      dbSyncInterval = setInterval(async () => {
+         if (currentMatchId) {
+             const allMatches = await databaseService.getLiveMatches();
+             const myMatch = allMatches.find(m => m.matchId === currentMatchId);
+             if (myMatch && myMatch.players.length > matchedBots.length + 1) {
+                 const others = myMatch.players.filter(p => p.name !== user.name);
+                 setMatchedBots(others);
+                 soundManager.play('win');
+             }
+         }
+      }, 2000);
+
+      // Bot fallback logic - Wait 20 seconds before allowing bots to join
+      setTimeout(() => {
+        if (view === 'MATCHING') {
+            botInjectionInterval = setInterval(() => {
+                setMatchedBots(prev => {
+                    if (prev.length < (playerCount - 1)) {
+                        soundManager.play('click');
+                        return [...prev, getRandomBotIdentity()];
+                    }
+                    return prev;
+                });
+              }, 3000);
+        }
+      }, 20000); // 20 seconds delay for bots
+
+      timerInterval = setInterval(() => {
+        setMatchingTimer(prev => {
+          if (prev <= 0) {
+            clearInterval(timerInterval);
+            clearInterval(botInjectionInterval);
+            clearInterval(dbSyncInterval);
+            soundManager.play('win');
+            initGame(playerCount);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     }
 
-    setGameState(prev => {
-        const gs = prev ? ({ ...prev, players: [...players] }) : null;
-        if (gs) syncMatchState(gs);
-        return gs;
-    });
+    return () => {
+      clearInterval(timerInterval);
+      clearInterval(botInjectionInterval);
+      clearInterval(dbSyncInterval);
+    };
+  }, [view, playerCount, selectedStake]);
 
-    setTimeout(async () => {
-      setAnimating(false);
-      if (player.tokens.every(t => t.state === TokenState.WIN)) {
-        const winningAmount = isPracticeMode ? 0 : selectedStake * 1.8;
-        if (!player.isBot && !isPracticeMode) {
-            const updatedUser = { ...user, balance: user.balance + winningAmount, stats: { ...user.stats, wins: user.stats.wins + 1, totalWinnings: user.stats.totalWinnings + winningAmount } };
-            setUser(updatedUser); await databaseService.updateUser(updatedUser);
-        }
-        alert(`${player.name} Won ${winningAmount > 0 ? `৳${winningAmount}` : 'the Practice Match'}!`);
-        if (!isPracticeMode) await databaseService.deleteMatch(matchIdRef.current || '');
-        setGameState(null); setView('LOBBY'); return;
-      }
-      switchTurn(dice === 6 || didCapture || didReachFinish);
-    }, 150); 
-  };
-
-  const rollDice = useCallback(async () => {
-    if (animating || isRolling || (gameState && gameState.isDiceRolled)) return;
-    handleInteraction();
+  const rollDice = async () => {
+    if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
+    
     setIsRolling(true);
     soundManager.play('dice');
-
-    setTimeout(async () => {
-        let finalVal = Math.floor(Math.random() * 6) + 1;
-        if (!isPracticeMode) {
-            const matches = await databaseService.getLiveMatches();
-            const myMatch = matches.find(m => m.matchId === matchIdRef.current);
-            if (myMatch?.nextRollOverride) { finalVal = myMatch.nextRollOverride; myMatch.nextRollOverride = null; await databaseService.syncMatch(myMatch); }
-        }
-        
-        soundManager.play('dice_stop'); 
-        if (finalVal === 6) soundManager.play('six');
-        
+    
+    setTimeout(() => {
+        const val = Math.floor(Math.random() * 6) + 1;
         setGameState(prev => {
             if (!prev) return null;
-            const player = prev.players[prev.currentPlayerIndex];
-            const canMove = player.tokens.some(t => (t.state === TokenState.HOME && finalVal === 6) || (t.state === TokenState.PATH && (t.distanceTraveled + finalVal) <= 56));
-            if (!canMove) { 
-                setTimeout(() => switchTurn(false), 500); 
+            const currentPlayer = prev.players[prev.currentPlayerIndex];
+            const newConsecutiveSixes = val === 6 ? prev.consecutiveSixes + 1 : 0;
+            if (newConsecutiveSixes === 3) {
+                setTimeout(() => nextTurn(), 1500);
+                return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: 0, lastAction: 'Triple sixes! Skipped.' };
             }
-            const nextState = { ...prev, diceValue: finalVal, isDiceRolled: true };
-            syncMatchState(nextState); return nextState;
+            const canMove = currentPlayer.tokens.some(token => {
+                if (token.state === TokenState.HOME) return val === 6;
+                if (token.state === TokenState.PATH) return token.distanceTraveled + val <= 56;
+                return false;
+            });
+            if (!canMove) {
+                setTimeout(() => nextTurn(), 1200);
+                return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: 0, lastAction: 'No moves possible' };
+            }
+            return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: newConsecutiveSixes, lastAction: 'Select a token to move' };
         });
-        
         setIsRolling(false);
-    }, 600); 
-  }, [animating, isRolling, gameState, syncMatchState, switchTurn, isPracticeMode, handleInteraction]);
+        soundManager.play('dice_stop');
+    }, 800);
+  };
 
-  useEffect(() => {
-    if (view !== 'GAME' || !gameState || animating || isRolling) return;
-    const cp = gameState.players[gameState.currentPlayerIndex];
-    if (!cp) return;
-    if (turnTimeoutRef.current) clearTimeout(turnTimeoutRef.current);
-    if (cp.isBot) {
-        if (!gameState.isDiceRolled) {
-            const rollDelay = 300 + Math.random() * 300;
-            turnTimeoutRef.current = window.setTimeout(rollDice, rollDelay);
-        } else if (gameState.diceValue !== null) {
-            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 56)).map(t => t.id);
-            if (possibleMoves.length > 0) {
-                const moveDelay = 200 + Math.random() * 200;
-                turnTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), moveDelay);
-            }
-        }
-    } else {
-        if (!gameState.isDiceRolled) {
-            turnTimeoutRef.current = window.setTimeout(rollDice, 10000);
-        } else if (gameState.diceValue !== null) {
-            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 56)).map(t => t.id);
-            if (possibleMoves.length > 0) {
-                turnTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), 8000);
+  const getValidTokens = () => {
+    if (!gameState || !gameState.isDiceRolled || gameState.diceValue === null) return [];
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    return currentPlayer.tokens
+      .filter(t => {
+        const val = gameState.diceValue || 0;
+        if (t.state === TokenState.HOME) return val === 6;
+        if (t.state === TokenState.PATH) return t.distanceTraveled + val <= 56;
+        return false;
+      })
+      .map(t => t.id);
+  };
+
+  const nextTurn = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
+      return { ...prev, currentPlayerIndex: nextIndex, diceValue: null, isDiceRolled: false, lastAction: 'Waiting for roll', consecutiveSixes: 0 };
+    });
+  }, []);
+
+  const moveToken = (tokenId: number) => {
+    if (!gameState || !gameState.isDiceRolled || isRolling) return;
+    const diceVal = gameState.diceValue || 0;
+    const players = [...gameState.players];
+    const player = players[gameState.currentPlayerIndex];
+    const tokenIdx = player.tokens.findIndex(t => t.id === tokenId);
+    if (tokenIdx === -1) return;
+    const token = { ...player.tokens[tokenIdx] };
+    let captured = false;
+    let reachedWin = false;
+
+    if (token.state === TokenState.HOME) {
+        if (diceVal !== 6) return;
+        token.state = TokenState.PATH;
+        token.distanceTraveled = 0; 
+        soundManager.play('move');
+    } else if (token.state === TokenState.PATH) {
+        if (token.distanceTraveled + diceVal > 56) return;
+        token.distanceTraveled += diceVal;
+        if (token.distanceTraveled === 56) {
+            token.state = TokenState.WIN;
+            reachedWin = true;
+            soundManager.play('win');
+        } else {
+            soundManager.play('move');
+            if (token.distanceTraveled <= 50) {
+              const startOffset = START_POSITIONS[token.color];
+              const absolutePos = (token.distanceTraveled + startOffset) % 52;
+              const isSafe = SAFE_SPOTS.includes(absolutePos);
+              if (!isSafe) {
+                players.forEach((otherPlayer, pIdx) => {
+                  if (pIdx !== gameState.currentPlayerIndex) {
+                    otherPlayer.tokens.forEach(otherToken => {
+                      if (otherToken.state === TokenState.PATH && otherToken.distanceTraveled <= 50) {
+                        const otherStartOffset = START_POSITIONS[otherToken.color];
+                        if ((otherToken.distanceTraveled + otherStartOffset) % 52 === absolutePos) {
+                          otherToken.state = TokenState.HOME;
+                          otherToken.distanceTraveled = 0;
+                          captured = true;
+                        }
+                      }
+                    });
+                  }
+                });
+              }
             }
         }
     }
-    return () => { if (turnTimeoutRef.current) clearTimeout(turnTimeoutRef.current); };
-  }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled, gameState?.diceValue, animating, isRolling, rollDice, moveToken, view]);
-
-  const initGameLocal = (matchPlayers: any[]) => {
-    const colors = selectedPlayerCount === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
-    const players: Player[] = matchPlayers.map((p, i) => ({
-        id: `p${i+1}`, name: p.name, color: colors[i], isBot: !!p.isBot, avatarUrl: p.avatar,
-        tokens: [0,1,2,3].map(id => ({ id, color: colors[i], state: TokenState.HOME, position: -1, distanceTraveled: 0 }))
-    }));
-    setGameState({ players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: "", consecutiveSixes: 0 });
-    setView('GAME');
-  };
-
-  const initGameFromCloud = (match: LiveMatch) => {
-    if (gameState) return; initGameLocal(match.players);
-  };
-
-  const startBattleRequest = async (practice: boolean) => {
-    handleInteraction();
-    const stake = practice ? 0 : selectedStake;
-    if (!practice && user.balance < stake) return alert("Insufficient Balance");
-    setGameState(null); setMatchingPlayers([]); setIsPracticeMode(practice);
-    const initialPlayer = { name: user.name, avatar: user.avatar, isBot: false, score: 0, color: PlayerColor.RED };
-    if (!practice) {
-        const updatedUser = { ...user, balance: user.balance - stake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
-        setUser(updatedUser); await databaseService.updateUser(updatedUser);
-        const waitingMatch = await databaseService.findWaitingMatch(selectedStake, selectedPlayerCount);
-        if (waitingMatch) {
-            matchIdRef.current = waitingMatch.matchId;
-            const updatedMatchPlayers = [...waitingMatch.players, initialPlayer];
-            const updatedMatch = { ...waitingMatch, players: updatedMatchPlayers };
-            if (updatedMatchPlayers.length >= selectedPlayerCount) updatedMatch.status = 'ACTIVE';
-            await databaseService.syncMatch(updatedMatch); setMatchingPlayers(updatedMatchPlayers);
-            if (updatedMatch.status === 'ACTIVE') initGameLocal(updatedMatchPlayers);
+    if (captured) soundManager.play('kill');
+    player.tokens[tokenIdx] = token;
+    const allWon = player.tokens.every(t => t.state === TokenState.WIN);
+    if (allWon) {
+        setGameState(prev => prev ? { ...prev, players, winner: player.color } : null);
+        soundManager.play('win');
+        return;
+    }
+    setGameState(prev => {
+        if (!prev) return null;
+        if (diceVal === 6 || captured || reachedWin) {
+            return { ...prev, players, diceValue: null, isDiceRolled: false };
         } else {
-            const matchId = `match_${Date.now()}`; matchIdRef.current = matchId;
-            const newMatch: any = { matchId, players: [initialPlayer], currentPlayer: user.name, stake: selectedStake, startTime: new Date().toLocaleTimeString(), status: 'WAITING' };
-            setMatchingPlayers([initialPlayer]); await databaseService.createMatch(newMatch);
+            const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
+            return { ...prev, players, currentPlayerIndex: nextIndex, diceValue: null, isDiceRolled: false, consecutiveSixes: 0 };
         }
-    } else { setMatchingPlayers([initialPlayer]); }
-    setView('MATCHING');
+    });
   };
 
-  const validTokens = useMemo(() => {
-    if (!gameState || !gameState.isDiceRolled || gameState.diceValue === null) return [];
-    const player = gameState.players[gameState.currentPlayerIndex];
-    const val = gameState.diceValue;
-    return player.tokens.filter(t => (t.state === TokenState.HOME && val === 6) || (t.state === TokenState.PATH && t.distanceTraveled + val <= 56)).map(t => t.id);
-  }, [gameState]);
+  useEffect(() => {
+    if (view === 'GAME' && gameState && !gameState.winner) {
+        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+        if (currentPlayer.isBot) {
+            const timer = setTimeout(() => {
+                if (!gameState.isDiceRolled && !isRolling) rollDice();
+                else if (gameState.isDiceRolled) {
+                    const validTokens = currentPlayer.tokens.filter(t => {
+                        const val = gameState.diceValue || 0;
+                        if (t.state === TokenState.HOME) return val === 6;
+                        if (t.state === TokenState.PATH) return t.distanceTraveled + val <= 56;
+                        return false;
+                    });
+                    if (validTokens.length > 0) setTimeout(() => moveToken(validTokens[Math.floor(Math.random() * validTokens.length)].id), 800);
+                    else nextTurn();
+                }
+            }, 1500);
+            return () => clearTimeout(timer);
+        }
+    }
+  }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled, isRolling]);
 
-  if (view === 'SPLASH') return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center dotted-bg overflow-hidden relative">
-      <div className="absolute inset-0 bg-gradient-to-b from-blue-900/20 to-transparent"></div>
-      <div className="relative animate-float mb-12 flex flex-col items-center">
-        <img src={LOGO_ICON} className="w-24 h-24 mb-6 drop-shadow-[0_0_30px_rgba(251,191,36,0.5)]" />
-        <h1 className="ludo-money-logo text-7xl md:text-9xl tracking-tight text-center">LUDO<br/><span className="text-5xl md:text-7xl">MONEY</span></h1>
-      </div>
-      <div className="w-72 bg-white/5 h-3 rounded-full overflow-hidden border border-white/10 p-[2px]">
-        <div className="bg-gradient-to-r from-yellow-500 to-yellow-300 h-full rounded-full transition-all duration-300" style={{width:`${loadingProgress}%`}}></div>
-      </div>
-    </div>
-  );
-
-  if (view === 'LOGIN') return (
-    <div className="h-screen w-full bg-[#0a192f] flex flex-col items-center justify-center p-4 dotted-bg overflow-hidden relative">
-        <div className="absolute top-10 flex flex-col items-center"><h1 className="ludo-money-logo text-5xl tracking-tight">LUDO MONEY</h1></div>
-        <form onSubmit={handleAuthAction} className="premium-card p-10 rounded-[50px] w-full max-sm border border-yellow-500/20 space-y-5 shadow-2xl relative z-10">
-          <div className="text-center mb-6"><h2 className="text-2xl font-black text-white uppercase italic">Arena Access</h2></div>
-          {authMode === 'SIGNUP' && <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Display Name" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white font-bold" />}
-          <input type="text" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder="Phone Number" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white font-bold" />
-          <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Security Code" className="w-full bg-slate-800/50 border border-white/10 p-5 rounded-3xl text-white font-bold" />
-          <button type="submit" className="w-full gold-button py-6 rounded-3xl font-black text-black uppercase text-lg mt-4">{authMode === 'LOGIN' ? 'Login' : 'Create Account'}</button>
-          <div className="flex justify-between px-2 pt-4">
-              <p className="text-yellow-500/40 text-[10px] font-black uppercase cursor-pointer" onClick={() => setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}>{authMode === 'LOGIN' ? "Signup" : "Login"}</p>
-              <p className="text-white/10 text-[10px] font-black uppercase cursor-pointer" onClick={() => setAuthMode('ADMIN_LOGIN')}>Admin</p>
-          </div>
-        </form>
-    </div>
-  );
-
-  if (view === 'ADMIN') return (
-    <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={handleUpdateUsersDB} pendingTransactions={pendingTransactions} liveMatches={liveMatches} onApproveTransaction={handleApproveTransaction} onRejectTransaction={handleRejectTransaction} onExit={() => { localStorage.removeItem(STORAGE_KEY_ADMIN); setView('LOGIN'); }} onUpdateUser={setUser} />
-  );
-
-  if (view === 'LOBBY') return (
-    <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white dotted-bg overflow-hidden" onClick={handleInteraction}>
-        {/* TOP BAR */}
-        <div className="p-4 md:p-6 flex items-center justify-between z-[100] relative bg-slate-900/90 backdrop-blur-2xl border-b border-yellow-500/10 shadow-xl">
-            <div className="flex items-center gap-3 md:gap-4">
-                <img src={user.avatar} className="w-10 h-10 md:w-14 md:h-14 rounded-full border-4 border-yellow-500/30" />
-                <div>
-                    <h3 className="font-black text-xs md:text-base uppercase italic">{user.name}</h3>
-                    <div className="bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 inline-block">
-                      <p className="text-[8px] md:text-[9px] text-yellow-500 font-black uppercase">VIP Member</p>
-                    </div>
-                </div>
-            </div>
-            <div className="flex items-center gap-2 md:gap-4">
-                <div className="bg-black/40 px-4 py-2 md:px-6 md:py-3 rounded-2xl md:rounded-3xl border-2 border-yellow-500/30 flex items-center gap-3 cursor-pointer" onClick={() => { handleInteraction(); setWalletOpen(true); }}>
-                    <div className="w-6 h-6 md:w-8 md:h-8 bg-gradient-to-b from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center text-black font-black text-xs md:text-xl">৳</div>
-                    <span className="font-black text-sm md:text-2xl tracking-tighter text-yellow-500">{user.balance.toLocaleString()}</span>
-                </div>
-                <button onClick={handleLogout} className="bg-red-500/10 text-red-500 w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center border border-red-500/10">✕</button>
-            </div>
-        </div>
-
-        {/* MARQUEE */}
-        <div className="w-full bg-black/90 py-2 border-y border-yellow-500/20 overflow-hidden relative z-[90]">
-          <div className="animate-marquee whitespace-nowrap inline-block font-black uppercase tracking-widest text-[10px] text-yellow-500">
-             {LATEST_WINNERS.concat(LATEST_WINNERS).map((msg, i) => (
-               <span key={i} className="mx-12">🔥 {msg}</span>
-             ))}
+  return (
+    <div className="h-screen w-full bg-[#050a18] overflow-hidden text-white font-['Fredoka'] dotted-bg relative flex flex-col">
+      {view === 'SPLASH' && (
+        <div className="h-full flex flex-col items-center justify-center">
+          <h1 className="ludo-money-logo text-6xl">LUDO MONEY</h1>
+          <div className="w-64 h-2 bg-white/10 rounded-full mt-10 overflow-hidden">
+            <div className="h-full bg-yellow-500" style={{width: `${loadingProgress}%`}}></div>
           </div>
         </div>
+      )}
 
-        {/* BONUS NOTIFICATIONS SECTION */}
-        <div className="px-6 pt-6 grid grid-cols-2 gap-4 z-50">
-            <div onClick={() => setWalletOpen(true)} className="relative group cursor-pointer animate-in slide-in-from-left-4">
-                <div className="bg-gradient-to-br from-purple-600 to-indigo-900 p-4 rounded-3xl border border-white/10 shadow-2xl flex items-center gap-3 overflow-hidden">
+      {view === 'LOBBY' && (
+        <>
+          <div className="p-4 pt-6 flex justify-between items-center shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full border-[2px] border-yellow-500 p-0.5 bg-slate-800 shadow-xl">
+                <img src={user.avatar} className="w-full h-full rounded-full" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-black uppercase text-sm italic tracking-tighter leading-none">{user.name}</span>
+                <div className="bg-yellow-500 px-1.5 py-0.5 rounded-md mt-1 border border-yellow-600 w-fit">
+                  <span className="text-[7px] font-black text-black uppercase tracking-wider">VIP MEMBER</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div onClick={() => { soundManager.play('click'); setWalletOpen(true); }} className="bg-black/50 border-[1px] border-yellow-500/50 px-3 py-1.5 rounded-2xl flex items-center gap-2 cursor-pointer shadow-lg backdrop-blur-md">
+                <div className="bg-yellow-500 text-black w-5 h-5 rounded-full flex items-center justify-center font-black text-xs">৳</div>
+                <span className="font-black text-lg tracking-tighter text-white">{user.balance.toLocaleString()}</span>
+              </div>
+              <button className="w-10 h-10 bg-slate-800/80 rounded-xl flex items-center justify-center border border-white/10 text-xl">✕</button>
+            </div>
+          </div>
+
+          <div className="w-full h-6 bg-black/40 border-y border-white/5 overflow-hidden flex items-center">
+            <div className="notice-scroll flex gap-20">
+               <span className="text-[10px] font-black italic text-yellow-500 uppercase tracking-widest flex items-center gap-2">🔥 RONY KHAN WITHDRAW ৳৫০০০ 🔥</span>
+               <span className="text-[10px] font-black italic text-green-500 uppercase tracking-widest flex items-center gap-2">💰 SAJID AHMED WON ৳২০০০ 💰</span>
+            </div>
+          </div>
+
+          <div className="flex-1 px-4 py-4 overflow-y-auto no-scrollbar space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-900 h-24 rounded-3xl p-4 flex items-center gap-3 border border-white/10 shadow-lg relative group active:scale-95 transition-all">
                     <div className="text-3xl">🎁</div>
-                    <div>
-                        <p className="text-[10px] font-black uppercase text-purple-200">Daily Bonus</p>
-                        <p className="text-xs font-black text-white italic">Claim ৳৫০</p>
-                    </div>
-                    <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full pulse-notif"></div>
+                    <div><p className="text-[8px] font-black uppercase text-purple-200 opacity-60">Daily Bonus</p><p className="text-xs font-black uppercase italic tracking-tight">Claim ৳৫০</p></div>
                 </div>
-            </div>
-            <div onClick={() => setWalletOpen(true)} className="relative group cursor-pointer animate-in slide-in-from-right-4">
-                <div className="bg-gradient-to-br from-orange-500 to-red-700 p-4 rounded-3xl border border-white/10 shadow-2xl flex items-center gap-3 overflow-hidden">
+                <div className="bg-gradient-to-br from-orange-500 to-red-700 h-24 rounded-3xl p-4 flex items-center gap-3 border border-white/10 shadow-lg relative group active:scale-95 transition-all">
                     <div className="text-3xl">🔥</div>
-                    <div>
-                        <p className="text-[10px] font-black uppercase text-orange-100">Hot Deal</p>
-                        <p className="text-xs font-black text-white italic">2x Tokens</p>
-                    </div>
-                    <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full pulse-notif"></div>
+                    <div><p className="text-[8px] font-black uppercase text-orange-200 opacity-60">Hot Deal</p><p className="text-xs font-black uppercase italic tracking-tight">2x Tokens</p></div>
                 </div>
             </div>
-        </div>
 
-        {/* MAIN LOBBY CONTENT */}
-        <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
-          <div className="flex flex-col items-center gap-8 p-6 max-w-4xl mx-auto w-full">
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
-               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-10 rounded-[50px] shadow-2xl text-center border-b-[8px] border-indigo-950 flex flex-col items-center justify-center cursor-pointer hover:brightness-110 transition-all" onClick={() => { handleInteraction(); setView('MATCH_CONFIG'); }}>
-                  <img src={LOGO_ICON} className="w-20 h-20 mb-6 animate-float" />
-                  <h2 className="text-3xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
-                  <p className="text-yellow-400 text-[10px] uppercase font-black tracking-[0.4em] mb-8">Play & Earn Cash</p>
-                  <div className="gold-button text-black px-12 py-5 rounded-3xl font-black uppercase text-sm tracking-widest">Join Table</div>
-               </div>
-               <div className="grid grid-cols-1 gap-4">
-                  <div className="bg-slate-800/40 p-6 rounded-[35px] border border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all" onClick={() => { handleInteraction(); setSelectedPlayerCount(2); startBattleRequest(true); }}>
-                      <div className="flex items-center gap-4"><span className="text-4xl">🤖</span><div><h4 className="font-black text-lg uppercase italic tracking-tighter">Practice</h4><p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Free Mode</p></div></div>
-                      <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
-                  </div>
-                  <div className="bg-slate-800/40 p-6 rounded-[35px] border border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all opacity-50">
-                      <div className="flex items-center gap-4"><span className="text-4xl">👬</span><div><h4 className="font-black text-lg uppercase italic tracking-tighter">Private</h4><p className="text-[9px] font-black text-white/20 uppercase tracking-widest">With Friends</p></div></div>
-                      <span className="text-[10px] font-black text-yellow-500 uppercase">Soon</span>
-                  </div>
-               </div>
+            <div className="flex flex-col gap-4">
+                <div className="flex-1 bg-gradient-to-b from-[#2563eb] to-[#1e40af] rounded-[40px] p-6 flex flex-col items-center justify-between border-[2px] border-white/10 relative overflow-hidden shadow-2xl min-h-[300px]">
+                    <div className="relative z-10 w-24 h-24 bg-yellow-400 rounded-full p-4 shadow-2xl flex items-center justify-center"><span className="text-5xl">🎮</span></div>
+                    <div className="text-center relative z-10"><h2 className="text-4xl font-black italic uppercase tracking-tighter leading-none drop-shadow-lg text-white mb-1">BATTLE ONLINE</h2><p className="text-blue-200/50 text-[10px] font-black uppercase tracking-widest italic">Play & Earn Cash</p></div>
+                    <button onClick={() => { soundManager.play('click'); setView('MATCH_CONFIG'); }} className="w-full bg-gradient-to-b from-yellow-400 to-yellow-600 py-4 rounded-2xl font-black text-lg text-black shadow-[0_8px_0_#92400e] active:shadow-none active:translate-y-2 transition-all uppercase italic tracking-tighter z-10">JOIN TABLE</button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div onClick={() => { soundManager.play('click'); initGame(2, true); }} className="bg-[#1e293b]/60 h-24 rounded-3xl p-5 border border-white/5 flex items-center justify-between group active:scale-95 transition-all cursor-pointer backdrop-blur-sm">
+                        <div className="flex items-center gap-4"><div className="text-3xl">🤖</div><div><h3 className="text-xl font-black italic uppercase tracking-tighter text-white">PRACTICE</h3><p className="text-[8px] font-black uppercase text-white/20 tracking-widest">Free Mode</p></div></div>
+                    </div>
+                    <div className="bg-[#1e293b]/60 h-24 rounded-3xl p-5 border border-white/5 flex items-center justify-between group opacity-80 backdrop-blur-sm">
+                        <div className="flex items-center gap-4"><div className="text-3xl">👫</div><div><h3 className="text-xl font-black italic uppercase tracking-tighter text-white">PRIVATE</h3><p className="text-[8px] font-black uppercase text-white/20 tracking-widest">With Friends</p></div></div>
+                        <span className="bg-yellow-500/10 text-yellow-500 text-[8px] font-black px-2 py-1 rounded-md uppercase border border-yellow-500/20 italic tracking-widest">SOON</span>
+                    </div>
+                </div>
             </div>
           </div>
-        </div>
 
-        {/* BOTTOM NAVIGATION BAR */}
-        <div className="fixed bottom-0 left-0 right-0 bg-[#0f172a] border-t border-white/10 h-24 flex items-center justify-around px-2 z-[150] shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-            <button onClick={() => setActiveTab('STORE')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'STORE' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
-                <span className="text-2xl">🛒</span>
-                <p className="text-[9px] font-black uppercase">Store</p>
-            </button>
-            <button onClick={() => setActiveTab('INVENTORY')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'INVENTORY' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
-                <span className="text-2xl">🎒</span>
-                <p className="text-[9px] font-black uppercase">Inventory</p>
-            </button>
-            <button onClick={() => { setActiveTab('HOME'); setView('LOBBY'); }} className={`w-20 h-20 -mt-10 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all ${activeTab === 'HOME' ? 'bg-gradient-to-b from-blue-400 to-blue-700 border-4 border-white' : 'bg-slate-800 border-4 border-white/10'}`}>
-                <span className="text-3xl">🏠</span>
-                <p className="text-[10px] font-black uppercase text-white">Home</p>
-            </button>
-            <button onClick={() => setActiveTab('FRIENDS')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'FRIENDS' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
-                <span className="text-2xl">👥</span>
-                <p className="text-[9px] font-black uppercase">Friends</p>
-            </button>
-            <button onClick={() => setActiveTab('CLUB')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'CLUB' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
-                <span className="text-2xl">🎤</span>
-                <p className="text-[9px] font-black uppercase">Club</p>
-            </button>
-        </div>
+          <div className="h-20 bg-[#0a0f20]/80 backdrop-blur-xl border-t border-white/5 flex justify-around items-center px-4 shrink-0 relative z-[100]">
+             <div className="flex flex-col items-center gap-1 opacity-40"><span className="text-xl">🛒</span><span className="text-[8px] font-black uppercase">Store</span></div>
+             <div className="flex flex-col items-center gap-1 opacity-40"><span className="text-xl">🎒</span><span className="text-[8px] font-black uppercase">Inv</span></div>
+             <div className="relative -top-6"><button onClick={() => { soundManager.play('click'); setView('LOBBY'); }} className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center shadow-2xl border-t-2 border-white/20 shadow-blue-500/20"><span className="text-3xl">🏠</span></button></div>
+             <div className="flex flex-col items-center gap-1 opacity-100 text-yellow-500"><span className="text-xl">👫</span><span className="text-[8px] font-black uppercase">Friends</span></div>
+             <div className="flex flex-col items-center gap-1 opacity-40"><span className="text-xl">🏆</span><span className="text-[8px] font-black uppercase">Club</span></div>
+          </div>
+        </>
+      )}
 
-        <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { databaseService.submitTransaction(tx); refreshCloudData(); }} />
-    </div>
-  );
-
-  if (view === 'MATCH_CONFIG') return (
-    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-4 text-white dotted-bg overflow-hidden" onClick={handleInteraction}>
-        <div className="premium-card p-10 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center">
-           <h2 className="ludo-money-logo text-3xl text-center mb-8 italic">Select Stake</h2>
-           <div className="grid grid-cols-2 gap-4 mb-8 w-full">
-              {[2, 4].map(c => <button key={c} onClick={() => { handleInteraction(); soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-6 rounded-[35px] font-black text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 text-white' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
+      {view === 'MATCH_CONFIG' && (
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
+           <div className="bg-[#1e2333] p-10 py-12 rounded-[60px] w-full max-w-sm border border-white/10 flex flex-col items-center animate-in zoom-in-95 duration-300">
+              <h2 className="text-3xl font-black italic uppercase text-yellow-500 text-center mb-10 tracking-tighter">SELECT PLAYER</h2>
+              <div className="flex w-full gap-4 mb-10">
+                 <button onClick={() => { setPlayerCount(2); soundManager.play('click'); }} className={`flex-1 py-6 rounded-[30px] font-black text-xl border-[3px] transition-all ${playerCount === 2 ? 'bg-[#2563eb] border-white/20 text-white shadow-lg' : 'bg-slate-800/40 border-transparent text-white/30'}`}>2 Players</button>
+                 <button onClick={() => { setPlayerCount(4); soundManager.play('click'); }} className={`flex-1 py-6 rounded-[30px] font-black text-xl border-[3px] transition-all ${playerCount === 4 ? 'bg-[#2563eb] border-white/20 text-white shadow-lg' : 'bg-slate-800/40 border-transparent text-white/30'}`}>4 Players</button>
+              </div>
+              <div className="grid grid-cols-3 gap-4 mb-12 w-full px-2">
+                 {[50, 100, 500, 1000, 5000].map(s => (
+                   <button key={s} onClick={() => { setSelectedStake(s); soundManager.play('click'); }} className={`py-5 rounded-[25px] font-black text-lg transition-all ${selectedStake === s ? 'bg-yellow-500 text-black shadow-xl scale-105' : 'bg-slate-800/40 text-white/40'}`}>{s}</button>
+                 ))}
+              </div>
+              <button onClick={() => setView('MATCHING')} className="w-full bg-gradient-to-b from-[#f97316] to-[#ea580c] py-7 rounded-[40px] font-black text-2xl text-black shadow-xl tracking-tighter uppercase italic">START MATCH</button>
+              <button onClick={() => setView('LOBBY')} className="mt-8 text-[10px] font-black uppercase text-white/20 tracking-[0.3em]">BACK</button>
            </div>
-           <p className="text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-4 text-center">Table Fee (৳)</p>
-           <div className="grid grid-cols-3 gap-3 mb-10 w-full">
-              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => { handleInteraction(); soundManager.play('click'); setSelectedStake(s); }} className={`py-4 rounded-[22px] font-black text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
-           </div>
-           <button onClick={() => startBattleRequest(false)} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black shadow-2xl">Start Battle</button>
-           <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer" onClick={() => setView('LOBBY')}>Back to Home</p>
         </div>
-    </div>
-  );
+      )}
 
-  if (view === 'MATCHING') return (
-    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg relative overflow-hidden" onClick={handleInteraction}>
-        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
-            <h2 className="ludo-money-logo text-3xl text-center mb-2 italic">Matching...</h2>
-            <div className="bg-yellow-500/10 px-4 py-1 rounded-full border border-yellow-500/20 mb-6"><p className="text-[12px] font-black text-yellow-500 uppercase tracking-[0.2em]">{matchingTimeLeft}s</p></div>
-            <div className="grid grid-cols-2 gap-8 mb-10">
-                {[...Array(selectedPlayerCount)].map((_, i) => (
-                    <div key={i} className="flex flex-col items-center gap-3">
-                        <div className={`w-24 h-24 rounded-full border-4 flex items-center justify-center relative ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10' : 'border-white/5 bg-white/5'}`}>
-                            {matchingPlayers[i] ? <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover rounded-full" /> : <div className="w-8 h-8 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>}
-                        </div>
-                        <p className={`font-black uppercase text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>{matchingPlayers[i] ? matchingPlayers[i].name : 'Searching...'}</p>
+      {view === 'MATCHING' && (
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
+           <div className="bg-[#1e2333] p-8 py-12 rounded-[60px] w-full max-w-lg border border-white/10 flex flex-col items-center animate-in zoom-in-95 duration-300">
+              <h2 className="text-4xl font-black italic uppercase text-yellow-500 text-center mb-2 tracking-tighter">SEARCHING PLAYERS</h2>
+              <div className="bg-slate-800/60 px-6 py-1 rounded-full mb-6 border border-yellow-500/20">
+                <span className="text-yellow-500 font-black text-sm">{matchingTimer}S</span>
+              </div>
+              
+              <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-10 animate-pulse">
+                {matchingTimer > 15 ? "🔍 Priority: Looking for Real Players..." : "🤖 No players found. Filling with Bots..."}
+              </div>
+              
+              <div className={`grid ${playerCount === 4 ? 'grid-cols-2' : 'grid-cols-2'} gap-8 mb-12`}>
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-24 h-24 rounded-full border-4 border-yellow-500 p-1 bg-slate-800 shadow-2xl overflow-hidden animate-pulse">
+                    <img src={user.avatar} className="w-full h-full rounded-full" />
+                  </div>
+                  <span className="font-black text-[10px] uppercase text-white/90 flex items-center gap-1">{user.name} <span>{user.flag}</span></span>
+                </div>
+
+                {Array.from({ length: playerCount - 1 }).map((_, i) => {
+                   const foundBot = matchedBots[i];
+                   return (
+                     <div key={i} className="flex flex-col items-center gap-3">
+                        {foundBot ? (
+                          <div className="w-24 h-24 rounded-full border-4 border-green-500 p-1 bg-slate-800 shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+                             <img src={foundBot.isBot === false ? foundBot.avatar : `https://api.dicebear.com/7.x/avataaars/svg?seed=${foundBot.name}`} className="w-full h-full rounded-full" />
+                          </div>
+                        ) : (
+                          <div className="w-24 h-24 rounded-full border-4 border-slate-700 bg-slate-800 flex items-center justify-center relative overflow-hidden">
+                             <div className="absolute inset-0 border-4 border-transparent border-t-yellow-500/30 rounded-full animate-spin"></div>
+                             <span className="text-3xl opacity-10">?</span>
+                          </div>
+                        )}
+                        <span className={`font-black text-[10px] uppercase transition-all ${foundBot ? 'text-white/90' : 'text-white/20'}`}>
+                          {foundBot ? `${foundBot.name} ${foundBot.flag}` : 'SEARCHING...'}
+                        </span>
+                     </div>
+                   );
+                })}
+              </div>
+
+              <button onClick={() => setView('MATCH_CONFIG')} className="text-[10px] font-black uppercase text-red-500 tracking-[0.3em] active:scale-95 transition-all">CANCEL SEARCH</button>
+           </div>
+        </div>
+      )}
+
+      {view === 'GAME' && gameState && (
+        <div className="h-full flex flex-col items-center relative">
+           <div className="w-full p-4 flex justify-between items-center bg-slate-900 border-b border-white/5 shrink-0">
+              <button onClick={() => { if(confirm("Exit game?")) setView('LOBBY'); }} className="text-[10px] font-black uppercase bg-red-500/10 text-red-500 px-5 py-2 rounded-xl border border-red-500/20">Exit</button>
+              <h2 className="ludo-money-logo text-2xl">LUDO MONEY</h2>
+              <div className="bg-yellow-500/10 px-4 py-1.5 rounded-xl text-yellow-500 font-black text-sm italic">৳{selectedStake}</div>
+           </div>
+
+           <div className="flex-1 w-full flex flex-col items-center justify-center p-4 gap-4 overflow-hidden relative">
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-[90%] max-w-[400px] z-50">
+                  <div className="bg-black/60 backdrop-blur-md border border-yellow-500/30 rounded-2xl p-3 flex gap-3 items-center shadow-2xl">
+                    <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center shrink-0">🎙️</div>
+                    <div className="flex-1">
+                      <p className="text-[10px] font-medium text-yellow-100 italic">"{commentary}"</p>
                     </div>
-                ))}
-            </div>
-            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); }} className="mt-6 text-red-500/40 text-[10px] font-black uppercase">Cancel</button>
-        </div>
-    </div>
-  );
+                  </div>
+              </div>
 
-  if (view === 'GAME' && gameState) return (
-    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden" onClick={handleInteraction}>
-        <div className="w-full h-16 md:h-20 bg-slate-900 flex justify-between items-center px-4 md:px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
-           <button onClick={() => { handleInteraction(); if(confirm("Surrender?")) { if(!isPracticeMode && matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); } }} className="text-red-500 font-black text-[10px] uppercase bg-red-500/10 px-6 py-3 rounded-xl">Surrender</button>
-           <div className="ludo-money-logo text-2xl md:text-3xl tracking-tighter">LUDO MONEY</div>
-           <div className="bg-yellow-500/10 px-4 py-2 rounded-xl text-yellow-500 font-black text-sm md:text-xl">৳{selectedStake}</div>
+              <div className="w-full max-w-[420px] aspect-square shadow-[0_20px_50px_rgba(0,0,0,0.6)] rounded-3xl overflow-hidden relative border-8 border-slate-800 bg-white">
+                 <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex]?.color || PlayerColor.RED} validTokens={getValidTokens()} onTokenClick={(token) => moveToken(token.id)} />
+                 {gameState.winner && (
+                    <div className="absolute inset-0 z-[100] bg-black/70 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+                        <div className="text-6xl mb-4">🏆</div>
+                        <h2 className="text-4xl font-black italic uppercase text-yellow-500 mb-2 tracking-tighter">WINNER!</h2>
+                        <p className="text-xl font-black text-white mb-8">{gameState.players.find(p => p.color === gameState.winner)?.name} WON!</p>
+                        <button onClick={() => setView('LOBBY')} className="bg-yellow-500 text-black px-12 py-4 rounded-3xl font-black uppercase">BACK TO LOBBY</button>
+                    </div>
+                 )}
+              </div>
+
+              <div className="w-full max-w-[420px] flex items-center justify-between gap-3 shrink-0">
+                 <div className={`flex-1 p-3 rounded-3xl border transition-all duration-300 flex items-center gap-3 ${gameState.players[gameState.currentPlayerIndex].color === PlayerColor.RED ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-800/80 border-white/10'}`}>
+                    <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-10 h-10 rounded-full border-2 border-yellow-500" />
+                    <div className="overflow-hidden"><h3 className="text-sm font-black italic uppercase text-white truncate">{gameState.players[gameState.currentPlayerIndex].name}</h3></div>
+                 </div>
+                 <div onClick={rollDice} className={`w-20 h-20 bg-slate-900/60 rounded-[30px] border-[3px] flex items-center justify-center transition-all cursor-pointer shadow-inner ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot ? 'border-yellow-500 scale-110 shadow-yellow-500/20' : 'border-white/10 opacity-90'}`}><Dice3D value={gameState.diceValue} isRolling={isRolling} /></div>
+                 <div className="flex-1 bg-slate-800/40 p-3 rounded-3xl border border-white/5 flex flex-col items-center justify-center"><p className="text-[10px] font-black text-center text-white italic leading-tight">{gameState.lastAction}</p></div>
+              </div>
+           </div>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-2 md:p-4 gap-8 w-full max-h-[calc(100vh-80px)]">
-            <div className="w-full max-w-[95vw] md:max-w-[500px] aspect-square shadow-2xl rounded-[50px] overflow-hidden border-[12px] border-white/5 bg-white/5 relative">
-                <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} validTokens={validTokens} onTokenClick={(t) => moveToken(t.id)} />
-            </div>
-            <div className="flex flex-col items-center gap-6 pb-6 w-full max-w-sm">
-                <div className="flex items-center gap-3 bg-slate-800/40 p-3 px-6 rounded-full border border-white/5">
-                    <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-8 h-8 rounded-full border-2 border-yellow-500" />
-                    <p className="text-sm md:text-xl font-black uppercase text-white">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
-                </div>
-                <div onClick={!gameState.players[gameState.currentPlayerIndex].isBot && !gameState.isDiceRolled ? rollDice : undefined} className={`transition-all ${isRolling || (gameState.isDiceRolled && !animating) ? 'opacity-50 pointer-events-none' : 'cursor-pointer active:scale-90'}`}>
-                   <Dice3D value={gameState.diceValue} isRolling={isRolling} />
-                </div>
-            </div>
-        </div>
+      )}
+
+      <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={() => {}} />
     </div>
   );
-  return null;
 };
+
 export default App;

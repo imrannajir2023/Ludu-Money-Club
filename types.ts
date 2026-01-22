@@ -23,6 +23,8 @@ export interface Token {
 export interface Player {
   id: string;
   name: string;
+  country: string;
+  flag: string;
   color: PlayerColor;
   tokens: Token[];
   isBot: boolean;
@@ -58,6 +60,8 @@ export interface UserProfile {
   password?: string;
   balance: number;
   avatar: string;
+  country?: string;
+  flag?: string;
   stats: {
     totalGames: number;
     wins: number;
@@ -68,7 +72,9 @@ export interface UserProfile {
 
 export interface LiveMatch {
   matchId: string;
-  players: { name: string, color: PlayerColor, score: number, avatar: string, isBot: boolean }[];
+  inviteCode?: string; 
+  isPrivate?: boolean;
+  players: { name: string, color: PlayerColor, score: number, avatar: string, isBot: boolean, flag: string }[];
   currentPlayer: string;
   stake: number;
   startTime: string;
