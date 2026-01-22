@@ -1,18 +1,18 @@
 
 const SOUND_URLS = {
-  // Shaking dice in a cup sound
+  // Iconic dice rattle
   dice: 'https://www.soundjay.com/misc/sounds/dice-shake-1.mp3', 
-  // Clean dice stop click
+  // Snappy click
   dice_stop: 'https://www.soundjay.com/buttons/sounds/button-16.mp3', 
-  // Sharp pop sound (the iconic Tok-Tok)
+  // Authentic Tok-Tok pop
   move: 'https://www.soundjay.com/communication/sounds/pop-1.mp3',
-  // Impact/Crash for killing a piece
+  // Crunchy impact for capture
   kill: 'https://assets.mixkit.co/active_storage/sfx/1110/1110-preview.mp3',
-  // Home/Win chime
+  // Joyful bell for finish
   win: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3',
-  // Simple UI click
+  // System click
   click: 'https://www.soundjay.com/buttons/sounds/button-20.mp3',
-  // Success chime for a six
+  // Success fanfare
   six: 'https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3'
 };
 
@@ -47,10 +47,9 @@ class SoundService {
     const sound = this.sounds[name];
     if (sound) {
       sound.currentTime = 0;
-      
-      // Speed up the "Tok" sound slightly to make it snappier
+      // High playback rate for sharp pop
       if (name === 'move') {
-        sound.playbackRate = 2.5; 
+        sound.playbackRate = 2.8; 
       } else {
         sound.playbackRate = 1.0;
       }

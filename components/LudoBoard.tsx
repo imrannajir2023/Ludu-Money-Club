@@ -28,10 +28,11 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
       [7,0], [6,0]
     ];
 
-    const redHome = [[7,1], [7,2], [7,3], [7,4], [7,5], [7,6]]; 
-    const greenHome = [[1,7], [2,7], [3,7], [4,7], [5,7], [6,7]];
-    const yellowHome = [[7,13], [7,12], [7,11], [7,10], [7,9], [7,8]];
-    const blueHome = [[13,7], [12,7], [11,7], [10,7], [9,7], [8,7]];
+    // Home paths (the 5 squares leading to the triangle)
+    const redHome = [[7,1], [7,2], [7,3], [7,4], [7,5]]; 
+    const greenHome = [[1,7], [2,7], [3,7], [4,7], [5,7]];
+    const yellowHome = [[7,13], [7,12], [7,11], [7,10], [7,9]];
+    const blueHome = [[13,7], [12,7], [11,7], [10,7], [9,7]];
 
     if (pathIndex >= 100) {
         const homeIdx = pathIndex - 100;
@@ -67,6 +68,7 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
 
     for (let r = 0; r < 15; r++) {
       for (let c = 0; c < 15; c++) {
+        // Skip base areas and center 3x3
         if ((r < 6 && c < 6) || (r < 6 && c > 8) || (r > 8 && c < 6) || (r > 8 && c > 8) || (r >= 6 && r <= 8 && c >= 6 && c <= 8)) continue;
 
         let bgColor = 'bg-white';
@@ -101,7 +103,9 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
   const tokensAtPos: Record<string, {token: Token, playerIndex: number}[]> = {};
   players.forEach((p, pIdx) => {
     p.tokens.forEach(t => {
+      // Finished tokens should not be rendered on the board
       if (t.state === TokenState.WIN) return;
+      
       let r, c;
       if (t.state === TokenState.HOME) [r, c] = getBaseGridPos(t.color, t.id);
       else [r, c] = getGridPos(t.position, t.color);
@@ -121,7 +125,7 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
       <div className="absolute bottom-0 right-0 w-[40%] h-[40%] p-2"><div className="w-full h-full bg-yellow-400 rounded-xl border-2 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-lg"></div></div></div>
       <div className="absolute bottom-0 left-0 w-[40%] h-[40%] p-2"><div className="w-full h-full bg-blue-500 rounded-xl border-2 border-white shadow-lg flex items-center justify-center"><div className="bg-white w-[70%] h-[70%] rounded-lg"></div></div></div>
 
-      {/* CENTER */}
+      {/* CENTER TRIANGLE (Finish Area) */}
       <div className="absolute top-[40%] left-[40%] w-[20%] h-[20%]">
           <div className="w-full h-full relative">
               <div className="absolute left-0 top-0 bottom-0 w-1/2 h-full bg-red-500" style={{ clipPath: 'polygon(0 0, 100% 50%, 0 100%)' }}></div>
@@ -131,7 +135,7 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
           </div>
       </div>
 
-      {/* TOKENS WITH SMART STACKING GRID */}
+      {/* TOKENS RENDERING */}
       {Object.entries(tokensAtPos).flatMap(([posKey, stack]) => {
           const [r, c] = posKey.split('-').map(Number);
           const isAtHome = stack.some(s => s.token.state === TokenState.HOME);
@@ -153,7 +157,6 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players, onTokenClick, validToken
                   };
               }
 
-              // Clickable/Current turn tokens always on top of others in same cell
               const zIndex = isClickable ? 300 : 10 + index;
 
               return (

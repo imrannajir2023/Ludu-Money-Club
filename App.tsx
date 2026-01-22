@@ -288,16 +288,26 @@ const App: React.FC = () => {
     } else {
       for (let i = 0; i < dice; i++) {
         token.distanceTraveled += 1;
-        if (token.distanceTraveled >= 51) { token.position = 100 + (token.distanceTraveled - 51); } else { token.position = (token.position + 1) % 52; }
+        // Logic: 51 steps around the board, then 5 steps into the colored path, step 56 is the triangle (WIN)
+        if (token.distanceTraveled >= 51) { 
+            token.position = 100 + (token.distanceTraveled - 51); 
+        } else { 
+            token.position = (token.position + 1) % 52; 
+        }
+        
         soundManager.play('move'); 
         setGameState(prev => prev ? ({ ...prev, players: [...players] }) : null);
-        // Faster piece move: 100ms like Ludo King
         await new Promise(r => setTimeout(r, 100)); 
       }
     }
 
     let didCapture = false; let didReachFinish = false;
-    if (token.distanceTraveled === 57) { token.state = TokenState.WIN; didReachFinish = true; soundManager.play('win'); } else if (token.distanceTraveled < 51) {
+    // FIXED: Winning distance is exactly 56 steps
+    if (token.distanceTraveled === 56) { 
+        token.state = TokenState.WIN; 
+        didReachFinish = true; 
+        soundManager.play('win'); 
+    } else if (token.distanceTraveled < 51) {
         const myAbs = (token.position + START_POSITIONS[player.color]) % 52;
         if (!SAFE_SPOTS.includes(myAbs)) {
             players.forEach((p, pIdx) => {
@@ -355,7 +365,8 @@ const App: React.FC = () => {
         setGameState(prev => {
             if (!prev) return null;
             const player = prev.players[prev.currentPlayerIndex];
-            const canMove = player.tokens.some(t => (t.state === TokenState.HOME && finalVal === 6) || (t.state === TokenState.PATH && (t.distanceTraveled + finalVal) <= 57));
+            // Win distance limit is 56
+            const canMove = player.tokens.some(t => (t.state === TokenState.HOME && finalVal === 6) || (t.state === TokenState.PATH && (t.distanceTraveled + finalVal) <= 56));
             if (!canMove) { 
                 setTimeout(() => switchTurn(false), 500); 
             }
@@ -376,13 +387,11 @@ const App: React.FC = () => {
 
     if (cp.isBot) {
         if (!gameState.isDiceRolled) {
-            // Faster bot roll: 300-600ms
             const rollDelay = 300 + Math.random() * 300;
             turnTimeoutRef.current = window.setTimeout(rollDice, rollDelay);
         } else if (gameState.diceValue !== null) {
-            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 57)).map(t => t.id);
+            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 56)).map(t => t.id);
             if (possibleMoves.length > 0) {
-                // Faster bot move: 200-400ms after roll
                 const moveDelay = 200 + Math.random() * 200;
                 turnTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), moveDelay);
             }
@@ -391,7 +400,7 @@ const App: React.FC = () => {
         if (!gameState.isDiceRolled) {
             turnTimeoutRef.current = window.setTimeout(rollDice, 10000);
         } else if (gameState.diceValue !== null) {
-            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 57)).map(t => t.id);
+            const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 56)).map(t => t.id);
             if (possibleMoves.length > 0) {
                 turnTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), 8000);
             }
@@ -444,7 +453,7 @@ const App: React.FC = () => {
     if (!gameState || !gameState.isDiceRolled || gameState.diceValue === null) return [];
     const player = gameState.players[gameState.currentPlayerIndex];
     const val = gameState.diceValue;
-    return player.tokens.filter(t => (t.state === TokenState.HOME && val === 6) || (t.state === TokenState.PATH && t.distanceTraveled + val <= 57)).map(t => t.id);
+    return player.tokens.filter(t => (t.state === TokenState.HOME && val === 6) || (t.state === TokenState.PATH && t.distanceTraveled + val <= 56)).map(t => t.id);
   }, [gameState]);
 
   if (view === 'SPLASH') return (
