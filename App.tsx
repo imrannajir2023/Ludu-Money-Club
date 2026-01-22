@@ -10,8 +10,6 @@ import { generateGameCommentary } from './services/geminiService';
 import { getRandomBotIdentity } from './services/botService';
 import { START_POSITIONS, SAFE_SPOTS } from './constants';
 
-const LOGO_ICON = "https://cdn-icons-png.flaticon.com/512/806/806131.png";
-
 const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value, isRolling }) => {
   return (
     <div className={`dice-scene ${isRolling ? 'dice-jump' : ''}`}>
@@ -50,6 +48,7 @@ const App: React.FC = () => {
   const [matchingTimer, setMatchingTimer] = useState(35);
   const [matchedBots, setMatchedBots] = useState<any[]>([]);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
+  const [matchingStatus, setMatchingStatus] = useState("Searching for players...");
 
   const updateCommentary = async (event: string, playerName: string) => {
     setIsAiThinking(true);
@@ -60,17 +59,11 @@ const App: React.FC = () => {
 
   const unlockAudio = () => {
     soundManager.unlock();
-    document.removeEventListener('click', unlockAudio);
-    document.removeEventListener('touchstart', unlockAudio);
   };
 
   useEffect(() => {
     document.addEventListener('click', unlockAudio);
-    document.addEventListener('touchstart', unlockAudio);
-    return () => {
-      document.removeEventListener('click', unlockAudio);
-      document.removeEventListener('touchstart', unlockAudio);
-    };
+    return () => document.removeEventListener('click', unlockAudio);
   }, []);
 
   const initGame = (count: number, isPractice: boolean = false) => {
@@ -87,7 +80,7 @@ const App: React.FC = () => {
         flag: idx === 0 ? (user.flag || "🇧🇩") : botIdentity.flag,
         color,
         isBot: idx !== 0,
-        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${idx === 0 ? 'user' : (botIdentity.name || 'bot')}`,
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${idx === 0 ? 'user' : (botIdentity.name || 'player')}`,
         tokens: Array.from({ length: 4 }).map((_, tIdx) => ({
           id: (idx + 1) * 100 + tIdx,
           color: color,
@@ -108,7 +101,7 @@ const App: React.FC = () => {
       lastAction: 'Waiting for roll',
       consecutiveSixes: 0
     });
-    updateCommentary(isPractice ? "Practice mode started!" : "High stakes match started!", user.name);
+    updateCommentary("New game started!", user.name);
     setView('GAME');
   };
 
@@ -128,7 +121,7 @@ const App: React.FC = () => {
     }
   }, [view]);
 
-  // Matchmaking logic with priority window
+  // Hidden Bot Matchmaking Logic
   useEffect(() => {
     let timerInterval: any;
     let botInjectionInterval: any;
@@ -136,7 +129,8 @@ const App: React.FC = () => {
 
     if (view === 'MATCHING') {
       setMatchedBots([]);
-      setMatchingTimer(35); // 20s for real players, 15s buffer for bot filling
+      setMatchingTimer(35);
+      setMatchingStatus("Searching for nearby players...");
 
       const findAndJoinMatch = async () => {
         const existingMatch = await databaseService.findWaitingMatch(selectedStake, playerCount);
@@ -165,27 +159,33 @@ const App: React.FC = () => {
                  const others = myMatch.players.filter(p => p.name !== user.name);
                  setMatchedBots(others);
                  soundManager.play('win');
+                 setMatchingStatus("Connecting to players...");
              }
          }
       }, 2000);
 
-      // Bot fallback logic - Wait 20 seconds before allowing bots to join
+      // Bot logic starts after 20 seconds PRIORITY window
       setTimeout(() => {
         if (view === 'MATCHING') {
             botInjectionInterval = setInterval(() => {
                 setMatchedBots(prev => {
                     if (prev.length < (playerCount - 1)) {
                         soundManager.play('click');
-                        return [...prev, getRandomBotIdentity()];
+                        const newBot = getRandomBotIdentity();
+                        setMatchingStatus(`Connecting with ${newBot.name}...`);
+                        return [...prev, { ...newBot, isBot: true }];
                     }
                     return prev;
                 });
-              }, 3000);
+              }, 4000);
         }
-      }, 20000); // 20 seconds delay for bots
+      }, 20000); // Wait 20 seconds strictly for real players
 
       timerInterval = setInterval(() => {
         setMatchingTimer(prev => {
+          if (prev === 25) setMatchingStatus("Finding global match...");
+          if (prev === 10) setMatchingStatus("Finalizing table seats...");
+          
           if (prev <= 0) {
             clearInterval(timerInterval);
             clearInterval(botInjectionInterval);
@@ -208,10 +208,8 @@ const App: React.FC = () => {
 
   const rollDice = async () => {
     if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
-    
     setIsRolling(true);
     soundManager.play('dice');
-    
     setTimeout(() => {
         const val = Math.floor(Math.random() * 6) + 1;
         setGameState(prev => {
@@ -241,14 +239,12 @@ const App: React.FC = () => {
   const getValidTokens = () => {
     if (!gameState || !gameState.isDiceRolled || gameState.diceValue === null) return [];
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    return currentPlayer.tokens
-      .filter(t => {
+    return currentPlayer.tokens.filter(t => {
         const val = gameState.diceValue || 0;
         if (t.state === TokenState.HOME) return val === 6;
         if (t.state === TokenState.PATH) return t.distanceTraveled + val <= 56;
         return false;
-      })
-      .map(t => t.id);
+    }).map(t => t.id);
   };
 
   const nextTurn = useCallback(() => {
@@ -309,20 +305,16 @@ const App: React.FC = () => {
     }
     if (captured) soundManager.play('kill');
     player.tokens[tokenIdx] = token;
-    const allWon = player.tokens.every(t => t.state === TokenState.WIN);
-    if (allWon) {
+    if (player.tokens.every(t => t.state === TokenState.WIN)) {
         setGameState(prev => prev ? { ...prev, players, winner: player.color } : null);
         soundManager.play('win');
         return;
     }
     setGameState(prev => {
         if (!prev) return null;
-        if (diceVal === 6 || captured || reachedWin) {
-            return { ...prev, players, diceValue: null, isDiceRolled: false };
-        } else {
-            const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
-            return { ...prev, players, currentPlayerIndex: nextIndex, diceValue: null, isDiceRolled: false, consecutiveSixes: 0 };
-        }
+        if (diceVal === 6 || captured || reachedWin) return { ...prev, players, diceValue: null, isDiceRolled: false };
+        const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
+        return { ...prev, players, currentPlayerIndex: nextIndex, diceValue: null, isDiceRolled: false, consecutiveSixes: 0 };
     });
   };
 
@@ -339,10 +331,10 @@ const App: React.FC = () => {
                         if (t.state === TokenState.PATH) return t.distanceTraveled + val <= 56;
                         return false;
                     });
-                    if (validTokens.length > 0) setTimeout(() => moveToken(validTokens[Math.floor(Math.random() * validTokens.length)].id), 800);
+                    if (validTokens.length > 0) setTimeout(() => moveToken(validTokens[Math.floor(Math.random() * validTokens.length)].id), 1200);
                     else nextTurn();
                 }
-            }, 1500);
+            }, 2000); // Simulated thinking time for "real player" feel
             return () => clearTimeout(timer);
         }
     }
@@ -407,24 +399,16 @@ const App: React.FC = () => {
                     <div className="text-center relative z-10"><h2 className="text-4xl font-black italic uppercase tracking-tighter leading-none drop-shadow-lg text-white mb-1">BATTLE ONLINE</h2><p className="text-blue-200/50 text-[10px] font-black uppercase tracking-widest italic">Play & Earn Cash</p></div>
                     <button onClick={() => { soundManager.play('click'); setView('MATCH_CONFIG'); }} className="w-full bg-gradient-to-b from-yellow-400 to-yellow-600 py-4 rounded-2xl font-black text-lg text-black shadow-[0_8px_0_#92400e] active:shadow-none active:translate-y-2 transition-all uppercase italic tracking-tighter z-10">JOIN TABLE</button>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div onClick={() => { soundManager.play('click'); initGame(2, true); }} className="bg-[#1e293b]/60 h-24 rounded-3xl p-5 border border-white/5 flex items-center justify-between group active:scale-95 transition-all cursor-pointer backdrop-blur-sm">
                         <div className="flex items-center gap-4"><div className="text-3xl">🤖</div><div><h3 className="text-xl font-black italic uppercase tracking-tighter text-white">PRACTICE</h3><p className="text-[8px] font-black uppercase text-white/20 tracking-widest">Free Mode</p></div></div>
                     </div>
-                    <div className="bg-[#1e293b]/60 h-24 rounded-3xl p-5 border border-white/5 flex items-center justify-between group opacity-80 backdrop-blur-sm">
-                        <div className="flex items-center gap-4"><div className="text-3xl">👫</div><div><h3 className="text-xl font-black italic uppercase tracking-tighter text-white">PRIVATE</h3><p className="text-[8px] font-black uppercase text-white/20 tracking-widest">With Friends</p></div></div>
-                        <span className="bg-yellow-500/10 text-yellow-500 text-[8px] font-black px-2 py-1 rounded-md uppercase border border-yellow-500/20 italic tracking-widest">SOON</span>
-                    </div>
                 </div>
             </div>
           </div>
-
           <div className="h-20 bg-[#0a0f20]/80 backdrop-blur-xl border-t border-white/5 flex justify-around items-center px-4 shrink-0 relative z-[100]">
-             <div className="flex flex-col items-center gap-1 opacity-40"><span className="text-xl">🛒</span><span className="text-[8px] font-black uppercase">Store</span></div>
-             <div className="flex flex-col items-center gap-1 opacity-40"><span className="text-xl">🎒</span><span className="text-[8px] font-black uppercase">Inv</span></div>
-             <div className="relative -top-6"><button onClick={() => { soundManager.play('click'); setView('LOBBY'); }} className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center shadow-2xl border-t-2 border-white/20 shadow-blue-500/20"><span className="text-3xl">🏠</span></button></div>
-             <div className="flex flex-col items-center gap-1 opacity-100 text-yellow-500"><span className="text-xl">👫</span><span className="text-[8px] font-black uppercase">Friends</span></div>
+             <div className="flex flex-col items-center gap-1 opacity-40 text-yellow-500"><span className="text-xl">🏠</span><span className="text-[8px] font-black uppercase">Home</span></div>
+             <div className="flex flex-col items-center gap-1 opacity-40"><span className="text-xl">🎒</span><span className="text-[8px] font-black uppercase">Inventory</span></div>
              <div className="flex flex-col items-center gap-1 opacity-40"><span className="text-xl">🏆</span><span className="text-[8px] font-black uppercase">Club</span></div>
           </div>
         </>
@@ -452,13 +436,13 @@ const App: React.FC = () => {
       {view === 'MATCHING' && (
         <div className="h-full flex flex-col items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
            <div className="bg-[#1e2333] p-8 py-12 rounded-[60px] w-full max-w-lg border border-white/10 flex flex-col items-center animate-in zoom-in-95 duration-300">
-              <h2 className="text-4xl font-black italic uppercase text-yellow-500 text-center mb-2 tracking-tighter">SEARCHING PLAYERS</h2>
+              <h2 className="text-3xl font-black italic uppercase text-yellow-500 text-center mb-2 tracking-tighter">SEARCHING PLAYERS</h2>
               <div className="bg-slate-800/60 px-6 py-1 rounded-full mb-6 border border-yellow-500/20">
                 <span className="text-yellow-500 font-black text-sm">{matchingTimer}S</span>
               </div>
               
-              <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-10 animate-pulse">
-                {matchingTimer > 15 ? "🔍 Priority: Looking for Real Players..." : "🤖 No players found. Filling with Bots..."}
+              <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-10 animate-pulse text-center px-4 h-4">
+                {matchingStatus}
               </div>
               
               <div className={`grid ${playerCount === 4 ? 'grid-cols-2' : 'grid-cols-2'} gap-8 mb-12`}>
@@ -475,7 +459,7 @@ const App: React.FC = () => {
                      <div key={i} className="flex flex-col items-center gap-3">
                         {foundBot ? (
                           <div className="w-24 h-24 rounded-full border-4 border-green-500 p-1 bg-slate-800 shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-                             <img src={foundBot.isBot === false ? foundBot.avatar : `https://api.dicebear.com/7.x/avataaars/svg?seed=${foundBot.name}`} className="w-full h-full rounded-full" />
+                             <img src={foundBot.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${foundBot.name}`} className="w-full h-full rounded-full" />
                           </div>
                         ) : (
                           <div className="w-24 h-24 rounded-full border-4 border-slate-700 bg-slate-800 flex items-center justify-center relative overflow-hidden">
@@ -490,7 +474,6 @@ const App: React.FC = () => {
                    );
                 })}
               </div>
-
               <button onClick={() => setView('MATCH_CONFIG')} className="text-[10px] font-black uppercase text-red-500 tracking-[0.3em] active:scale-95 transition-all">CANCEL SEARCH</button>
            </div>
         </div>
@@ -503,7 +486,6 @@ const App: React.FC = () => {
               <h2 className="ludo-money-logo text-2xl">LUDO MONEY</h2>
               <div className="bg-yellow-500/10 px-4 py-1.5 rounded-xl text-yellow-500 font-black text-sm italic">৳{selectedStake}</div>
            </div>
-
            <div className="flex-1 w-full flex flex-col items-center justify-center p-4 gap-4 overflow-hidden relative">
               <div className="absolute top-2 left-1/2 -translate-x-1/2 w-[90%] max-w-[400px] z-50">
                   <div className="bg-black/60 backdrop-blur-md border border-yellow-500/30 rounded-2xl p-3 flex gap-3 items-center shadow-2xl">
@@ -513,7 +495,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
               </div>
-
               <div className="w-full max-w-[420px] aspect-square shadow-[0_20px_50px_rgba(0,0,0,0.6)] rounded-3xl overflow-hidden relative border-8 border-slate-800 bg-white">
                  <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex]?.color || PlayerColor.RED} validTokens={getValidTokens()} onTokenClick={(token) => moveToken(token.id)} />
                  {gameState.winner && (
@@ -525,7 +506,6 @@ const App: React.FC = () => {
                     </div>
                  )}
               </div>
-
               <div className="w-full max-w-[420px] flex items-center justify-between gap-3 shrink-0">
                  <div className={`flex-1 p-3 rounded-3xl border transition-all duration-300 flex items-center gap-3 ${gameState.players[gameState.currentPlayerIndex].color === PlayerColor.RED ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-800/80 border-white/10'}`}>
                     <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-10 h-10 rounded-full border-2 border-yellow-500" />
@@ -537,7 +517,6 @@ const App: React.FC = () => {
            </div>
         </div>
       )}
-
       <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={() => {}} />
     </div>
   );
