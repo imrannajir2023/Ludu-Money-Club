@@ -47,7 +47,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const pendingCount = pendingTransactions.length;
   const arenaCount = liveMatches.length;
 
-  // Sound alert for new transactions
   useEffect(() => {
     if (pendingCount > 0) {
         soundManager.play('six');
@@ -90,15 +89,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
     setAdjustAmount('');
     alert("Balance adjusted successfully!");
     soundManager.play('win');
-  };
-
-  const handleTerminateMatch = async (matchId: string) => {
-    if(!confirm("Terminate this match? Players will be kicked to Lobby.")) return;
-    const match = liveMatches.find(m => m.matchId === matchId);
-    if (match) {
-        await databaseService.syncMatch({ ...match, status: 'TERMINATED' });
-        soundManager.play('click');
-    }
   };
 
   const handleSaveSettings = async () => {
@@ -166,6 +156,82 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           )}
 
+          {activeTab === 'users' && (
+            <div className="space-y-8 animate-in fade-in">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Player Database</h3>
+                    <input 
+                      type="text" 
+                      placeholder="Search by name or phone..." 
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="bg-slate-900 border border-white/10 p-4 rounded-2xl w-80 text-sm font-bold focus:border-sky-500 outline-none transition-all"
+                    />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-2 bg-slate-800/30 rounded-[50px] border border-white/5 overflow-hidden">
+                        <table className="w-full text-left">
+                           <thead className="bg-slate-900 border-b border-white/5 text-[11px] font-black uppercase text-white/40">
+                              <tr><th className="p-6">Player</th><th className="p-6">Contact</th><th className="p-6">Balance</th></tr>
+                           </thead>
+                           <tbody className="divide-y divide-white/5">
+                              {filteredUsers.map((u) => (
+                                 <tr key={u.phone} onClick={() => setSelectedUser(u)} className={`cursor-pointer transition-all ${selectedUser?.phone === u.phone ? 'bg-sky-500/10' : 'hover:bg-white/5'}`}>
+                                    <td className="p-6">
+                                       <div className="flex items-center gap-3">
+                                          <img src={u.avatar} className="w-10 h-10 rounded-full border border-white/10" />
+                                          <span className="font-black text-sm uppercase">{u.name}</span>
+                                       </div>
+                                    </td>
+                                    <td className="p-6 font-bold text-white/60">{u.phone}</td>
+                                    <td className="p-6 font-black text-yellow-500 text-lg">৳ {u.balance.toLocaleString()}</td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                    </div>
+
+                    <div className="bg-slate-800/50 rounded-[50px] border border-sky-500/20 p-10 h-fit sticky top-0">
+                        {selectedUser ? (
+                           <div className="space-y-8 animate-in zoom-in-95">
+                              <div className="text-center">
+                                 <img src={selectedUser.avatar} className="w-24 h-24 rounded-full border-4 border-sky-500 mx-auto mb-4" />
+                                 <h4 className="text-2xl font-black uppercase italic text-white leading-none">{selectedUser.name}</h4>
+                                 <p className="text-sky-400 font-bold mt-2">{selectedUser.phone}</p>
+                              </div>
+
+                              <div className="bg-black/40 p-6 rounded-[30px] border border-white/5 text-center">
+                                 <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">Current Balance</p>
+                                 <p className="text-3xl font-black text-yellow-500">৳ {selectedUser.balance.toLocaleString()}</p>
+                              </div>
+
+                              <div className="space-y-4">
+                                 <div className="flex gap-2">
+                                    <button onClick={() => setAdjustType('add')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${adjustType === 'add' ? 'bg-green-500 text-black' : 'bg-white/5 text-white/40'}`}>+ Add</button>
+                                    <button onClick={() => setAdjustType('subtract')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${adjustType === 'subtract' ? 'bg-red-500 text-white' : 'bg-white/5 text-white/40'}`}>- Remove</button>
+                                 </div>
+                                 <input 
+                                   type="number" 
+                                   placeholder="Amount" 
+                                   value={adjustAmount}
+                                   onChange={(e) => setAdjustAmount(e.target.value)}
+                                   className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none" 
+                                 />
+                                 <button onClick={handleAdjustBalance} className="w-full bg-sky-500 py-5 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all">Update Balance</button>
+                              </div>
+                           </div>
+                        ) : (
+                           <div className="text-center py-20 opacity-20">
+                              <span className="text-6xl mb-4 block">👈</span>
+                              <p className="font-black uppercase italic">Select a player to manage</p>
+                           </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+          )}
+
           {activeTab === 'transactions' && (
             <div className="space-y-8 animate-in fade-in">
                <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Pending Requests</h3>
@@ -184,7 +250,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                                 <td className="p-8">
                                    <div className="text-[11px] font-black uppercase text-sky-400">{tx.trxId || 'N/A'}</div>
                                    <div className="text-xs font-bold text-white/40">{tx.phone}</div>
-                                </td>
+                                 </td>
                                 <td className="p-8">
                                    <div className="flex gap-3">
                                       <button onClick={() => onApproveTransaction(tx)} className="bg-green-500 text-black px-6 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg">Approve</button>
@@ -234,7 +300,12 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           )}
 
-          {/* Users and Arena tabs omitted for brevity but remain functional */}
+          {activeTab === 'arena' && (
+             <div className="text-center py-40 opacity-20">
+                <span className="text-8xl mb-8 block">🏟️</span>
+                <h3 className="text-4xl font-black uppercase italic">Arena Monitoring Coming Soon</h3>
+             </div>
+          )}
         </div>
       </div>
     </div>

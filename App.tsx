@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Player, PlayerColor, Token, TokenState, GameState, UserProfile } from './types';
+import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction, LiveMatch } from './types';
 import LudoBoard from './components/LudoBoard';
 import WalletModal from './components/WalletModal';
 import AdminPortal from './components/AdminPortal';
@@ -30,6 +30,8 @@ const App: React.FC = () => {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
+  const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
   
   // Auth Form State
   const [phone, setPhone] = useState('');
@@ -55,15 +57,47 @@ const App: React.FC = () => {
   const [matchingStatus, setMatchingStatus] = useState("Searching for players...");
   const [adminClickCount, setAdminClickCount] = useState(0);
 
+  // Load Initial Data
   useEffect(() => {
     const loadInitialData = async () => {
-      const users = await databaseService.getUsers();
-      setAllUsers(users);
-      const savedUser = localStorage.getItem('LUDO_SESSION');
-      if (savedUser) setUser(JSON.parse(savedUser));
+      try {
+        const [users, transactions, matches] = await Promise.all([
+          databaseService.getUsers(),
+          databaseService.getPendingTransactions(),
+          databaseService.getLiveMatches()
+        ]);
+        setAllUsers(users);
+        setPendingTransactions(transactions);
+        setLiveMatches(matches);
+        
+        const savedUser = localStorage.getItem('LUDO_SESSION');
+        if (savedUser) setUser(JSON.parse(savedUser));
+      } catch (err) {
+        console.error("Failed to load database data:", err);
+      }
     };
     loadInitialData();
   }, []);
+
+  // Splash Screen Logic
+  useEffect(() => {
+    if (view === 'SPLASH') {
+      const interval = setInterval(() => {
+        setLoadingProgress(prev => Math.min(prev + 5, 100));
+      }, 50);
+      return () => clearInterval(interval);
+    }
+  }, [view]);
+
+  // Transition after Splash
+  useEffect(() => {
+    if (view === 'SPLASH' && loadingProgress >= 100) {
+      const timer = setTimeout(() => {
+        setView(user ? 'LOBBY' : 'LOGIN');
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [loadingProgress, view, user]);
 
   const handleAuth = async () => {
     setAuthError('');
@@ -86,6 +120,7 @@ const App: React.FC = () => {
       };
       await databaseService.updateUser(newUser);
       setUser(newUser);
+      setAllUsers(prev => [...prev, newUser]);
       localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser));
       setView('LOBBY');
     } else {
@@ -102,7 +137,6 @@ const App: React.FC = () => {
 
   const handleAdminLogin = () => {
     setAdminAuthError('');
-    // Secret admin credentials updated as requested
     if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') {
       soundManager.play('win');
       setView('ADMIN');
@@ -146,65 +180,6 @@ const App: React.FC = () => {
     updateCommentary("New game started!", user.name);
     setView('GAME');
   };
-
-  useEffect(() => {
-    if (view === 'SPLASH') {
-      const interval = setInterval(() => {
-        setLoadingProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            setTimeout(() => setView(user ? 'LOBBY' : 'LOGIN'), 500);
-            return 100;
-          }
-          return prev + 10;
-        });
-      }, 50);
-      return () => clearInterval(interval);
-    }
-  }, [view, user]);
-
-  useEffect(() => {
-    let timerInterval: any;
-    let botInjectionInterval: any;
-
-    if (view === 'MATCHING' && user) {
-      setMatchedBots([]);
-      setMatchingTimer(35);
-      setMatchingStatus("Searching for nearby players...");
-
-      setTimeout(() => {
-        if (view === 'MATCHING') {
-            botInjectionInterval = setInterval(() => {
-                setMatchedBots(prev => {
-                    if (prev.length < (playerCount - 1)) {
-                        soundManager.play('click');
-                        const newBot = getRandomBotIdentity();
-                        setMatchingStatus(`Connecting with ${newBot.name}...`);
-                        return [...prev, { ...newBot, isBot: true }];
-                    }
-                    return prev;
-                });
-              }, 4000);
-        }
-      }, 10000);
-
-      timerInterval = setInterval(() => {
-        setMatchingTimer(prev => {
-          if (prev <= 0) {
-            clearInterval(timerInterval);
-            clearInterval(botInjectionInterval);
-            initGame(playerCount);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => {
-      clearInterval(timerInterval);
-      clearInterval(botInjectionInterval);
-    };
-  }, [view, playerCount]);
 
   const rollDice = async () => {
     if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
@@ -324,7 +299,31 @@ const App: React.FC = () => {
     }
   }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled, isRolling]);
 
-  if (view === 'ADMIN') return <AdminPortal user={user!} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={[]} liveMatches={[]} onUpdateUser={setUser} onApproveTransaction={() => {}} onRejectTransaction={() => {}} onExit={() => setView('LOGIN')} />;
+  if (view === 'ADMIN') return (
+    <AdminPortal 
+      user={user!} 
+      allUsers={allUsers} 
+      onUpdateUsersDB={setAllUsers} 
+      pendingTransactions={pendingTransactions} 
+      liveMatches={liveMatches} 
+      onUpdateUser={setUser} 
+      onApproveTransaction={async (tx) => {
+        const targetUser = allUsers.find(u => u.name === tx.userName);
+        if (targetUser) {
+           const updated = { ...targetUser, balance: targetUser.balance + tx.amount };
+           await databaseService.updateUser(updated);
+           setAllUsers(prev => prev.map(u => u.phone === updated.phone ? updated : u));
+           setPendingTransactions(prev => prev.filter(p => p.id !== tx.id));
+           alert("Deposit Approved!");
+        }
+      }} 
+      onRejectTransaction={(txId) => {
+        setPendingTransactions(prev => prev.filter(p => p.id !== txId));
+        alert("Transaction Rejected.");
+      }} 
+      onExit={() => setView('LOGIN')} 
+    />
+  );
 
   return (
     <div className="h-screen w-full bg-[#050a18] overflow-hidden text-white font-['Fredoka'] dotted-bg relative flex flex-col">
@@ -355,7 +354,6 @@ const App: React.FC = () => {
               </button>
            </div>
 
-           {/* Hidden Admin Access Trigger (Click 3 times to open Admin Auth Screen) */}
            <div className="absolute bottom-8 left-0 right-0 flex justify-center z-[110]">
               <span 
                 onClick={() => { 
@@ -426,17 +424,6 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex-1 px-4 py-4 overflow-y-auto no-scrollbar space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gradient-to-br from-purple-600 to-indigo-900 h-28 rounded-3xl p-4 flex items-center gap-3 border border-white/10 shadow-lg relative active:scale-95 transition-all">
-                    <div className="text-4xl">🎁</div>
-                    <div><p className="text-[8px] font-black uppercase text-purple-200 opacity-60">Daily Bonus</p><p className="text-sm font-black uppercase italic tracking-tight">Claim ৳৫০</p></div>
-                </div>
-                <div className="bg-gradient-to-br from-orange-500 to-red-700 h-28 rounded-3xl p-4 flex items-center gap-3 border border-white/10 shadow-lg relative active:scale-95 transition-all">
-                    <div className="text-4xl">🔥</div>
-                    <div><p className="text-[8px] font-black uppercase text-orange-200 opacity-60">Hot Deal</p><p className="text-sm font-black uppercase italic tracking-tight">2x Tokens</p></div>
-                </div>
-            </div>
-
             <div className="bg-[#2563eb] rounded-[50px] p-8 flex flex-col items-center justify-center border-[4px] border-white/10 relative overflow-hidden shadow-2xl min-h-[350px]">
                 <div className="w-24 h-24 bg-yellow-400 rounded-full flex items-center justify-center shadow-2xl mb-6"><span className="text-5xl">🎮</span></div>
                 <div className="text-center mb-8">
@@ -444,70 +431,18 @@ const App: React.FC = () => {
                     <p className="text-blue-200 text-xs font-black uppercase tracking-widest italic opacity-70">Play & Earn Cash</p>
                 </div>
                 <button onClick={() => { soundManager.play('click'); setView('MATCH_CONFIG'); }} className="w-full bg-gradient-to-b from-yellow-400 to-yellow-600 py-6 rounded-[30px] font-black text-2xl text-black shadow-[0_8px_0_#92400e] active:shadow-none active:translate-y-2 transition-all uppercase italic tracking-tighter">JOIN TABLE</button>
-                <div className="absolute top-0 right-0 p-4 opacity-10"><div className="grid grid-cols-3 gap-2">{Array(9).fill(0).map((_,i)=><div key={i} className="w-1.5 h-1.5 bg-white rounded-full"></div>)}</div></div>
-            </div>
-
-            <div onClick={() => { soundManager.play('click'); initGame(2); }} className="bg-slate-800/60 h-28 rounded-[40px] p-6 border border-white/10 flex items-center justify-between group active:scale-95 transition-all cursor-pointer">
-                <div className="flex items-center gap-4">
-                  <div className="text-4xl">🤖</div>
-                  <div><h3 className="text-2xl font-black italic uppercase tracking-tighter text-white">PRACTICE</h3><p className="text-[10px] font-black uppercase text-white/30 tracking-widest">Free Mode</p></div>
-                </div>
             </div>
           </div>
 
-          <div className="h-24 bg-[#0a0f20]/95 backdrop-blur-xl border-t border-white/5 flex justify-around items-center px-4 shrink-0 relative z-[100]">
-             <div className="flex flex-col items-center gap-1 text-yellow-500"><span className="text-2xl">🏠</span><span className="text-[9px] font-black uppercase tracking-wider">Home</span></div>
-             <div className="flex flex-col items-center gap-1 opacity-30"><span className="text-2xl">🎒</span><span className="text-[9px] font-black uppercase tracking-wider">Inventory</span></div>
-             <div className="flex flex-col items-center gap-1 opacity-30"><span className="text-2xl">🏆</span><span className="text-[9px] font-black uppercase tracking-wider">Club</span></div>
-          </div>
-
-          <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={() => {}} />
+          <WalletModal 
+            isOpen={isWalletOpen} 
+            onClose={() => setWalletOpen(false)} 
+            user={user} 
+            onSubmitTransaction={(tx) => {
+              setPendingTransactions(prev => [...prev, tx]);
+            }} 
+          />
         </>
-      )}
-
-      {view === 'MATCH_CONFIG' && (
-        <div className="h-full flex flex-col items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
-           <div className="bg-[#1e2333] p-10 py-12 rounded-[60px] w-full max-sm border border-white/10 flex flex-col items-center shadow-2xl animate-in zoom-in-95">
-              <h2 className="text-3xl font-black italic uppercase text-yellow-500 text-center mb-10 tracking-tighter">SELECT PLAYER</h2>
-              <div className="flex w-full gap-4 mb-10">
-                 <button onClick={() => { setPlayerCount(2); soundManager.play('click'); }} className={`flex-1 py-6 rounded-[30px] font-black text-xl border-[3px] transition-all ${playerCount === 2 ? 'bg-[#2563eb] border-white/20 text-white shadow-lg' : 'bg-slate-800/40 border-transparent text-white/30'}`}>2 Players</button>
-                 <button onClick={() => { setPlayerCount(4); soundManager.play('click'); }} className={`flex-1 py-6 rounded-[30px] font-black text-xl border-[3px] transition-all ${playerCount === 4 ? 'bg-[#2563eb] border-white/20 text-white shadow-lg' : 'bg-slate-800/40 border-transparent text-white/30'}`}>4 Players</button>
-              </div>
-              <div className="grid grid-cols-3 gap-4 mb-12 w-full px-2">
-                 {[50, 100, 500, 1000, 5000].map(s => (
-                   <button key={s} onClick={() => { setSelectedStake(s); soundManager.play('click'); }} className={`py-5 rounded-[25px] font-black text-lg transition-all ${selectedStake === s ? 'bg-yellow-500 text-black shadow-xl scale-105' : 'bg-slate-800/40 text-white/40'}`}>{s}</button>
-                 ))}
-              </div>
-              <button onClick={() => setView('MATCHING')} className="w-full bg-gradient-to-b from-[#f97316] to-[#ea580c] py-7 rounded-[40px] font-black text-2xl text-black shadow-xl tracking-tighter uppercase italic">START MATCH</button>
-              <button onClick={() => setView('LOBBY')} className="mt-8 text-[10px] font-black uppercase text-white/20 tracking-[0.3em]">BACK</button>
-           </div>
-        </div>
-      )}
-
-      {view === 'MATCHING' && user && (
-        <div className="h-full flex flex-col items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
-           <div className="bg-[#1e2333] p-8 py-12 rounded-[60px] w-full max-w-lg border border-white/10 flex flex-col items-center animate-in zoom-in-95">
-              <h2 className="text-3xl font-black italic uppercase text-yellow-500 text-center mb-2 tracking-tighter">SEARCHING PLAYERS</h2>
-              <div className="bg-slate-800/60 px-6 py-1 rounded-full mb-6 border border-yellow-500/20"><span className="text-yellow-500 font-black text-sm">{matchingTimer}S</span></div>
-              <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-10 animate-pulse h-4">{matchingStatus}</div>
-              <div className="grid grid-cols-2 gap-8 mb-12">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-24 h-24 rounded-full border-4 border-yellow-500 p-1 bg-slate-800 shadow-2xl overflow-hidden animate-pulse"><img src={user.avatar} className="w-full h-full rounded-full" /></div>
-                  <span className="font-black text-[10px] uppercase text-white/90">{user.name}</span>
-                </div>
-                {Array.from({ length: playerCount - 1 }).map((_, i) => {
-                   const found = matchedBots[i];
-                   return (
-                     <div key={i} className="flex flex-col items-center gap-3">
-                        {found ? <div className="w-24 h-24 rounded-full border-4 border-green-500 p-1 bg-slate-800 shadow-2xl overflow-hidden animate-in zoom-in"><img src={found.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${found.name}`} className="w-full h-full rounded-full" /></div> : <div className="w-24 h-24 rounded-full border-4 border-slate-700 bg-slate-800 flex items-center justify-center relative overflow-hidden"><div className="absolute inset-0 border-4 border-transparent border-t-yellow-500/30 rounded-full animate-spin"></div><span className="text-3xl opacity-10">?</span></div>}
-                        <span className={`font-black text-[10px] uppercase ${found ? 'text-white/90' : 'text-white/20'}`}>{found ? found.name : 'SEARCHING...'}</span>
-                     </div>
-                   );
-                })}
-              </div>
-              <button onClick={() => setView('MATCH_CONFIG')} className="text-[10px] font-black uppercase text-red-500 tracking-[0.3em] active:scale-95">CANCEL SEARCH</button>
-           </div>
-        </div>
       )}
 
       {view === 'GAME' && gameState && (
@@ -518,30 +453,11 @@ const App: React.FC = () => {
               <div className="bg-yellow-500/10 px-4 py-1.5 rounded-xl text-yellow-500 font-black text-sm italic">৳{selectedStake}</div>
            </div>
            <div className="flex-1 w-full flex flex-col items-center justify-center p-4 gap-4 overflow-hidden relative">
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-[90%] max-w-[400px] z-50">
-                  <div className="bg-black/60 backdrop-blur-md border border-yellow-500/30 rounded-2xl p-3 flex gap-3 items-center shadow-2xl">
-                    <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center shrink-0">🎙️</div>
-                    <p className="text-[10px] font-medium text-yellow-100 italic">"{commentary}"</p>
-                  </div>
-              </div>
               <div className="w-full max-w-[420px] aspect-square shadow-[0_20px_50px_rgba(0,0,0,0.6)] rounded-3xl overflow-hidden relative border-8 border-slate-800 bg-white">
                  <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex]?.color || PlayerColor.RED} validTokens={getValidTokens()} onTokenClick={(token) => moveToken(token.id)} />
-                 {gameState.winner && (
-                    <div className="absolute inset-0 z-[100] bg-black/70 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
-                        <div className="text-6xl mb-4">🏆</div>
-                        <h2 className="text-4xl font-black italic uppercase text-yellow-500 mb-2 tracking-tighter">WINNER!</h2>
-                        <p className="text-xl font-black text-white mb-8">{gameState.players.find(p => p.color === gameState.winner)?.name} WON!</p>
-                        <button onClick={() => setView('LOBBY')} className="bg-yellow-500 text-black px-12 py-4 rounded-3xl font-black uppercase">BACK TO LOBBY</button>
-                    </div>
-                 )}
               </div>
               <div className="w-full max-w-[420px] flex items-center justify-between gap-3 shrink-0">
-                 <div className={`flex-1 p-3 rounded-3xl border transition-all duration-300 flex items-center gap-3 ${gameState.players[gameState.currentPlayerIndex].color === PlayerColor.RED ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-800/80 border-white/10'}`}>
-                    <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-10 h-10 rounded-full border-2 border-yellow-500" />
-                    <h3 className="text-sm font-black italic uppercase text-white truncate">{gameState.players[gameState.currentPlayerIndex].name}</h3>
-                 </div>
                  <div onClick={rollDice} className={`w-20 h-20 bg-slate-900/60 rounded-[30px] border-[3px] flex items-center justify-center transition-all cursor-pointer shadow-inner ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot ? 'border-yellow-500 scale-110 shadow-yellow-500/20' : 'border-white/10 opacity-90'}`}><Dice3D value={gameState.diceValue} isRolling={isRolling} /></div>
-                 <div className="flex-1 bg-slate-800/40 p-3 rounded-3xl border border-white/5 flex flex-col items-center justify-center"><p className="text-[10px] font-black text-center text-white italic leading-tight">{gameState.lastAction}</p></div>
               </div>
            </div>
         </div>
