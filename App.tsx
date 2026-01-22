@@ -63,6 +63,7 @@ const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value,
 
 const App: React.FC = () => {
   const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'LOBBY' | 'MATCH_CONFIG' | 'MATCHING' | 'GAME' | 'ADMIN'>('SPLASH');
+  const [activeTab, setActiveTab] = useState<'HOME' | 'STORE' | 'INVENTORY' | 'FRIENDS' | 'CLUB'>('HOME');
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP' | 'ADMIN_LOGIN'>('LOGIN');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [user, setUser] = useState<UserProfile>(INITIAL_USER);
@@ -288,7 +289,6 @@ const App: React.FC = () => {
     } else {
       for (let i = 0; i < dice; i++) {
         token.distanceTraveled += 1;
-        // Logic: 51 steps around the board, then 5 steps into the colored path, step 56 is the triangle (WIN)
         if (token.distanceTraveled >= 51) { 
             token.position = 100 + (token.distanceTraveled - 51); 
         } else { 
@@ -302,7 +302,6 @@ const App: React.FC = () => {
     }
 
     let didCapture = false; let didReachFinish = false;
-    // FIXED: Winning distance is exactly 56 steps
     if (token.distanceTraveled === 56) { 
         token.state = TokenState.WIN; 
         didReachFinish = true; 
@@ -365,7 +364,6 @@ const App: React.FC = () => {
         setGameState(prev => {
             if (!prev) return null;
             const player = prev.players[prev.currentPlayerIndex];
-            // Win distance limit is 56
             const canMove = player.tokens.some(t => (t.state === TokenState.HOME && finalVal === 6) || (t.state === TokenState.PATH && (t.distanceTraveled + finalVal) <= 56));
             if (!canMove) { 
                 setTimeout(() => switchTurn(false), 500); 
@@ -382,9 +380,7 @@ const App: React.FC = () => {
     if (view !== 'GAME' || !gameState || animating || isRolling) return;
     const cp = gameState.players[gameState.currentPlayerIndex];
     if (!cp) return;
-
     if (turnTimeoutRef.current) clearTimeout(turnTimeoutRef.current);
-
     if (cp.isBot) {
         if (!gameState.isDiceRolled) {
             const rollDelay = 300 + Math.random() * 300;
@@ -492,6 +488,7 @@ const App: React.FC = () => {
 
   if (view === 'LOBBY') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col relative text-white dotted-bg overflow-hidden" onClick={handleInteraction}>
+        {/* TOP BAR */}
         <div className="p-4 md:p-6 flex items-center justify-between z-[100] relative bg-slate-900/90 backdrop-blur-2xl border-b border-yellow-500/10 shadow-xl">
             <div className="flex items-center gap-3 md:gap-4">
                 <img src={user.avatar} className="w-10 h-10 md:w-14 md:h-14 rounded-full border-4 border-yellow-500/30" />
@@ -503,9 +500,6 @@ const App: React.FC = () => {
                 </div>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-                <button onClick={toggleSound} className="w-10 h-10 md:w-12 md:h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-xl hover:bg-white/10 transition-all">
-                  {isMuted ? '🔇' : '🔊'}
-                </button>
                 <div className="bg-black/40 px-4 py-2 md:px-6 md:py-3 rounded-2xl md:rounded-3xl border-2 border-yellow-500/30 flex items-center gap-3 cursor-pointer" onClick={() => { handleInteraction(); setWalletOpen(true); }}>
                     <div className="w-6 h-6 md:w-8 md:h-8 bg-gradient-to-b from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center text-black font-black text-xs md:text-xl">৳</div>
                     <span className="font-black text-sm md:text-2xl tracking-tighter text-yellow-500">{user.balance.toLocaleString()}</span>
@@ -513,75 +507,125 @@ const App: React.FC = () => {
                 <button onClick={handleLogout} className="bg-red-500/10 text-red-500 w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center border border-red-500/10">✕</button>
             </div>
         </div>
-        <div className="w-full bg-black/90 py-3 border-y border-yellow-500/20 overflow-hidden relative z-[90] shadow-lg">
-          <div className="animate-marquee whitespace-nowrap inline-block">
+
+        {/* MARQUEE */}
+        <div className="w-full bg-black/90 py-2 border-y border-yellow-500/20 overflow-hidden relative z-[90]">
+          <div className="animate-marquee whitespace-nowrap inline-block font-black uppercase tracking-widest text-[10px] text-yellow-500">
              {LATEST_WINNERS.concat(LATEST_WINNERS).map((msg, i) => (
-               <span key={i} className="mx-8 md:mx-12 text-[12px] md:text-[14px] font-black uppercase tracking-widest text-yellow-500 drop-shadow-[0_0_5px_rgba(251,191,36,0.3)]">🔥 {msg}</span>
+               <span key={i} className="mx-12">🔥 {msg}</span>
              ))}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto no-scrollbar pb-10">
-          <div className="flex flex-col items-center gap-8 md:gap-12 p-6 md:p-8 max-w-4xl mx-auto w-full">
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-8 md:p-12 rounded-[40px] md:rounded-[60px] shadow-2xl text-center border-b-[10px] border-indigo-950 flex flex-col items-center justify-center cursor-pointer" onClick={() => { handleInteraction(); setView('MATCH_CONFIG'); }}>
-                  <img src={LOGO_ICON} className="w-20 h-20 mb-4 md:mb-6 animate-float" />
-                  <h2 className="text-3xl md:text-4xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
-                  <p className="text-yellow-400 text-[9px] md:text-[10px] uppercase font-black tracking-[0.4em] mb-6 md:mb-8">Win Real Money</p>
-                  <div className="gold-button text-black px-10 md:px-12 py-4 md:py-5 rounded-2xl md:rounded-3xl font-black uppercase text-xs md:text-sm tracking-widest">Join Table</div>
+
+        {/* BONUS NOTIFICATIONS SECTION */}
+        <div className="px-6 pt-6 grid grid-cols-2 gap-4 z-50">
+            <div onClick={() => setWalletOpen(true)} className="relative group cursor-pointer animate-in slide-in-from-left-4">
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-900 p-4 rounded-3xl border border-white/10 shadow-2xl flex items-center gap-3 overflow-hidden">
+                    <div className="text-3xl">🎁</div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase text-purple-200">Daily Bonus</p>
+                        <p className="text-xs font-black text-white italic">Claim ৳৫০</p>
+                    </div>
+                    <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full pulse-notif"></div>
+                </div>
+            </div>
+            <div onClick={() => setWalletOpen(true)} className="relative group cursor-pointer animate-in slide-in-from-right-4">
+                <div className="bg-gradient-to-br from-orange-500 to-red-700 p-4 rounded-3xl border border-white/10 shadow-2xl flex items-center gap-3 overflow-hidden">
+                    <div className="text-3xl">🔥</div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase text-orange-100">Hot Deal</p>
+                        <p className="text-xs font-black text-white italic">2x Tokens</p>
+                    </div>
+                    <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full pulse-notif"></div>
+                </div>
+            </div>
+        </div>
+
+        {/* MAIN LOBBY CONTENT */}
+        <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
+          <div className="flex flex-col items-center gap-8 p-6 max-w-4xl mx-auto w-full">
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="bg-gradient-to-br from-blue-700 to-indigo-950 p-10 rounded-[50px] shadow-2xl text-center border-b-[8px] border-indigo-950 flex flex-col items-center justify-center cursor-pointer hover:brightness-110 transition-all" onClick={() => { handleInteraction(); setView('MATCH_CONFIG'); }}>
+                  <img src={LOGO_ICON} className="w-20 h-20 mb-6 animate-float" />
+                  <h2 className="text-3xl font-black uppercase italic mb-2 tracking-tighter text-white">Battle Online</h2>
+                  <p className="text-yellow-400 text-[10px] uppercase font-black tracking-[0.4em] mb-8">Play & Earn Cash</p>
+                  <div className="gold-button text-black px-12 py-5 rounded-3xl font-black uppercase text-sm tracking-widest">Join Table</div>
                </div>
-               <div className="grid grid-cols-1 gap-4 md:gap-8">
-                  <div className="bg-slate-800/40 p-6 md:p-8 rounded-[35px] md:rounded-[45px] border border-white/5 flex items-center justify-between cursor-pointer" onClick={() => { handleInteraction(); setSelectedPlayerCount(2); startBattleRequest(true); }}>
-                      <div className="flex items-center gap-4 md:gap-6"><span className="text-4xl md:text-5xl">🤖</span><div><h4 className="font-black text-lg md:text-xl uppercase italic tracking-tighter">Practice</h4><p className="text-[8px] md:text-[9px] font-black text-white/20 uppercase tracking-widest">Train for free</p></div></div>
-                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
+               <div className="grid grid-cols-1 gap-4">
+                  <div className="bg-slate-800/40 p-6 rounded-[35px] border border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all" onClick={() => { handleInteraction(); setSelectedPlayerCount(2); startBattleRequest(true); }}>
+                      <div className="flex items-center gap-4"><span className="text-4xl">🤖</span><div><h4 className="font-black text-lg uppercase italic tracking-tighter">Practice</h4><p className="text-[9px] font-black text-white/20 uppercase tracking-widest">Free Mode</p></div></div>
+                      <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
                   </div>
-                  <div className="bg-slate-800/40 p-6 md:p-8 rounded-[35px] md:rounded-[45px] border border-white/5 flex items-center justify-between cursor-pointer" onClick={() => alert("Coming Soon!")}>
-                      <div className="flex items-center gap-4 md:gap-6"><span className="text-4xl md:text-5xl">👬</span><div><h4 className="font-black text-lg md:text-xl uppercase italic tracking-tighter">Private</h4><p className="text-[8px] md:text-[9px] font-black text-white/20 uppercase tracking-widest">Play with friends</p></div></div>
-                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-white/10 flex items-center justify-center opacity-30">→</div>
+                  <div className="bg-slate-800/40 p-6 rounded-[35px] border border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all opacity-50">
+                      <div className="flex items-center gap-4"><span className="text-4xl">👬</span><div><h4 className="font-black text-lg uppercase italic tracking-tighter">Private</h4><p className="text-[9px] font-black text-white/20 uppercase tracking-widest">With Friends</p></div></div>
+                      <span className="text-[10px] font-black text-yellow-500 uppercase">Soon</span>
                   </div>
                </div>
             </div>
           </div>
         </div>
+
+        {/* BOTTOM NAVIGATION BAR */}
+        <div className="fixed bottom-0 left-0 right-0 bg-[#0f172a] border-t border-white/10 h-24 flex items-center justify-around px-2 z-[150] shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+            <button onClick={() => setActiveTab('STORE')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'STORE' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
+                <span className="text-2xl">🛒</span>
+                <p className="text-[9px] font-black uppercase">Store</p>
+            </button>
+            <button onClick={() => setActiveTab('INVENTORY')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'INVENTORY' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
+                <span className="text-2xl">🎒</span>
+                <p className="text-[9px] font-black uppercase">Inventory</p>
+            </button>
+            <button onClick={() => { setActiveTab('HOME'); setView('LOBBY'); }} className={`w-20 h-20 -mt-10 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all ${activeTab === 'HOME' ? 'bg-gradient-to-b from-blue-400 to-blue-700 border-4 border-white' : 'bg-slate-800 border-4 border-white/10'}`}>
+                <span className="text-3xl">🏠</span>
+                <p className="text-[10px] font-black uppercase text-white">Home</p>
+            </button>
+            <button onClick={() => setActiveTab('FRIENDS')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'FRIENDS' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
+                <span className="text-2xl">👥</span>
+                <p className="text-[9px] font-black uppercase">Friends</p>
+            </button>
+            <button onClick={() => setActiveTab('CLUB')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'CLUB' ? 'text-yellow-500 scale-110' : 'text-white/40'}`}>
+                <span className="text-2xl">🎤</span>
+                <p className="text-[9px] font-black uppercase">Club</p>
+            </button>
+        </div>
+
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { databaseService.submitTransaction(tx); refreshCloudData(); }} />
     </div>
   );
 
   if (view === 'MATCH_CONFIG') return (
-    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-4 md:p-6 text-white dotted-bg overflow-hidden" onClick={handleInteraction}>
-        <div className="premium-card p-8 md:p-12 rounded-[40px] md:rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center max-h-[90vh] overflow-y-auto no-scrollbar">
-           <h2 className="ludo-money-logo text-2xl md:text-3xl text-center mb-8 tracking-tighter uppercase italic">Select Stake</h2>
-           <div className="grid grid-cols-2 gap-3 md:gap-5 mb-8 w-full">
-              {[2, 4].map(c => <button key={c} onClick={() => { handleInteraction(); soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-6 md:py-8 rounded-[25px] md:rounded-[35px] font-black text-base md:text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 text-white' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
+    <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-4 text-white dotted-bg overflow-hidden" onClick={handleInteraction}>
+        <div className="premium-card p-10 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center">
+           <h2 className="ludo-money-logo text-3xl text-center mb-8 italic">Select Stake</h2>
+           <div className="grid grid-cols-2 gap-4 mb-8 w-full">
+              {[2, 4].map(c => <button key={c} onClick={() => { handleInteraction(); soundManager.play('click'); setSelectedPlayerCount(c); }} className={`py-6 rounded-[35px] font-black text-lg border-2 transition-all ${selectedPlayerCount === c ? 'bg-blue-600 border-blue-400 text-white' : 'bg-white/5 border-transparent text-white/30'}`}>{c} Players</button>)}
            </div>
-           <p className="text-[9px] md:text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-4 text-center">Entry Fee (৳)</p>
-           <div className="grid grid-cols-3 gap-2 md:gap-3 mb-10 w-full">
-              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => { handleInteraction(); soundManager.play('click'); setSelectedStake(s); }} className={`py-4 md:py-5 rounded-[18px] md:rounded-[22px] font-black text-xs md:text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
+           <p className="text-[10px] font-black text-yellow-500/40 uppercase tracking-[0.5em] mb-4 text-center">Table Fee (৳)</p>
+           <div className="grid grid-cols-3 gap-3 mb-10 w-full">
+              {STAKE_OPTIONS.map(s => <button key={s} onClick={() => { handleInteraction(); soundManager.play('click'); setSelectedStake(s); }} className={`py-4 rounded-[22px] font-black text-sm border-2 transition-all ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black' : 'bg-white/5 border-transparent text-white/30'}`}>{s}</button>)}
            </div>
-           <button onClick={() => startBattleRequest(false)} className="w-full gold-button py-6 md:py-8 rounded-[30px] md:rounded-[40px] font-black text-xl md:text-2xl uppercase tracking-widest text-black shadow-2xl">Start Battle</button>
-           <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer" onClick={() => setView('LOBBY')}>Cancel & Return</p>
+           <button onClick={() => startBattleRequest(false)} className="w-full gold-button py-8 rounded-[40px] font-black text-2xl uppercase tracking-widest text-black shadow-2xl">Start Battle</button>
+           <p className="text-center mt-6 text-white/20 text-[10px] font-black uppercase cursor-pointer" onClick={() => setView('LOBBY')}>Back to Home</p>
         </div>
     </div>
   );
 
   if (view === 'MATCHING') return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center justify-center p-6 text-white dotted-bg relative overflow-hidden" onClick={handleInteraction}>
-        <div className="premium-card p-10 md:p-12 rounded-[50px] md:rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
-            <h2 className="ludo-money-logo text-2xl md:text-3xl text-center mb-2 tracking-tighter italic">Matching...</h2>
-            <div className="bg-yellow-500/10 px-4 py-1 rounded-full border border-yellow-500/20 mb-6"><p className="text-[12px] font-black text-yellow-500 uppercase tracking-[0.2em]">{matchingTimeLeft}s Left</p></div>
-            <p className="text-[9px] md:text-[10px] font-black text-sky-400 uppercase tracking-[0.4em] mb-10 text-center animate-pulse">Finding Active Opponents</p>
-            <div className="grid grid-cols-2 gap-6 md:gap-8 mb-10">
+        <div className="premium-card p-12 rounded-[60px] w-full max-w-sm shadow-2xl border border-yellow-500/10 flex flex-col items-center z-10">
+            <h2 className="ludo-money-logo text-3xl text-center mb-2 italic">Matching...</h2>
+            <div className="bg-yellow-500/10 px-4 py-1 rounded-full border border-yellow-500/20 mb-6"><p className="text-[12px] font-black text-yellow-500 uppercase tracking-[0.2em]">{matchingTimeLeft}s</p></div>
+            <div className="grid grid-cols-2 gap-8 mb-10">
                 {[...Array(selectedPlayerCount)].map((_, i) => (
                     <div key={i} className="flex flex-col items-center gap-3">
-                        <div className={`w-20 h-20 md:w-24 md:h-24 rounded-full border-4 flex items-center justify-center relative ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10 shadow-lg' : 'border-white/5 bg-white/5'}`}>
-                            {matchingPlayers[i] ? <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover rounded-full" /> : <div className="flex flex-col items-center"><div className="w-8 h-8 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div></div>}
+                        <div className={`w-24 h-24 rounded-full border-4 flex items-center justify-center relative ${matchingPlayers[i] ? 'border-yellow-500 bg-yellow-500/10' : 'border-white/5 bg-white/5'}`}>
+                            {matchingPlayers[i] ? <img src={matchingPlayers[i].avatar} className="w-full h-full object-cover rounded-full" /> : <div className="w-8 h-8 border-4 border-white/10 border-t-yellow-500 rounded-full animate-spin"></div>}
                         </div>
-                        <p className={`font-black uppercase text-[9px] md:text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>{matchingPlayers[i] ? (matchingPlayers[i].name === user.name ? 'আপনি' : matchingPlayers[i].name) : 'Searching...'}</p>
+                        <p className={`font-black uppercase text-[10px] tracking-widest ${matchingPlayers[i] ? 'text-white' : 'text-white/20'}`}>{matchingPlayers[i] ? matchingPlayers[i].name : 'Searching...'}</p>
                     </div>
                 ))}
             </div>
-            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mb-6"><div className="h-full bg-yellow-500 transition-all duration-1000" style={{ width: `${(matchingTimeLeft / 20) * 100}%` }}></div></div>
-            <p className="text-[8px] md:text-[9px] font-black uppercase text-white/20 tracking-widest">Stake: <span className="text-yellow-500">৳{selectedStake}</span></p>
-            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); }} className="mt-10 text-red-500/40 text-[10px] font-black uppercase">Cancel Search</button>
+            <button onClick={() => { if(matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); }} className="mt-6 text-red-500/40 text-[10px] font-black uppercase">Cancel</button>
         </div>
     </div>
   );
@@ -589,28 +633,22 @@ const App: React.FC = () => {
   if (view === 'GAME' && gameState) return (
     <div className="h-screen w-full bg-[#0a1220] flex flex-col items-center relative text-white overflow-hidden" onClick={handleInteraction}>
         <div className="w-full h-16 md:h-20 bg-slate-900 flex justify-between items-center px-4 md:px-8 border-b border-yellow-500/10 shadow-2xl z-[100]">
-           <button onClick={() => { handleInteraction(); if(confirm("Surrender?")) { if(!isPracticeMode && matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); } }} className="text-red-500 font-black text-[8px] md:text-[10px] uppercase bg-red-500/10 px-4 py-2 md:px-6 md:py-3 rounded-xl">Surrender</button>
-           <div className="ludo-money-logo text-xl md:text-3xl tracking-tighter">LUDO MONEY</div>
+           <button onClick={() => { handleInteraction(); if(confirm("Surrender?")) { if(!isPracticeMode && matchIdRef.current) databaseService.deleteMatch(matchIdRef.current); setGameState(null); setView('LOBBY'); } }} className="text-red-500 font-black text-[10px] uppercase bg-red-500/10 px-6 py-3 rounded-xl">Surrender</button>
+           <div className="ludo-money-logo text-2xl md:text-3xl tracking-tighter">LUDO MONEY</div>
            <div className="bg-yellow-500/10 px-4 py-2 rounded-xl text-yellow-500 font-black text-sm md:text-xl">৳{selectedStake}</div>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-2 md:p-4 gap-4 md:gap-8 w-full max-h-[calc(100vh-80px)]">
-            <div className="w-full max-w-[95vw] md:max-w-[500px] aspect-square shadow-2xl rounded-[30px] md:rounded-[50px] overflow-hidden border-[6px] md:border-[12px] border-white/5 bg-white/5 relative">
+        <div className="flex-1 flex flex-col items-center justify-center p-2 md:p-4 gap-8 w-full max-h-[calc(100vh-80px)]">
+            <div className="w-full max-w-[95vw] md:max-w-[500px] aspect-square shadow-2xl rounded-[50px] overflow-hidden border-[12px] border-white/5 bg-white/5 relative">
                 <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} validTokens={validTokens} onTokenClick={(t) => moveToken(t.id)} />
             </div>
-            <div className="flex flex-col items-center gap-4 md:gap-6 pb-6 w-full max-w-sm">
+            <div className="flex flex-col items-center gap-6 pb-6 w-full max-w-sm">
                 <div className="flex items-center gap-3 bg-slate-800/40 p-3 px-6 rounded-full border border-white/5">
                     <img src={gameState.players[gameState.currentPlayerIndex].avatarUrl} className="w-8 h-8 rounded-full border-2 border-yellow-500" />
                     <p className="text-sm md:text-xl font-black uppercase text-white">{gameState.players[gameState.currentPlayerIndex].name}'s Turn</p>
                 </div>
-                <div 
-                    onClick={!gameState.players[gameState.currentPlayerIndex].isBot && !gameState.isDiceRolled ? rollDice : undefined} 
-                    className={`transition-all ${isRolling || (gameState.isDiceRolled && !animating) ? 'opacity-50 pointer-events-none' : 'cursor-pointer active:scale-90'}`}
-                >
+                <div onClick={!gameState.players[gameState.currentPlayerIndex].isBot && !gameState.isDiceRolled ? rollDice : undefined} className={`transition-all ${isRolling || (gameState.isDiceRolled && !animating) ? 'opacity-50 pointer-events-none' : 'cursor-pointer active:scale-90'}`}>
                    <Dice3D value={gameState.diceValue} isRolling={isRolling} />
                 </div>
-                {gameState.isDiceRolled && !animating && !isRolling && validTokens.length === 0 && (
-                    <p className="text-red-500 font-black uppercase text-xs animate-pulse">No Moves Possible!</p>
-                )}
             </div>
         </div>
     </div>
