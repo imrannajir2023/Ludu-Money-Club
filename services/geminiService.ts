@@ -1,22 +1,21 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Safe access to API KEY for browser environments
 const getApiKey = () => {
   try {
-    return process.env.API_KEY || "";
+    // Check if process and process.env exist safely
+    return (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : "";
   } catch (e) {
     return "";
   }
 };
-
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 export const generateGameCommentary = async (eventDescription: string, playerName: string): Promise<string> => {
   try {
     const apiKey = getApiKey();
     if (!apiKey) return "Great move! 🔥";
 
+    const ai = new GoogleGenAI({ apiKey });
     const prompt = `
       You are an energetic esports commentator for a high-stakes Ludo game.
       The player "${playerName}" just performed this action: "${eventDescription}".

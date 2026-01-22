@@ -33,14 +33,12 @@ const App: React.FC = () => {
   const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
   const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
   
-  // Auth Form State
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Admin Auth State
   const [adminId, setAdminId] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [adminAuthError, setAdminAuthError] = useState('');
@@ -57,7 +55,6 @@ const App: React.FC = () => {
   const [matchingStatus, setMatchingStatus] = useState("Searching for players...");
   const [adminClickCount, setAdminClickCount] = useState(0);
 
-  // Load Initial Data
   useEffect(() => {
     const loadInitialData = async () => {
       try {
@@ -67,34 +64,44 @@ const App: React.FC = () => {
           databaseService.getLiveMatches()
         ]);
         setAllUsers(users);
-        setPendingTransactions(transactions);
-        setLiveMatches(matches);
+        setPendingTransactions(transactions || []);
+        setLiveMatches(matches || []);
         
         const savedUser = localStorage.getItem('LUDO_SESSION');
-        if (savedUser) setUser(JSON.parse(savedUser));
+        if (savedUser) {
+          try {
+            setUser(JSON.parse(savedUser));
+          } catch(e) {
+            localStorage.removeItem('LUDO_SESSION');
+          }
+        }
       } catch (err) {
-        console.error("Failed to load database data:", err);
+        console.error("Failed to load initial data:", err);
       }
     };
     loadInitialData();
   }, []);
 
-  // Splash Screen Logic
   useEffect(() => {
     if (view === 'SPLASH') {
       const interval = setInterval(() => {
-        setLoadingProgress(prev => Math.min(prev + 5, 100));
+        setLoadingProgress(prev => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            return 100;
+          }
+          return prev + 4;
+        });
       }, 50);
       return () => clearInterval(interval);
     }
   }, [view]);
 
-  // Transition after Splash
   useEffect(() => {
     if (view === 'SPLASH' && loadingProgress >= 100) {
       const timer = setTimeout(() => {
         setView(user ? 'LOBBY' : 'LOGIN');
-      }, 500);
+      }, 600);
       return () => clearTimeout(timer);
     }
   }, [loadingProgress, view, user]);
@@ -144,41 +151,6 @@ const App: React.FC = () => {
       setAdminAuthError('Invalid Admin ID or Password');
       soundManager.play('click');
     }
-  };
-
-  const updateCommentary = async (event: string, playerName: string) => {
-    const msg = await generateGameCommentary(event, playerName);
-    setCommentary(msg);
-  };
-
-  const initGame = (count: number) => {
-    if (!user) return;
-    const colors = count === 2 
-      ? [PlayerColor.RED, PlayerColor.YELLOW] 
-      : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
-    
-    const players: Player[] = colors.map((color, idx) => {
-      const botIdentity = idx === 0 ? null : (matchedBots[idx-1] || getRandomBotIdentity());
-      return {
-        id: idx === 0 ? 'player-1' : `bot-${idx}`,
-        name: idx === 0 ? user.name : botIdentity.name,
-        country: idx === 0 ? "Bangladesh" : botIdentity.country,
-        flag: idx === 0 ? "🇧🇩" : botIdentity.flag,
-        color, isBot: idx !== 0,
-        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${idx === 0 ? 'user' : botIdentity.name}`,
-        tokens: Array.from({ length: 4 }).map((_, tIdx) => ({
-          id: (idx + 1) * 100 + tIdx,
-          color: color, state: TokenState.HOME, position: 0, distanceTraveled: 0
-        }))
-      };
-    });
-
-    setGameState({
-      players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false,
-      winner: null, log: ['Game started!'], lastAction: 'Waiting for roll', consecutiveSixes: 0
-    });
-    updateCommentary("New game started!", user.name);
-    setView('GAME');
   };
 
   const rollDice = async () => {
@@ -328,28 +300,29 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-full bg-[#050a18] overflow-hidden text-white font-['Fredoka'] dotted-bg relative flex flex-col">
       {view === 'SPLASH' && (
-        <div className="h-full flex flex-col items-center justify-center">
-          <h1 className="ludo-money-logo text-6xl">LUDO MONEY</h1>
-          <div className="w-64 h-2 bg-white/10 rounded-full mt-10 overflow-hidden">
-            <div className="h-full bg-yellow-500" style={{width: `${loadingProgress}%`}}></div>
+        <div className="h-full flex flex-col items-center justify-center animate-in fade-in duration-700">
+          <h1 className="ludo-money-logo text-6xl mb-4">LUDO MONEY</h1>
+          <div className="w-64 h-2 bg-white/10 rounded-full mt-10 overflow-hidden border border-white/5">
+            <div className="h-full bg-yellow-500 shadow-[0_0_15px_#fbbf24]" style={{width: `${loadingProgress}%`, transition: 'width 0.1s linear'}}></div>
           </div>
+          <p className="mt-4 text-[10px] font-black uppercase tracking-[0.5em] text-white/30">Loading Arena...</p>
         </div>
       )}
 
       {view === 'LOGIN' && (
-        <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900/80 backdrop-blur-xl relative">
-           <div className="bg-[#1e2333] p-10 py-12 rounded-[50px] w-full max-sm border border-white/10 flex flex-col items-center shadow-2xl animate-in zoom-in-95">
-              <h2 className="ludo-money-logo text-4xl mb-10">{isSignUp ? 'SIGN UP' : 'LOGIN'}</h2>
-              {authError && <div className="bg-red-500/10 text-red-500 p-3 rounded-xl text-xs mb-6 w-full text-center border border-red-500/20">{authError}</div>}
-              <div className="w-full space-y-4 mb-10">
-                 {isSignUp && <input type="text" placeholder="Full Name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-yellow-500" />}
-                 <input type="tel" placeholder="Mobile Number" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-yellow-500" />
-                 <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-yellow-500" />
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-[#020617]/90 backdrop-blur-xl relative">
+           <div className="bg-[#1e2333]/95 p-10 py-14 rounded-[50px] w-full max-w-[400px] border border-white/10 flex flex-col items-center shadow-[0_25px_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-500">
+              <h2 className="ludo-money-logo text-5xl mb-12 drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)]">LOGIN</h2>
+              {authError && <div className="bg-red-500/10 text-red-500 p-4 rounded-2xl text-xs mb-8 w-full text-center border border-red-500/20 font-bold">{authError}</div>}
+              <div className="w-full space-y-5 mb-12">
+                 {isSignUp && <input type="text" placeholder="Full Name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-[#0f172a] border border-white/5 p-5 rounded-2xl text-white outline-none focus:border-yellow-500/50 focus:ring-4 focus:ring-yellow-500/5 transition-all" />}
+                 <input type="tel" placeholder="Mobile Number" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-[#0f172a] border border-white/5 p-5 rounded-2xl text-white outline-none focus:border-yellow-500/50 focus:ring-4 focus:ring-yellow-500/5 transition-all" />
+                 <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-[#0f172a] border border-white/5 p-5 rounded-2xl text-white outline-none focus:border-yellow-500/50 focus:ring-4 focus:ring-yellow-500/5 transition-all" />
               </div>
-              <button onClick={handleAuth} className="w-full bg-yellow-500 text-black py-5 rounded-[30px] font-black text-xl shadow-xl active:scale-95">
+              <button onClick={handleAuth} className="w-full bg-yellow-500 text-black py-5 rounded-full font-black text-xl shadow-[0_8px_0_#92400e] active:shadow-none active:translate-y-2 transition-all uppercase tracking-tighter">
                 {isSignUp ? 'REGISTER' : 'ENTER ARENA'}
               </button>
-              <button onClick={() => setIsSignUp(!isSignUp)} className="mt-8 text-[10px] font-black uppercase text-white/30 tracking-widest hover:text-yellow-500">
+              <button onClick={() => { soundManager.play('click'); setIsSignUp(!isSignUp); }} className="mt-10 text-[10px] font-black uppercase text-white/30 tracking-widest hover:text-yellow-500 transition-colors">
                 {isSignUp ? 'Already have an account? Login' : "Don't have an account? Sign Up"}
               </button>
            </div>
@@ -365,7 +338,7 @@ const App: React.FC = () => {
                     soundManager.play('click');
                   } 
                 }} 
-                className="text-[10px] font-black text-white/20 uppercase tracking-[0.5em] cursor-pointer hover:text-white/60 transition-colors py-4 px-8"
+                className="text-[10px] font-black text-white/10 uppercase tracking-[0.5em] cursor-pointer hover:text-white/40 transition-colors py-4 px-8"
               >
                 v1.0.4
               </span>
@@ -374,7 +347,7 @@ const App: React.FC = () => {
       )}
 
       {view === 'ADMIN_AUTH' && (
-        <div className="h-full flex flex-col items-center justify-center p-6 bg-black/90 backdrop-blur-2xl z-[200]">
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-black/95 backdrop-blur-2xl z-[200]">
            <div className="bg-slate-900 p-10 py-12 rounded-[60px] w-full max-w-sm border-2 border-sky-500/30 flex flex-col items-center shadow-[0_0_50px_rgba(14,165,233,0.1)] animate-in zoom-in-95">
               <div className="w-20 h-20 bg-sky-500/20 rounded-full flex items-center justify-center border border-sky-500/30 mb-8">
                  <span className="text-4xl">🛡️</span>
@@ -382,8 +355,8 @@ const App: React.FC = () => {
               <h2 className="text-2xl font-black italic uppercase text-sky-400 text-center mb-8 tracking-tighter">ADMIN ACCESS</h2>
               {adminAuthError && <div className="bg-red-500/10 text-red-500 p-3 rounded-xl text-[10px] mb-6 w-full text-center border border-red-500/20 uppercase font-black">{adminAuthError}</div>}
               <div className="w-full space-y-4 mb-10">
-                 <input type="text" placeholder="Admin User ID" value={adminId} onChange={e => setAdminId(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-sky-500" />
-                 <input type="password" placeholder="Admin Password" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-sky-500" />
+                 <input type="text" placeholder="Admin User ID" value={adminId} onChange={e => setAdminId(e.target.value)} className="w-full bg-[#0f172a] border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-sky-500" />
+                 <input type="password" placeholder="Admin Password" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full bg-[#0f172a] border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-sky-500" />
               </div>
               <button onClick={handleAdminLogin} className="w-full bg-sky-500 text-white py-5 rounded-[30px] font-black text-xl shadow-xl active:scale-95 shadow-sky-500/20">
                 LOGIN TO PORTAL
@@ -412,7 +385,6 @@ const App: React.FC = () => {
                 <div className="bg-yellow-500 text-black w-5 h-5 rounded-full flex items-center justify-center font-black text-xs">৳</div>
                 <span className="font-black text-lg tracking-tighter text-white">{user.balance.toLocaleString()}</span>
               </div>
-              <button className="w-10 h-10 bg-slate-800/80 rounded-xl flex items-center justify-center border border-white/10 text-xl">✕</button>
             </div>
           </div>
 
@@ -430,7 +402,7 @@ const App: React.FC = () => {
                     <h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none drop-shadow-xl text-white mb-2">BATTLE ONLINE</h2>
                     <p className="text-blue-200 text-xs font-black uppercase tracking-widest italic opacity-70">Play & Earn Cash</p>
                 </div>
-                <button onClick={() => { soundManager.play('click'); setView('MATCH_CONFIG'); }} className="w-full bg-gradient-to-b from-yellow-400 to-yellow-600 py-6 rounded-[30px] font-black text-2xl text-black shadow-[0_8px_0_#92400e] active:shadow-none active:translate-y-2 transition-all uppercase italic tracking-tighter">JOIN TABLE</button>
+                <button onClick={() => { soundManager.play('click'); setView('MATCH_CONFIG'); }} className="w-full bg-gradient-to-b from-yellow-400 to-yellow-600 py-6 rounded-full font-black text-2xl text-black shadow-[0_8px_0_#92400e] active:shadow-none active:translate-y-2 transition-all uppercase italic tracking-tighter">JOIN TABLE</button>
             </div>
           </div>
 
@@ -456,9 +428,7 @@ const App: React.FC = () => {
               <div className="w-full max-w-[420px] aspect-square shadow-[0_20px_50px_rgba(0,0,0,0.6)] rounded-3xl overflow-hidden relative border-8 border-slate-800 bg-white">
                  <LudoBoard players={gameState.players} currentPlayerColor={gameState.players[gameState.currentPlayerIndex]?.color || PlayerColor.RED} validTokens={getValidTokens()} onTokenClick={(token) => moveToken(token.id)} />
               </div>
-              <div className="w-full max-w-[420px] flex items-center justify-between gap-3 shrink-0">
-                 <div onClick={rollDice} className={`w-20 h-20 bg-slate-900/60 rounded-[30px] border-[3px] flex items-center justify-center transition-all cursor-pointer shadow-inner ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot ? 'border-yellow-500 scale-110 shadow-yellow-500/20' : 'border-white/10 opacity-90'}`}><Dice3D value={gameState.diceValue} isRolling={isRolling} /></div>
-              </div>
+              <div onClick={rollDice} className={`w-20 h-20 bg-slate-900/60 rounded-[30px] border-[3px] flex items-center justify-center transition-all cursor-pointer shadow-inner ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot ? 'border-yellow-500 scale-110 shadow-yellow-500/20' : 'border-white/10 opacity-90'}`}><Dice3D value={gameState.diceValue} isRolling={isRolling} /></div>
            </div>
         </div>
       )}
