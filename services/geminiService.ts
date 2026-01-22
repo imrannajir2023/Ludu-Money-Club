@@ -1,21 +1,15 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const getApiKey = () => {
-  try {
-    // Check if process and process.env exist safely
-    return (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : "";
-  } catch (e) {
-    return "";
-  }
-};
-
+/**
+ * Generates a short esports commentary for a game event using Gemini AI.
+ * Strictly follows the SDK initialization guidelines using process.env.API_KEY.
+ */
 export const generateGameCommentary = async (eventDescription: string, playerName: string): Promise<string> => {
   try {
-    const apiKey = getApiKey();
-    if (!apiKey) return "Great move! 🔥";
-
-    const ai = new GoogleGenAI({ apiKey });
+    // API key must be obtained exclusively from process.env.API_KEY as per guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const prompt = `
       You are an energetic esports commentator for a high-stakes Ludo game.
       The player "${playerName}" just performed this action: "${eventDescription}".
@@ -23,6 +17,7 @@ export const generateGameCommentary = async (eventDescription: string, playerNam
       Use emojis.
     `;
 
+    // Using gemini-3-flash-preview for basic text task as recommended.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
@@ -31,6 +26,7 @@ export const generateGameCommentary = async (eventDescription: string, playerNam
       }
     });
 
+    // Directly access .text property from GenerateContentResponse.
     return response.text?.trim() || "Amazing play!";
   } catch (error) {
     console.error("Gemini Error:", error);
