@@ -37,11 +37,11 @@ const PlayerProfileOverlay: React.FC<{ player: Player, isActive: boolean, positi
     <div className={`absolute ${posClasses[position]} flex flex-col items-center z-50 transition-all duration-300 ${isActive ? 'scale-110' : 'opacity-60 scale-90'}`}>
        <div className={`relative p-1 rounded-2xl border-2 ${isActive ? 'border-yellow-500 shadow-[0_0_20px_#fbbf24]' : 'border-white/10'}`}>
           <img src={player.avatarUrl} className="w-14 h-14 rounded-xl object-cover bg-slate-800 shadow-lg" />
-          {isActive && <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-[#0f172a] animate-bounce"></div>}
+          {isActive && <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-[#0f172a] animate-pulse"></div>}
        </div>
        <div className="mt-1 flex flex-col items-center">
-          <span className="text-[10px] font-black uppercase tracking-tighter italic text-white leading-none whitespace-nowrap drop-shadow-md">{player.name}</span>
-          <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest">{player.flag} {player.country}</span>
+          <span className="text-[10px] font-black uppercase tracking-tighter italic text-white leading-none whitespace-nowrap drop-shadow-md">{player?.name || 'Player'}</span>
+          <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest">{player?.flag || '🚩'} {player?.country || 'Global'}</span>
        </div>
     </div>
   );
@@ -72,7 +72,6 @@ const App: React.FC = () => {
   const [foundPlayers, setFoundPlayers] = useState<Player[]>([]);
   const [commentary, setCommentary] = useState<string>('Welcome to Ludo Money Arena!');
 
-  // Fix: Replaced NodeJS.Timeout with any to resolve "Cannot find namespace 'NodeJS'" error in browser environment.
   const botActionTimeout = useRef<any>(null);
 
   useEffect(() => {
@@ -166,30 +165,32 @@ const App: React.FC = () => {
     let found = 0;
     const colors = [PlayerColor.YELLOW, PlayerColor.GREEN, PlayerColor.BLUE];
     
+    const bots: Player[] = [];
     const searchInterval = setInterval(() => {
       if (found < playersToFind) {
-        const bot = getRandomBotIdentity();
+        const botIden = getRandomBotIdentity();
         const newBot: Player = {
           id: `bot-${found}`,
-          name: bot.name,
-          country: bot.country,
-          flag: bot.flag,
+          name: botIden.name,
+          country: botIden.country,
+          flag: botIden.flag,
           color: colors[found],
           isBot: true,
-          avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bot.name + Math.random()}`,
+          avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIden.name + Math.random()}`,
           tokens: []
         };
-        setFoundPlayers(prev => [...prev, newBot]);
+        bots.push(newBot);
+        setFoundPlayers([...bots]);
         found++;
         soundManager.play('click');
       } else {
         clearInterval(searchInterval);
-        setTimeout(() => initGame(count), 1000);
+        setTimeout(() => initGame(count, bots), 1000);
       }
     }, 1200 + Math.random() * 1500);
   };
 
-  const initGame = (count: number) => {
+  const initGame = (count: number, bots: Player[]) => {
     if (!user) return;
     const colors = count === 2 
       ? [PlayerColor.RED, PlayerColor.YELLOW] 
@@ -197,14 +198,14 @@ const App: React.FC = () => {
 
     const players: Player[] = colors.map((color, i) => {
       const isUser = i === 0;
-      const botIdentity = isUser ? null : foundPlayers[i-1];
+      const botIdentity = isUser ? null : bots[i-1];
       return {
         id: isUser ? 'user' : `bot-${i}`,
-        name: isUser ? user.name : botIdentity!.name,
-        country: isUser ? 'Bangladesh' : botIdentity!.country,
-        flag: isUser ? '🇧🇩' : botIdentity!.flag,
+        name: isUser ? user.name : (botIdentity?.name || 'Bot Player'),
+        country: isUser ? 'Bangladesh' : (botIdentity?.country || 'Global'),
+        flag: isUser ? '🇧🇩' : (botIdentity?.flag || '🚩'),
         color, isBot: !isUser,
-        avatarUrl: isUser ? user.avatar : botIdentity!.avatarUrl,
+        avatarUrl: isUser ? user.avatar : (botIdentity?.avatarUrl || ''),
         tokens: Array(4).fill(null).map((_, ti) => ({
           id: i * 10 + ti, color, state: TokenState.HOME, position: 0, distanceTraveled: 0
         }))
@@ -253,7 +254,7 @@ const App: React.FC = () => {
         });
 
         if (val === 6) {
-          if (prev.consecutiveSixes === 2) { // 3 sixes = turn skip
+          if (prev.consecutiveSixes === 2) { 
             setTimeout(nextTurn, 1000);
             return { ...prev, diceValue: val, isDiceRolled: true, log: [...prev.log, 'Triple 6! Turn skipped'] };
           }
@@ -272,7 +273,8 @@ const App: React.FC = () => {
       });
 
       if (val === 6) {
-        const comment = await generateGameCommentary("rolled a massive six", gameState.players[gameState.currentPlayerIndex].name);
+        const pName = gameState.players[gameState.currentPlayerIndex]?.name || 'Player';
+        const comment = await generateGameCommentary("rolled a massive six", pName);
         setCommentary(comment);
       }
     }, 800);
@@ -282,13 +284,14 @@ const App: React.FC = () => {
     if (!gameState || !gameState.isDiceRolled || isRolling) return;
     const players = [...gameState.players];
     const player = players[gameState.currentPlayerIndex];
+    if (!player) return;
+    
     const tokenIdx = player.tokens.findIndex(t => t.id === tokenId);
     const token = { ...player.tokens[tokenIdx] };
     const val = gameState.diceValue!;
 
     let capturedToken = false;
 
-    // Movement Logic
     if (token.state === TokenState.HOME && val === 6) {
       token.state = TokenState.PATH;
       token.distanceTraveled = 0;
@@ -298,7 +301,6 @@ const App: React.FC = () => {
         token.state = TokenState.WIN;
         soundManager.play('win');
       } else {
-        // Capture Check (If not safe spot)
         const startPos = START_POSITIONS[token.color];
         const absolutePos = (token.distanceTraveled + startPos) % 52;
         const isSafe = SAFE_SPOTS.includes(absolutePos);
@@ -306,7 +308,7 @@ const App: React.FC = () => {
         if (!isSafe) {
           players.forEach((otherPlayer, pIdx) => {
             if (pIdx !== gameState.currentPlayerIndex) {
-              otherPlayer.tokens.forEach((otherToken, tIdx) => {
+              otherPlayer.tokens.forEach((otherToken) => {
                 if (otherToken.state === TokenState.PATH) {
                   const otherStart = START_POSITIONS[otherToken.color];
                   const otherAbsolute = (otherToken.distanceTraveled + otherStart) % 52;
@@ -332,7 +334,6 @@ const App: React.FC = () => {
       setCommentary(comment);
     }
 
-    // Win condition
     if (player.tokens.every(t => t.state === TokenState.WIN)) {
       setGameState(prev => prev ? { ...prev, players, winner: player.color } : null);
       if (player.id === 'user' && user) {
@@ -344,7 +345,6 @@ const App: React.FC = () => {
       return;
     }
 
-    // Turn handover
     const continueTurn = val === 6 || capturedToken;
     setGameState(prev => {
       if (!prev) return null;
@@ -358,9 +358,8 @@ const App: React.FC = () => {
     });
   };
 
-  // Bot Smart Logic
   useEffect(() => {
-    if (gameState && gameState.players[gameState.currentPlayerIndex].isBot && !gameState.winner) {
+    if (gameState && gameState.players[gameState.currentPlayerIndex]?.isBot && !gameState.winner) {
       if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
       
       botActionTimeout.current = setTimeout(() => {
@@ -376,10 +375,10 @@ const App: React.FC = () => {
           });
 
           if (valid.length > 0) {
-            // Smart Choice: prioritized Capture > Safe Spot > Moving tokens near win > Out from home
+            // Pro AI Decision Logic
             let bestToken = valid[0];
             
-            // Logic to find capture
+            // 1. Prioritize Capturing opponents
             const captureToken = valid.find(t => {
               const start = START_POSITIONS[t.color];
               const dist = t.state === TokenState.HOME ? 0 : t.distanceTraveled + val;
@@ -395,14 +394,19 @@ const App: React.FC = () => {
               });
             });
 
-            if (captureToken) bestToken = captureToken;
-            else {
-              const nearingWin = valid.find(t => t.distanceTraveled > 45);
-              if (nearingWin) bestToken = nearingWin;
-              else {
+            if (captureToken) {
+                bestToken = captureToken;
+            } else {
+                // 2. Prioritize Winning/Entering Home
+                const nearingWin = valid.find(t => t.distanceTraveled > 40);
+                // 3. Prioritize getting out of Home
                 const outFromHome = valid.find(t => t.state === TokenState.HOME);
-                if (outFromHome) bestToken = outFromHome;
-              }
+                // 4. Prioritize getting into a Safe Spot
+                const toSafeSpot = valid.find(t => SAFE_SPOTS.includes((t.distanceTraveled + val + START_POSITIONS[t.color]) % 52));
+
+                if (nearingWin) bestToken = nearingWin;
+                else if (toSafeSpot) bestToken = toSafeSpot;
+                else if (outFromHome) bestToken = outFromHome;
             }
             
             moveToken(bestToken.id);
@@ -631,8 +635,8 @@ const App: React.FC = () => {
              <div className="w-full max-w-[420px] relative aspect-square">
                 <LudoBoard 
                   players={gameState.players} 
-                  currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} 
-                  validTokens={gameState.isDiceRolled && !isRolling ? gameState.players[gameState.currentPlayerIndex].tokens.filter(t => {
+                  currentPlayerColor={gameState.players[gameState.currentPlayerIndex]?.color || PlayerColor.RED} 
+                  validTokens={gameState.isDiceRolled && !isRolling ? (gameState.players[gameState.currentPlayerIndex]?.tokens || []).filter(t => {
                     if (t.state === TokenState.WIN) return false;
                     if (t.state === TokenState.HOME) return gameState.diceValue === 6;
                     return t.distanceTraveled + gameState.diceValue! <= 56;
@@ -657,10 +661,10 @@ const App: React.FC = () => {
              </div>
 
              <div className="mt-28 flex flex-col items-center gap-8">
-                <div onClick={rollDice} className={`w-36 h-36 bg-[#1c212e]/80 backdrop-blur-md rounded-[45px] border-4 flex items-center justify-center cursor-pointer transition-all ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot ? 'border-yellow-500 scale-110 shadow-[0_0_50px_rgba(251,191,36,0.5)]' : 'border-white/5 opacity-40 grayscale-[0.5]'}`}>
+                <div onClick={rollDice} className={`w-36 h-36 bg-[#1c212e]/80 backdrop-blur-md rounded-[45px] border-4 flex items-center justify-center cursor-pointer transition-all ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex]?.isBot ? 'border-yellow-500 scale-110 shadow-[0_0_50px_rgba(251,191,36,0.5)]' : 'border-white/5 opacity-40 grayscale-[0.5]'}`}>
                    <Dice3D value={gameState.diceValue} isRolling={isRolling} />
                 </div>
-                {!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot && (
+                {!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex]?.isBot && (
                   <div className="flex flex-col items-center animate-in fade-in">
                     <span className="text-xs font-black text-yellow-500 animate-bounce uppercase tracking-[0.4em] italic mb-3">Roll the Dice!</span>
                     <div className="h-2 w-32 bg-white/10 rounded-full overflow-hidden p-0.5">
@@ -675,7 +679,7 @@ const App: React.FC = () => {
             <div className="absolute inset-0 z-[200] bg-black/98 flex flex-col items-center justify-center animate-in fade-in backdrop-blur-sm">
                <div className="w-56 h-56 bg-gradient-to-tr from-yellow-400 to-amber-300 rounded-[60px] flex items-center justify-center text-9xl shadow-[0_0_100px_rgba(251,191,36,0.6)] mb-12 animate-bounce rotate-12">🏆</div>
                <h2 className="text-8xl font-black italic text-white mb-2 uppercase tracking-tighter drop-shadow-[0_10px_10px_rgba(0,0,0,1)]">VICTORY!</h2>
-               <p className="text-3xl font-black text-yellow-500 mb-16 uppercase tracking-[0.2em]">{gameState.players.find(p => p.color === gameState.winner)?.name} Won ৳{Math.floor(selectedStake * 1.8)}</p>
+               <p className="text-3xl font-black text-yellow-500 mb-16 uppercase tracking-[0.2em]">{gameState.players.find(p => p.color === gameState.winner)?.name || 'Someone'} Won ৳{Math.floor(selectedStake * 1.8)}</p>
                <button onClick={() => setView('LOBBY')} className="bg-yellow-500 text-black px-24 py-7 rounded-[40px] font-black text-4xl active:scale-95 transition-all shadow-2xl border-b-[12px] border-yellow-700 hover:brightness-110">CONTINUE</button>
             </div>
           )}
@@ -720,7 +724,7 @@ const App: React.FC = () => {
             }}
             className="text-[10px] font-black uppercase text-white/5 hover:text-white/20 cursor-pointer tracking-[0.5em] select-none px-10 py-4 transition-all"
           >
-            VER 1.0.5 PRO
+            VER 1.0.6 PRO
           </span>
         </div>
       )}
