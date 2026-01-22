@@ -1,12 +1,14 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction, LiveMatch } from './types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Player, PlayerColor, Token, TokenState, GameState, UserProfile, PendingTransaction } from './types';
 import LudoBoard from './components/LudoBoard';
 import WalletModal from './components/WalletModal';
 import AdminPortal from './components/AdminPortal';
 import { soundManager } from './services/soundService';
 import { databaseService } from './services/database';
 import { getRandomBotIdentity } from './services/botService';
+import { generateGameCommentary } from './services/geminiService';
+import { SAFE_SPOTS, START_POSITIONS } from './constants';
 
 const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value, isRolling }) => {
   return (
@@ -33,12 +35,12 @@ const PlayerProfileOverlay: React.FC<{ player: Player, isActive: boolean, positi
 
   return (
     <div className={`absolute ${posClasses[position]} flex flex-col items-center z-50 transition-all duration-300 ${isActive ? 'scale-110' : 'opacity-60 scale-90'}`}>
-       <div className={`relative p-1 rounded-2xl border-2 ${isActive ? 'border-yellow-500 shadow-[0_0_15px_#fbbf24]' : 'border-white/10'}`}>
+       <div className={`relative p-1 rounded-2xl border-2 ${isActive ? 'border-yellow-500 shadow-[0_0_20px_#fbbf24]' : 'border-white/10'}`}>
           <img src={player.avatarUrl} className="w-14 h-14 rounded-xl object-cover bg-slate-800 shadow-lg" />
-          {isActive && <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-[#0f172a] animate-pulse"></div>}
+          {isActive && <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-[#0f172a] animate-bounce"></div>}
        </div>
        <div className="mt-1 flex flex-col items-center">
-          <span className="text-[10px] font-black uppercase tracking-tighter italic text-white leading-none whitespace-nowrap">{player.name}</span>
+          <span className="text-[10px] font-black uppercase tracking-tighter italic text-white leading-none whitespace-nowrap drop-shadow-md">{player.name}</span>
           <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest">{player.flag} {player.country}</span>
        </div>
     </div>
@@ -68,6 +70,10 @@ const App: React.FC = () => {
   const [selectedStake, setSelectedStake] = useState(50);
   const [playerCount, setPlayerCount] = useState<2 | 4>(2);
   const [foundPlayers, setFoundPlayers] = useState<Player[]>([]);
+  const [commentary, setCommentary] = useState<string>('Welcome to Ludo Money Arena!');
+
+  // Fix: Replaced NodeJS.Timeout with any to resolve "Cannot find namespace 'NodeJS'" error in browser environment.
+  const botActionTimeout = useRef<any>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -105,15 +111,15 @@ const App: React.FC = () => {
 
   const handleAuth = async () => {
     setAuthError('');
-    if (!phone || !password) return setAuthError('তথ্য দিন');
-    if (isSignUp && !name) return setAuthError('নাম দিন');
+    if (!phone || !password) return setAuthError('Please fill all fields');
+    if (isSignUp && !name) return setAuthError('Please enter name');
 
     if (isSignUp) {
       const exists = allUsers.find(u => u.phone === phone);
-      if (exists) return setAuthError('ইতিমধ্যে নিবন্ধিত');
+      if (exists) return setAuthError('User already exists');
       const newUser: UserProfile = {
         name, phone, password, balance: 50,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name + Math.random()}`,
         stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
         history: []
       };
@@ -128,7 +134,7 @@ const App: React.FC = () => {
         localStorage.setItem('LUDO_SESSION', JSON.stringify(found));
         setView('LOBBY');
       } else {
-        setAuthError('ভুল তথ্য');
+        setAuthError('Invalid credentials');
       }
     }
   };
@@ -138,17 +144,15 @@ const App: React.FC = () => {
       setView('ADMIN');
       setAdminId('');
       setAdminPass('');
-      setAuthError('');
     } else {
-      setAuthError('ভুল এডমিন তথ্য');
+      setAuthError('Invalid Admin details');
     }
   };
 
   const startFinding = async (count: 2 | 4) => {
     if (!user) return;
-    if (user.balance < selectedStake) return alert("আপনার ব্যালেন্স পর্যাপ্ত নয়! দয়া করে ডিপোজিট করুন।");
+    if (user.balance < selectedStake) return alert("Insufficient Balance!");
     
-    // Deduct stake immediately
     const updatedUser = { ...user, balance: user.balance - selectedStake };
     setUser(updatedUser);
     await databaseService.updateUser(updatedUser);
@@ -158,10 +162,8 @@ const App: React.FC = () => {
     setFoundPlayers([]);
     soundManager.play('click');
 
-    // Simulate realistic finding players sequence
     const playersToFind = count - 1;
     let found = 0;
-    
     const colors = [PlayerColor.YELLOW, PlayerColor.GREEN, PlayerColor.BLUE];
     
     const searchInterval = setInterval(() => {
@@ -182,45 +184,31 @@ const App: React.FC = () => {
         soundManager.play('click');
       } else {
         clearInterval(searchInterval);
-        setTimeout(() => initGame(count), 1500);
+        setTimeout(() => initGame(count), 1000);
       }
-    }, 1500 + Math.random() * 2000);
+    }, 1200 + Math.random() * 1500);
   };
 
   const initGame = (count: number) => {
     if (!user) return;
-    
     const colors = count === 2 
       ? [PlayerColor.RED, PlayerColor.YELLOW] 
       : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
 
     const players: Player[] = colors.map((color, i) => {
-      if (i === 0) {
-        return {
-          id: 'user',
-          name: user.name,
-          country: 'Bangladesh',
-          flag: '🇧🇩',
-          color, isBot: false,
-          avatarUrl: user.avatar,
-          tokens: Array(4).fill(null).map((_, ti) => ({
-            id: i * 10 + ti, color, state: TokenState.HOME, position: 0, distanceTraveled: 0
-          }))
-        };
-      } else {
-        const botIdentity = foundPlayers[i-1] || { name: 'Player', country: 'BD', flag: '🇧🇩', avatarUrl: '' };
-        return {
-          id: `bot-${i}`,
-          name: botIdentity.name,
-          country: botIdentity.country,
-          flag: botIdentity.flag,
-          color, isBot: true,
-          avatarUrl: botIdentity.avatarUrl,
-          tokens: Array(4).fill(null).map((_, ti) => ({
-            id: i * 10 + ti, color, state: TokenState.HOME, position: 0, distanceTraveled: 0
-          }))
-        };
-      }
+      const isUser = i === 0;
+      const botIdentity = isUser ? null : foundPlayers[i-1];
+      return {
+        id: isUser ? 'user' : `bot-${i}`,
+        name: isUser ? user.name : botIdentity!.name,
+        country: isUser ? 'Bangladesh' : botIdentity!.country,
+        flag: isUser ? '🇧🇩' : botIdentity!.flag,
+        color, isBot: !isUser,
+        avatarUrl: isUser ? user.avatar : botIdentity!.avatarUrl,
+        tokens: Array(4).fill(null).map((_, ti) => ({
+          id: i * 10 + ti, color, state: TokenState.HOME, position: 0, distanceTraveled: 0
+        }))
+      };
     });
 
     setGameState({
@@ -229,32 +217,66 @@ const App: React.FC = () => {
     });
     setView('GAME');
     soundManager.play('six');
-  };
-
-  const rollDice = () => {
-    if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
-    setIsRolling(true);
-    soundManager.play('dice');
-    setTimeout(() => {
-      const val = Math.floor(Math.random() * 6) + 1;
-      setGameState(prev => {
-        if (!prev) return null;
-        const player = prev.players[prev.currentPlayerIndex];
-        const canMove = player.tokens.some(t => t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56);
-        if (!canMove) {
-          setTimeout(nextTurn, 1000);
-          return { ...prev, diceValue: val, isDiceRolled: true };
-        }
-        return { ...prev, diceValue: val, isDiceRolled: true };
-      });
-      setIsRolling(false);
-      soundManager.play('dice_stop');
-    }, 800);
+    setCommentary('Good luck everyone! Let the battle begin.');
   };
 
   const nextTurn = useCallback(() => {
-    setGameState(prev => prev ? { ...prev, currentPlayerIndex: (prev.currentPlayerIndex + 1) % prev.players.length, diceValue: null, isDiceRolled: false } : null);
+    setGameState(prev => {
+      if (!prev) return null;
+      return { 
+        ...prev, 
+        currentPlayerIndex: (prev.currentPlayerIndex + 1) % prev.players.length, 
+        diceValue: null, 
+        isDiceRolled: false,
+        consecutiveSixes: 0 
+      };
+    });
   }, []);
+
+  const rollDice = async () => {
+    if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
+    setIsRolling(true);
+    soundManager.play('dice');
+    
+    setTimeout(async () => {
+      const val = Math.floor(Math.random() * 6) + 1;
+      setIsRolling(false);
+      soundManager.play('dice_stop');
+
+      setGameState(prev => {
+        if (!prev) return null;
+        const player = prev.players[prev.currentPlayerIndex];
+        const canMove = player.tokens.some(t => {
+          if (t.state === TokenState.WIN) return false;
+          if (t.state === TokenState.HOME) return val === 6;
+          return t.distanceTraveled + val <= 56;
+        });
+
+        if (val === 6) {
+          if (prev.consecutiveSixes === 2) { // 3 sixes = turn skip
+            setTimeout(nextTurn, 1000);
+            return { ...prev, diceValue: val, isDiceRolled: true, log: [...prev.log, 'Triple 6! Turn skipped'] };
+          }
+        }
+
+        if (!canMove) {
+          setTimeout(nextTurn, 1200);
+        }
+
+        return { 
+          ...prev, 
+          diceValue: val, 
+          isDiceRolled: true, 
+          consecutiveSixes: val === 6 ? prev.consecutiveSixes + 1 : 0 
+        };
+      });
+
+      if (val === 6) {
+        const comment = await generateGameCommentary("rolled a massive six", gameState.players[gameState.currentPlayerIndex].name);
+        setCommentary(comment);
+      }
+    }, 800);
+  };
 
   const moveToken = async (tokenId: number) => {
     if (!gameState || !gameState.isDiceRolled || isRolling) return;
@@ -264,21 +286,55 @@ const App: React.FC = () => {
     const token = { ...player.tokens[tokenIdx] };
     const val = gameState.diceValue!;
 
+    let capturedToken = false;
+
+    // Movement Logic
     if (token.state === TokenState.HOME && val === 6) {
       token.state = TokenState.PATH;
       token.distanceTraveled = 0;
     } else if (token.state === TokenState.PATH) {
       token.distanceTraveled += val;
-      if (token.distanceTraveled === 56) token.state = TokenState.WIN;
+      if (token.distanceTraveled === 56) {
+        token.state = TokenState.WIN;
+        soundManager.play('win');
+      } else {
+        // Capture Check (If not safe spot)
+        const startPos = START_POSITIONS[token.color];
+        const absolutePos = (token.distanceTraveled + startPos) % 52;
+        const isSafe = SAFE_SPOTS.includes(absolutePos);
+
+        if (!isSafe) {
+          players.forEach((otherPlayer, pIdx) => {
+            if (pIdx !== gameState.currentPlayerIndex) {
+              otherPlayer.tokens.forEach((otherToken, tIdx) => {
+                if (otherToken.state === TokenState.PATH) {
+                  const otherStart = START_POSITIONS[otherToken.color];
+                  const otherAbsolute = (otherToken.distanceTraveled + otherStart) % 52;
+                  if (otherAbsolute === absolutePos) {
+                    otherToken.state = TokenState.HOME;
+                    otherToken.distanceTraveled = 0;
+                    capturedToken = true;
+                  }
+                }
+              });
+            }
+          });
+        }
+      }
     }
+    
     player.tokens[tokenIdx] = token;
     soundManager.play('move');
 
+    if (capturedToken) {
+      soundManager.play('kill');
+      const comment = await generateGameCommentary("just executed a brilliant capture!", player.name);
+      setCommentary(comment);
+    }
+
+    // Win condition
     if (player.tokens.every(t => t.state === TokenState.WIN)) {
       setGameState(prev => prev ? { ...prev, players, winner: player.color } : null);
-      soundManager.play('win');
-      
-      // If user wins, add prize
       if (player.id === 'user' && user) {
         const prize = Math.floor(selectedStake * 1.8);
         const updatedUser = { ...user, balance: user.balance + prize };
@@ -288,21 +344,73 @@ const App: React.FC = () => {
       return;
     }
 
-    setGameState(prev => prev ? { ...prev, players, isDiceRolled: false, diceValue: null, currentPlayerIndex: val === 6 ? prev.currentPlayerIndex : (prev.currentPlayerIndex + 1) % prev.players.length } : null);
+    // Turn handover
+    const continueTurn = val === 6 || capturedToken;
+    setGameState(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        players,
+        isDiceRolled: false,
+        diceValue: null,
+        currentPlayerIndex: continueTurn ? prev.currentPlayerIndex : (prev.currentPlayerIndex + 1) % prev.players.length
+      };
+    });
   };
 
+  // Bot Smart Logic
   useEffect(() => {
     if (gameState && gameState.players[gameState.currentPlayerIndex].isBot && !gameState.winner) {
-      const delay = Math.random() * 1000 + 1000;
-      setTimeout(() => {
-        if (!gameState.isDiceRolled) rollDice();
-        else {
+      if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
+      
+      botActionTimeout.current = setTimeout(() => {
+        if (!gameState.isDiceRolled) {
+          rollDice();
+        } else {
           const p = gameState.players[gameState.currentPlayerIndex];
-          const valid = p.tokens.filter(t => t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56);
-          if (valid.length > 0) moveToken(valid[0].id);
-          else nextTurn();
+          const val = gameState.diceValue!;
+          const valid = p.tokens.filter(t => {
+            if (t.state === TokenState.WIN) return false;
+            if (t.state === TokenState.HOME) return val === 6;
+            return t.distanceTraveled + val <= 56;
+          });
+
+          if (valid.length > 0) {
+            // Smart Choice: prioritized Capture > Safe Spot > Moving tokens near win > Out from home
+            let bestToken = valid[0];
+            
+            // Logic to find capture
+            const captureToken = valid.find(t => {
+              const start = START_POSITIONS[t.color];
+              const dist = t.state === TokenState.HOME ? 0 : t.distanceTraveled + val;
+              const abs = (dist + start) % 52;
+              if (SAFE_SPOTS.includes(abs)) return false;
+              return gameState.players.some((other, pIdx) => {
+                if (pIdx === gameState.currentPlayerIndex) return false;
+                return other.tokens.some(ot => {
+                  if (ot.state !== TokenState.PATH) return false;
+                  const otAbs = (ot.distanceTraveled + START_POSITIONS[ot.color]) % 52;
+                  return otAbs === abs;
+                });
+              });
+            });
+
+            if (captureToken) bestToken = captureToken;
+            else {
+              const nearingWin = valid.find(t => t.distanceTraveled > 45);
+              if (nearingWin) bestToken = nearingWin;
+              else {
+                const outFromHome = valid.find(t => t.state === TokenState.HOME);
+                if (outFromHome) bestToken = outFromHome;
+              }
+            }
+            
+            moveToken(bestToken.id);
+          } else {
+            nextTurn();
+          }
         }
-      }, delay);
+      }, 1500 + Math.random() * 1000);
     }
   }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled]);
 
@@ -310,201 +418,189 @@ const App: React.FC = () => {
     <div className="h-screen w-full bg-[#050a18] text-white font-['Fredoka'] dotted-bg overflow-hidden flex flex-col relative">
       {view === 'SPLASH' && (
         <div className="h-full flex flex-col items-center justify-center animate-in fade-in">
-          <h1 className="ludo-money-logo text-6xl mb-10">LUDO MONEY</h1>
-          <div className="w-64 h-2 bg-white/10 rounded-full overflow-hidden border border-white/5">
-            <div className="h-full bg-yellow-500 shadow-[0_0_15px_#fbbf24]" style={{width: `${loadingProgress}%`}}></div>
+          <h1 className="ludo-money-logo text-7xl mb-12">LUDO MONEY</h1>
+          <div className="w-72 h-3 bg-white/5 rounded-full overflow-hidden border border-white/10 p-0.5">
+            <div className="h-full bg-gradient-to-r from-yellow-500 to-amber-500 shadow-[0_0_15px_rgba(251,191,36,0.5)] rounded-full transition-all duration-300" style={{width: `${loadingProgress}%`}}></div>
           </div>
+          <p className="mt-4 text-xs font-black uppercase tracking-[0.5em] text-white/20">Loading Arena</p>
         </div>
       )}
 
       {(view === 'LOGIN' || view === 'ADMIN_AUTH') && (
-        <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18]">
-           <div className="bg-[#1c212e] p-10 py-12 rounded-[50px] w-full max-w-[420px] border border-white/5 flex flex-col items-center shadow-2xl animate-in zoom-in-95">
-              <h2 className="ludo-money-logo text-6xl mb-14 uppercase font-black italic tracking-tight scale-110">
-                {view === 'ADMIN_AUTH' ? 'ADMIN' : 'LOGIN'}
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18] relative">
+           <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-blue-600/10 to-transparent"></div>
+           <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 py-12 rounded-[50px] w-full max-w-[420px] border border-white/10 flex flex-col items-center shadow-[0_30px_60px_rgba(0,0,0,0.5)] animate-in zoom-in-95 z-10">
+              <h2 className="ludo-money-logo text-6xl mb-12 uppercase font-black italic tracking-tight scale-110">
+                {view === 'ADMIN_AUTH' ? 'ADMIN' : (isSignUp ? 'SIGNUP' : 'LOGIN')}
               </h2>
-              {authError && <div className="text-red-500 mb-6 text-[10px] font-black uppercase tracking-widest">{authError}</div>}
+              {authError && <div className="text-red-500 mb-6 text-[11px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">{authError}</div>}
               
-              <div className="w-full space-y-6 mb-12">
+              <div className="w-full space-y-5 mb-10">
                  {view === 'LOGIN' && isSignUp && (
-                   <input 
-                    type="text" 
-                    placeholder="Full Name" 
-                    value={name} 
-                    onChange={e => setName(e.target.value)} 
-                    className="w-full bg-[#2a2f3e] border border-white/5 p-6 rounded-[25px] outline-none text-white font-medium placeholder:text-white/20 focus:border-yellow-500/30 transition-all text-sm" 
-                   />
+                   <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-white/20 ml-5 tracking-widest">Display Name</label>
+                      <input type="text" placeholder="John Doe" value={name} onChange={e => setName(e.target.value)} className="w-full bg-black/40 border border-white/5 p-5 rounded-[25px] outline-none text-white font-medium placeholder:text-white/10 focus:border-yellow-500/30 transition-all" />
+                   </div>
                  )}
-                 <input 
-                  type="text" 
-                  placeholder={view === 'ADMIN_AUTH' ? "Admin ID" : "Mobile Number"} 
-                  value={view === 'ADMIN_AUTH' ? adminId : phone} 
-                  onChange={e => view === 'ADMIN_AUTH' ? setAdminId(e.target.value) : setPhone(e.target.value)} 
-                  className="w-full bg-[#2a2f3e] border border-white/5 p-6 rounded-[25px] outline-none text-white font-medium placeholder:text-white/20 focus:border-yellow-500/30 transition-all text-sm" 
-                 />
-                 <input 
-                  type="password" 
-                  placeholder="Password" 
-                  value={view === 'ADMIN_AUTH' ? adminPass : password} 
-                  onChange={e => view === 'ADMIN_AUTH' ? setAdminPass(e.target.value) : setPassword(e.target.value)} 
-                  className="w-full bg-[#2a2f3e] border border-white/5 p-6 rounded-[25px] outline-none text-white font-medium placeholder:text-white/20 focus:border-yellow-500/30 transition-all text-sm" 
-                 />
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-white/20 ml-5 tracking-widest">Credentials</label>
+                    <input type="text" placeholder={view === 'ADMIN_AUTH' ? "Admin ID" : "Phone Number"} value={view === 'ADMIN_AUTH' ? adminId : phone} onChange={e => view === 'ADMIN_AUTH' ? setAdminId(e.target.value) : setPhone(e.target.value)} className="w-full bg-black/40 border border-white/5 p-5 rounded-[25px] outline-none text-white font-medium placeholder:text-white/10 focus:border-yellow-500/30 transition-all" />
+                 </div>
+                 <input type="password" placeholder="Password" value={view === 'ADMIN_AUTH' ? adminPass : password} onChange={e => view === 'ADMIN_AUTH' ? setAdminPass(e.target.value) : setPassword(e.target.value)} className="w-full bg-black/40 border border-white/5 p-5 rounded-[25px] outline-none text-white font-medium placeholder:text-white/10 focus:border-yellow-500/30 transition-all" />
               </div>
 
               <button 
                 onClick={view === 'ADMIN_AUTH' ? handleAdminAuth : handleAuth} 
-                className="w-full bg-[#f6b40e] text-black py-6 rounded-[30px] font-black text-xl shadow-[0_10px_0_#b47906] active:translate-y-2 active:shadow-[0_4px_0_#b47906] transition-all uppercase tracking-tight"
+                className="w-full bg-gradient-to-b from-[#fcd34d] to-[#f59e0b] text-black py-6 rounded-[30px] font-black text-xl shadow-[0_10px_0_#b45309] active:translate-y-2 active:shadow-[0_4px_0_#b45309] transition-all uppercase tracking-tight"
               >
-                {view === 'ADMIN_AUTH' ? 'SIGN IN' : (isSignUp ? 'REGISTER' : 'ENTER ARENA')}
+                {view === 'ADMIN_AUTH' ? 'LOGIN ADMIN' : (isSignUp ? 'REGISTER' : 'ENTER LOBBY')}
               </button>
 
               <button 
                 onClick={() => view === 'ADMIN_AUTH' ? setView('LOGIN') : setIsSignUp(!isSignUp)} 
-                className="mt-12 text-[10px] uppercase font-black text-white/20 tracking-[0.25em] hover:text-white/40 transition-colors"
+                className="mt-10 text-[10px] uppercase font-black text-white/20 tracking-[0.3em] hover:text-white/60 transition-colors"
               >
-                {view === 'ADMIN_AUTH' ? 'Back to Login' : (isSignUp ? 'Back to Login' : 'CREATE ACCOUNT')}
+                {view === 'ADMIN_AUTH' ? 'Back to Player Login' : (isSignUp ? 'Already have account? Login' : 'No account? Join Club')}
               </button>
            </div>
         </div>
       )}
 
       {view === 'FINDING' && (
-        <div className="h-full flex flex-col items-center justify-center bg-[#020617] p-10 relative">
-           <div className="absolute inset-0 bg-blue-500/5 animate-pulse"></div>
+        <div className="h-full flex flex-col items-center justify-center bg-[#020617] p-10 relative overflow-hidden">
+           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/10 rounded-full blur-[120px] animate-pulse"></div>
            
            <div className="text-center mb-16 z-10">
-              <div className="w-20 h-20 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-6 shadow-[0_0_20px_rgba(251,191,36,0.2)]"></div>
-              <h2 className="text-4xl font-black italic uppercase text-yellow-500 tracking-tighter">Searching...</h2>
-              <p className="text-white/30 text-[10px] font-bold mt-2 uppercase tracking-[0.3em]">Stake: ৳{selectedStake} • {playerCount}P Mode</p>
+              <div className="w-24 h-24 border-8 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-8 shadow-[0_0_40px_rgba(251,191,36,0.2)]"></div>
+              <h2 className="text-5xl font-black italic uppercase text-yellow-500 tracking-tighter drop-shadow-lg">Searching...</h2>
+              <p className="text-white/30 text-[11px] font-bold mt-4 uppercase tracking-[0.4em]">Pool Stake: ৳{selectedStake} • Pro Battle</p>
            </div>
            
            <div className="grid grid-cols-2 gap-12 w-full max-w-sm z-10">
-              {/* User Slot */}
-              <div className="flex flex-col items-center gap-4">
-                 <div className="w-28 h-28 rounded-[35px] border-4 border-yellow-500 p-1 bg-slate-800 shadow-[0_0_30px_rgba(251,191,36,0.3)]">
-                    <img src={user?.avatar} className="w-full h-full rounded-[25px] object-cover" />
+              <div className="flex flex-col items-center gap-5">
+                 <div className="w-28 h-28 rounded-[40px] border-4 border-yellow-500 p-1 bg-slate-800 shadow-[0_0_30px_rgba(251,191,36,0.3)]">
+                    <img src={user?.avatar} className="w-full h-full rounded-[30px] object-cover" />
                  </div>
-                 <div className="bg-yellow-500 px-3 py-0.5 rounded-full">
-                    <span className="font-black text-[9px] text-black uppercase">YOU</span>
+                 <div className="bg-yellow-500 px-4 py-1 rounded-full shadow-lg">
+                    <span className="font-black text-[10px] text-black uppercase">YOU</span>
                  </div>
-                 <span className="font-black text-xs uppercase italic truncate max-w-[100px]">{user?.name}</span>
               </div>
 
-              {/* Bot Slots */}
               {Array.from({ length: playerCount - 1 }).map((_, i) => {
                 const found = foundPlayers[i];
                 return (
-                  <div key={i} className="flex flex-col items-center gap-4 animate-in zoom-in-50">
-                     <div className={`w-28 h-28 rounded-[35px] border-4 ${found ? 'border-green-500' : 'border-white/5 border-dashed'} p-1 bg-slate-800 transition-all duration-700 relative overflow-hidden`}>
+                  <div key={i} className="flex flex-col items-center gap-5 animate-in zoom-in-50">
+                     <div className={`w-28 h-28 rounded-[40px] border-4 ${found ? 'border-green-500 shadow-[0_0_30px_rgba(34,197,94,0.3)]' : 'border-white/5 border-dashed'} p-1 bg-slate-800 transition-all duration-700 relative overflow-hidden`}>
                         {found ? (
-                          <img src={found.avatarUrl} className="w-full h-full rounded-[25px] object-cover animate-in fade-in" />
+                          <img src={found.avatarUrl} className="w-full h-full rounded-[30px] object-cover animate-in fade-in" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-white/5 text-5xl">?</div>
                         )}
-                        {!found && <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent animate-pulse"></div>}
+                        {!found && <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent animate-pulse"></div>}
                      </div>
-                     {found && <div className="bg-green-500 px-3 py-0.5 rounded-full"><span className="font-black text-[9px] text-black uppercase">READY</span></div>}
-                     <span className={`font-black text-xs uppercase italic truncate max-w-[100px] ${found ? 'text-white' : 'text-white/10'}`}>
-                        {found ? found.name : 'Finding...'}
+                     <span className={`font-black text-[10px] uppercase italic truncate max-w-[110px] tracking-widest ${found ? 'text-white' : 'text-white/10'}`}>
+                        {found ? found.name : 'Finding Player...'}
                      </span>
                   </div>
                 );
               })}
            </div>
 
-           <button onClick={() => setView('LOBBY')} className="mt-20 z-10 text-white/20 text-[10px] font-black uppercase tracking-widest border border-white/5 px-10 py-4 rounded-full hover:bg-white/5 transition-all">Cancel Match</button>
+           <button onClick={() => setView('LOBBY')} className="mt-20 z-10 text-white/20 text-[10px] font-black uppercase tracking-widest border border-white/5 px-12 py-4 rounded-full hover:bg-white/5 transition-all active:scale-95">Abort Matchmaking</button>
         </div>
       )}
 
       {view === 'LOBBY' && user && (
         <div className="h-full flex flex-col bg-[#020617] relative">
-          <div className="p-4 flex justify-between items-center z-20">
-            <div className="flex items-center gap-3">
-              <img src={user.avatar} className="w-12 h-12 rounded-full border-2 border-yellow-500 shadow-lg shadow-yellow-500/10" />
+          <div className="p-4 flex justify-between items-center z-20 bg-black/20 border-b border-white/5">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                 <img src={user.avatar} className="w-14 h-14 rounded-2xl border-2 border-yellow-500 shadow-xl" />
+                 <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-[#020617]"></div>
+              </div>
               <div className="flex flex-col">
-                <span className="font-black uppercase text-sm italic leading-none">{user.name}</span>
-                <div className="bg-yellow-500 px-2 py-0.5 rounded mt-1 w-fit">
-                  <span className="text-[7px] font-black text-black uppercase tracking-wider">VIP MEMBER</span>
-                </div>
+                <span className="font-black uppercase text-base italic leading-none">{user.name}</span>
+                <span className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] mt-1">Player Rank: Gold</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div onClick={() => setWalletOpen(true)} className="bg-black/60 border border-yellow-500/40 px-3 py-1.5 rounded-full flex items-center gap-2 cursor-pointer active:scale-95 transition-all">
-                <div className="bg-yellow-500 text-black w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px]">৳</div>
-                <span className="font-bold text-sm">{user.balance.toLocaleString()}</span>
+            <div className="flex items-center gap-3">
+              <div onClick={() => setWalletOpen(true)} className="bg-black/60 border border-yellow-500/20 px-4 py-2 rounded-2xl flex items-center gap-3 cursor-pointer active:scale-95 transition-all shadow-lg">
+                <div className="bg-yellow-500 text-black w-5 h-5 rounded-full flex items-center justify-center font-black text-[11px]">৳</div>
+                <span className="font-black text-base text-yellow-500 tracking-tighter">{user.balance.toLocaleString()}</span>
               </div>
-              <button onClick={() => { localStorage.removeItem('LUDO_SESSION'); setView('LOGIN'); }} className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-white/40">✕</button>
+              <button onClick={() => { localStorage.removeItem('LUDO_SESSION'); setView('LOGIN'); }} className="w-11 h-11 bg-white/5 rounded-2xl flex items-center justify-center text-white/40 hover:text-white transition-colors">✕</button>
             </div>
           </div>
 
-          <div className="w-full h-8 bg-black/60 border-y border-white/5 overflow-hidden flex items-center">
-            <div className="animate-scroll-text gap-20">
-               <span className="text-[10px] font-black italic text-yellow-500 uppercase tracking-widest flex items-center gap-2">🔥 RONY KHAN WITHDRAW ৳৫০০০ 🔥</span>
-               <span className="text-[10px] font-black italic text-green-500 uppercase tracking-widest flex items-center gap-2">💰 SAJID AHMED WON ৳২০০০ 💰</span>
-               <span className="text-[10px] font-black italic text-yellow-500 uppercase tracking-widest flex items-center gap-2">🔥 HAMIM KING WITHDRAW ৳৩০০০ 🔥</span>
+          <div className="w-full h-9 bg-yellow-500 border-y border-yellow-600 flex items-center shadow-lg">
+            <div className="animate-scroll-text gap-24 whitespace-nowrap">
+               <span className="text-[11px] font-black italic text-black uppercase tracking-widest flex items-center gap-3">🏆 TOURNAMENT STARTING IN 15 MINS! JOIN NOW 🏆</span>
+               <span className="text-[11px] font-black italic text-black uppercase tracking-widest flex items-center gap-3">💸 RONY JUST WITHDREW ৳৫০০০ TO BKASH 💸</span>
+               <span className="text-[11px] font-black italic text-black uppercase tracking-widest flex items-center gap-3 ml-24">🏆 TOURNAMENT STARTING IN 15 MINS! JOIN NOW 🏆</span>
             </div>
           </div>
 
-          <div className="flex-1 p-4 space-y-4 overflow-y-auto no-scrollbar pb-24">
-            <div className="grid grid-cols-2 gap-4">
-               <div className="bg-gradient-to-br from-[#6366f1] to-[#4338ca] p-5 rounded-[35px] border border-white/10 flex items-center gap-3 active:scale-95 transition-all shadow-xl">
-                  <div className="text-3xl">🎁</div>
+          <div className="flex-1 p-5 space-y-6 overflow-y-auto no-scrollbar pb-24">
+            <div className="grid grid-cols-2 gap-5">
+               <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 p-6 rounded-[40px] border border-white/10 flex items-center gap-4 active:scale-95 transition-all shadow-xl group">
+                  <div className="text-4xl group-hover:scale-110 transition-transform">🎁</div>
                   <div className="flex flex-col">
-                    <span className="text-[8px] font-black uppercase text-white/50">Daily Bonus</span>
-                    <span className="text-xs font-black italic text-white uppercase">Claim ৳৫০</span>
+                    <span className="text-[9px] font-black uppercase text-white/40 tracking-widest">Daily Reward</span>
+                    <span className="text-sm font-black italic text-white uppercase leading-none mt-1">Claim ৳৫০</span>
                   </div>
                </div>
-               <div className="bg-gradient-to-br from-[#f97316] to-[#c2410c] p-5 rounded-[35px] border border-white/10 flex items-center gap-3 active:scale-95 transition-all shadow-xl">
-                  <div className="text-3xl">🔥</div>
+               <div className="bg-gradient-to-br from-amber-600 to-orange-700 p-6 rounded-[40px] border border-white/10 flex items-center gap-4 active:scale-95 transition-all shadow-xl group">
+                  <div className="text-4xl group-hover:scale-110 transition-transform">🔥</div>
                   <div className="flex flex-col">
-                    <span className="text-[8px] font-black uppercase text-white/50">Hot Deal</span>
-                    <span className="text-xs font-black italic text-white uppercase">2X Tokens</span>
+                    <span className="text-[9px] font-black uppercase text-white/40 tracking-widest">Hot Event</span>
+                    <span className="text-sm font-black italic text-white uppercase leading-none mt-1">2X Points</span>
                   </div>
                </div>
             </div>
 
-            <div className="bg-[#2563eb] rounded-[60px] p-8 flex flex-col items-center border-4 border-white/10 relative shadow-2xl min-h-[420px] overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10 scale-150 rotate-12">🎲</div>
+            <div className="bg-gradient-to-b from-blue-600 to-blue-800 rounded-[60px] p-10 flex flex-col items-center border-4 border-white/10 relative shadow-[0_40px_80px_rgba(0,0,0,0.6)] min-h-[460px] overflow-hidden">
+                <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
+                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-black/20 rounded-full blur-3xl"></div>
                 
-                <div className="flex gap-4 mb-8 bg-black/20 p-2 rounded-full border border-white/5 z-10">
-                   <button onClick={() => setPlayerCount(2)} className={`px-8 py-3 rounded-full font-black text-xs uppercase transition-all ${playerCount === 2 ? 'bg-yellow-500 text-black shadow-lg' : 'bg-transparent text-white/40'}`}>2 Player</button>
-                   <button onClick={() => setPlayerCount(4)} className={`px-8 py-3 rounded-full font-black text-xs uppercase transition-all ${playerCount === 4 ? 'bg-yellow-500 text-black shadow-lg' : 'bg-transparent text-white/40'}`}>4 Player</button>
+                <div className="flex gap-4 mb-10 bg-black/30 p-2.5 rounded-full border border-white/5 z-10 shadow-inner">
+                   <button onClick={() => setPlayerCount(2)} className={`px-10 py-3.5 rounded-full font-black text-xs uppercase transition-all ${playerCount === 2 ? 'bg-yellow-500 text-black shadow-[0_5px_15px_rgba(251,191,36,0.4)] scale-105' : 'bg-transparent text-white/20 hover:text-white'}`}>2 Player</button>
+                   <button onClick={() => setPlayerCount(4)} className={`px-10 py-3.5 rounded-full font-black text-xs uppercase transition-all ${playerCount === 4 ? 'bg-yellow-500 text-black shadow-[0_5px_15px_rgba(251,191,36,0.4)] scale-105' : 'bg-transparent text-white/20 hover:text-white'}`}>4 Player</button>
                 </div>
 
-                <div className="w-28 h-28 bg-yellow-400 rounded-[40px] flex items-center justify-center shadow-2xl mb-10 relative z-10 rotate-12">
-                  <div className="absolute inset-0 bg-yellow-300 rounded-[40px] animate-ping opacity-20"></div>
-                  <span className="text-6xl z-10 -rotate-12">🎮</span>
+                <div className="w-32 h-32 bg-gradient-to-tr from-yellow-400 to-amber-300 rounded-[45px] flex items-center justify-center shadow-2xl mb-12 relative z-10 rotate-6 hover:rotate-0 transition-transform duration-500">
+                  <div className="absolute inset-0 bg-yellow-300 rounded-[45px] animate-ping opacity-20"></div>
+                  <span className="text-7xl z-10 -rotate-6">🎲</span>
                 </div>
 
                 <div className="text-center mb-10 z-10">
-                    <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white mb-2 leading-none">BATTLE ARENA</h2>
-                    <div className="flex items-center justify-center gap-3 mt-6">
+                    <h2 className="text-6xl font-black italic uppercase tracking-tighter text-white mb-3 leading-none drop-shadow-lg">PRO ARENA</h2>
+                    <div className="flex items-center justify-center gap-3.5 mt-8">
                         {[50, 100, 500, 1000].map(s => (
                           <button 
                             key={s} 
                             onClick={() => { soundManager.play('click'); setSelectedStake(s); }}
-                            className={`px-4 py-2 rounded-xl text-xs font-black transition-all border-2 ${selectedStake === s ? 'bg-yellow-500 border-yellow-400 text-black shadow-lg' : 'bg-black/20 border-white/5 text-white/40 hover:text-white'}`}
+                            className={`px-5 py-3 rounded-2xl text-[11px] font-black transition-all border-2 ${selectedStake === s ? 'bg-yellow-500 border-yellow-300 text-black shadow-xl scale-110' : 'bg-black/40 border-white/5 text-white/40 hover:text-white'}`}
                           >৳{s}</button>
                         ))}
                     </div>
                 </div>
 
-                <button onClick={() => startFinding(playerCount)} className="w-full bg-[#f6b40e] py-7 rounded-[30px] font-black text-3xl text-black shadow-[0_12px_0_#b47906] active:translate-y-2 active:shadow-[0_4px_0_#b47906] uppercase italic tracking-tighter z-10">PLAY NOW</button>
+                <button onClick={() => startFinding(playerCount)} className="w-full bg-gradient-to-b from-yellow-400 to-amber-500 py-8 rounded-[35px] font-black text-3xl text-black shadow-[0_15px_0_#92400e] active:translate-y-2 active:shadow-[0_5px_0_#92400e] uppercase italic tracking-tighter z-10 transition-all">START BATTLE</button>
             </div>
           </div>
 
-          <div className="h-20 bg-[#0f172a] border-t border-white/5 flex items-center justify-around px-6 shrink-0">
-             <div className="flex flex-col items-center gap-1 cursor-pointer">
-                <div className="text-xl">🏠</div>
-                <span className="text-[8px] font-black uppercase text-yellow-500">Home</span>
+          <div className="h-20 bg-[#0f172a] border-t border-white/5 flex items-center justify-around px-8 shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+             <div className="flex flex-col items-center gap-1.5 cursor-pointer">
+                <span className="text-2xl">🏠</span>
+                <span className="text-[10px] font-black uppercase text-yellow-500 tracking-widest">Home</span>
              </div>
-             <div className="flex flex-col items-center gap-1 opacity-40 grayscale">
-                <div className="text-xl">🎒</div>
-                <span className="text-[8px] font-black uppercase">Skins</span>
+             <div className="flex flex-col items-center gap-1.5 opacity-30 grayscale hover:opacity-100 hover:grayscale-0 transition-all cursor-not-allowed">
+                <span className="text-2xl">🏆</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">Rank</span>
              </div>
-             <div className="flex flex-col items-center gap-1 opacity-40 grayscale">
-                <div className="text-xl">🏆</div>
-                <span className="text-[8px] font-black uppercase">Leader</span>
+             <div className="flex flex-col items-center gap-1.5 opacity-30 grayscale hover:opacity-100 hover:grayscale-0 transition-all cursor-not-allowed">
+                <span className="text-2xl">🛡️</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">Shop</span>
              </div>
           </div>
 
@@ -513,22 +609,34 @@ const App: React.FC = () => {
       )}
 
       {view === 'GAME' && gameState && (
-        <div className="h-full flex flex-col items-center bg-[#0f172a] relative overflow-hidden">
-          <div className="w-full p-4 flex justify-between items-center bg-slate-900 z-10 border-b border-white/5">
-             <button onClick={() => confirm("Exit Game?") && setView('LOBBY')} className="text-red-500 font-bold text-[10px] uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">Exit</button>
-             <div className="flex flex-col items-center">
-                <span className="text-[10px] font-black text-white/40 uppercase tracking-tighter">Win Amount</span>
-                <span className="text-yellow-500 font-black italic text-xl leading-none">৳{Math.floor(selectedStake * 1.8)}</span>
+        <div className="h-full flex flex-col items-center bg-[#050a18] relative overflow-hidden">
+          {/* Commentary Bar */}
+          <div className="absolute top-20 left-0 right-0 z-[60] px-6 animate-in slide-in-from-top-4">
+             <div className="bg-black/80 backdrop-blur-md border border-white/10 p-3 rounded-2xl shadow-2xl flex items-center gap-3">
+                <div className="w-8 h-8 bg-sky-500 rounded-lg flex items-center justify-center text-lg animate-pulse">🎙️</div>
+                <p className="text-[11px] font-black italic text-sky-400 uppercase leading-tight">{commentary}</p>
              </div>
-             <div className="w-10"></div>
           </div>
 
-          <div className="flex-1 w-full flex flex-col items-center justify-center p-6">
+          <div className="w-full p-4 flex justify-between items-center bg-[#0f172a] z-[70] border-b border-white/10 shadow-lg">
+             <button onClick={() => confirm("Exit Arena?") && setView('LOBBY')} className="text-red-500 font-black text-[11px] uppercase tracking-widest bg-red-500/10 px-6 py-2.5 rounded-2xl border border-red-500/20 active:scale-95 transition-all">Surrender</button>
+             <div className="flex flex-col items-center">
+                <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-0.5">Prize Pool</span>
+                <span className="text-yellow-500 font-black italic text-2xl leading-none tracking-tighter">৳{Math.floor(selectedStake * 1.8)}</span>
+             </div>
+             <div className="w-20"></div>
+          </div>
+
+          <div className="flex-1 w-full flex flex-col items-center justify-center p-6 mt-8">
              <div className="w-full max-w-[420px] relative aspect-square">
                 <LudoBoard 
                   players={gameState.players} 
                   currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} 
-                  validTokens={gameState.isDiceRolled && !isRolling ? gameState.players[gameState.currentPlayerIndex].tokens.filter(t => t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56).map(t => t.id) : []} 
+                  validTokens={gameState.isDiceRolled && !isRolling ? gameState.players[gameState.currentPlayerIndex].tokens.filter(t => {
+                    if (t.state === TokenState.WIN) return false;
+                    if (t.state === TokenState.HOME) return gameState.diceValue === 6;
+                    return t.distanceTraveled + gameState.diceValue! <= 56;
+                  }).map(t => t.id) : []} 
                   onTokenClick={(t) => moveToken(t.id)} 
                 />
 
@@ -548,15 +656,15 @@ const App: React.FC = () => {
                 })}
              </div>
 
-             <div className="mt-32 flex flex-col items-center gap-6">
-                <div onClick={rollDice} className={`w-32 h-32 bg-[#1c212e] rounded-[40px] border-4 flex items-center justify-center cursor-pointer transition-all ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot ? 'border-yellow-500 scale-110 shadow-[0_0_40px_rgba(251,191,36,0.4)]' : 'border-white/5 opacity-40'}`}>
+             <div className="mt-28 flex flex-col items-center gap-8">
+                <div onClick={rollDice} className={`w-36 h-36 bg-[#1c212e]/80 backdrop-blur-md rounded-[45px] border-4 flex items-center justify-center cursor-pointer transition-all ${!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot ? 'border-yellow-500 scale-110 shadow-[0_0_50px_rgba(251,191,36,0.5)]' : 'border-white/5 opacity-40 grayscale-[0.5]'}`}>
                    <Dice3D value={gameState.diceValue} isRolling={isRolling} />
                 </div>
                 {!gameState.isDiceRolled && !gameState.players[gameState.currentPlayerIndex].isBot && (
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] font-black text-yellow-500 animate-bounce uppercase tracking-[0.3em] italic mb-1">Your Turn!</span>
-                    <div className="h-1.5 w-24 bg-white/5 rounded-full overflow-hidden">
-                       <div className="h-full bg-yellow-500 animate-[timer_15s_linear_infinite]"></div>
+                  <div className="flex flex-col items-center animate-in fade-in">
+                    <span className="text-xs font-black text-yellow-500 animate-bounce uppercase tracking-[0.4em] italic mb-3">Roll the Dice!</span>
+                    <div className="h-2 w-32 bg-white/10 rounded-full overflow-hidden p-0.5">
+                       <div className="h-full bg-yellow-500 rounded-full w-full animate-[timer_15s_linear_infinite]"></div>
                     </div>
                   </div>
                 )}
@@ -564,11 +672,11 @@ const App: React.FC = () => {
           </div>
 
           {gameState.winner && (
-            <div className="absolute inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center animate-in fade-in">
-               <div className="w-48 h-48 bg-yellow-500 rounded-[50px] flex items-center justify-center text-8xl shadow-[0_0_80px_#fbbf24] mb-12 animate-bounce rotate-6">👑</div>
-               <h2 className="text-7xl font-black italic text-white mb-2 uppercase tracking-tighter">VICTORY!</h2>
-               <p className="text-2xl font-black text-yellow-500 mb-12 uppercase tracking-widest">{gameState.players.find(p => p.color === gameState.winner)?.name} Won ৳{Math.floor(selectedStake * 1.8)}</p>
-               <button onClick={() => setView('LOBBY')} className="bg-[#f6b40e] text-black px-20 py-6 rounded-full font-black text-3xl active:scale-95 transition-all shadow-2xl shadow-yellow-500/20 border-b-8 border-yellow-700">CONTINUE</button>
+            <div className="absolute inset-0 z-[200] bg-black/98 flex flex-col items-center justify-center animate-in fade-in backdrop-blur-sm">
+               <div className="w-56 h-56 bg-gradient-to-tr from-yellow-400 to-amber-300 rounded-[60px] flex items-center justify-center text-9xl shadow-[0_0_100px_rgba(251,191,36,0.6)] mb-12 animate-bounce rotate-12">🏆</div>
+               <h2 className="text-8xl font-black italic text-white mb-2 uppercase tracking-tighter drop-shadow-[0_10px_10px_rgba(0,0,0,1)]">VICTORY!</h2>
+               <p className="text-3xl font-black text-yellow-500 mb-16 uppercase tracking-[0.2em]">{gameState.players.find(p => p.color === gameState.winner)?.name} Won ৳{Math.floor(selectedStake * 1.8)}</p>
+               <button onClick={() => setView('LOBBY')} className="bg-yellow-500 text-black px-24 py-7 rounded-[40px] font-black text-4xl active:scale-95 transition-all shadow-2xl border-b-[12px] border-yellow-700 hover:brightness-110">CONTINUE</button>
             </div>
           )}
         </div>
@@ -597,9 +705,9 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Persistent Version Label with Triple-Click for Admin Access */}
+      {/* Version & Admin Access Trigger */}
       {(view === 'LOGIN' || view === 'LOBBY' || view === 'ADMIN_AUTH') && (
-        <div className="absolute bottom-0 left-0 right-0 flex justify-center py-4 z-[200]">
+        <div className="absolute bottom-0 left-0 right-0 flex justify-center py-6 z-[200]">
           <span 
             onClick={() => {
               const next = adminClickCount + 1;
@@ -610,9 +718,9 @@ const App: React.FC = () => {
                 setAdminClickCount(next);
               }
             }}
-            className="text-[10px] font-black uppercase text-white/10 hover:text-white/30 cursor-pointer tracking-[0.4em] select-none px-8 py-3 transition-all"
+            className="text-[10px] font-black uppercase text-white/5 hover:text-white/20 cursor-pointer tracking-[0.5em] select-none px-10 py-4 transition-all"
           >
-            v1.0.4
+            VER 1.0.5 PRO
           </span>
         </div>
       )}

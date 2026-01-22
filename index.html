@@ -37,9 +37,9 @@
         background: linear-gradient(to bottom, #fff 10%, #fbbf24 40%, #ea580c 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        filter: drop-shadow(0 4px 0 #7c2d12) drop-shadow(0 8px 15px rgba(0,0,0,0.5));
-        letter-spacing: -0.02em;
-        line-height: 1.1;
+        filter: drop-shadow(0 6px 0 #7c2d12) drop-shadow(0 15px 25px rgba(0,0,0,0.6));
+        letter-spacing: -0.04em;
+        line-height: 0.95;
       }
 
       /* Animation for Scrolling Notice */
@@ -48,39 +48,46 @@
         100% { transform: translateX(-50%); }
       }
       .animate-scroll-text {
-        animation: scroll-text 20s linear infinite;
+        animation: scroll-text 30s linear infinite;
         display: flex;
         width: fit-content;
       }
 
+      @keyframes timer {
+        from { width: 100%; }
+        to { width: 0%; }
+      }
+
       .dotted-bg {
         background-color: #050a18;
-        background-image: radial-gradient(rgba(251, 191, 36, 0.05) 1.5px, transparent 1.5px);
-        background-size: 25px 25px;
+        background-image: radial-gradient(rgba(251, 191, 36, 0.04) 1.5px, transparent 1.5px);
+        background-size: 30px 30px;
       }
 
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
       
-      .dice-scene { width: 60px; height: 60px; perspective: 600px; margin: 0 auto; }
+      .dice-scene { width: 80px; height: 80px; perspective: 600px; margin: 0 auto; }
       .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.17, 0.67, 0.83, 0.67); }
-      .cube-face { position: absolute; width: 60px; height: 60px; background: radial-gradient(circle at 30% 30%, #ff4d4d, #b30000); border: 2px solid rgba(0,0,0,0.2); border-radius: 12px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); padding: 8px; box-sizing: border-box; box-shadow: inset 0 0 15px rgba(0,0,0,0.4); }
-      .dot { width: 10px; height: 10px; background-color: white; border-radius: 50%; justify-self: center; align-self: center; }
-      .face-1 { transform: rotateY(0deg) translateZ(30px); }
-      .face-2 { transform: rotateY(90deg) translateZ(30px); }
-      .face-3 { transform: rotateY(180deg) translateZ(30px); }
-      .face-4 { transform: rotateY(-90deg) translateZ(30px); }
-      .face-5 { transform: rotateX(90deg) translateZ(30px); }
-      .face-6 { transform: rotateX(-90deg) translateZ(30px); }
+      .cube-face { position: absolute; width: 80px; height: 80px; background: radial-gradient(circle at 30% 30%, #ff4d4d, #b30000); border: 3px solid rgba(0,0,0,0.25); border-radius: 18px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); padding: 12px; box-sizing: border-box; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); }
+      .dot { width: 14px; height: 14px; background-color: white; border-radius: 50%; justify-self: center; align-self: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+      .face-1 { transform: rotateY(0deg) translateZ(40px); }
+      .face-2 { transform: rotateY(90deg) translateZ(40px); }
+      .face-3 { transform: rotateY(180deg) translateZ(40px); }
+      .face-4 { transform: rotateY(-90deg) translateZ(40px); }
+      .face-5 { transform: rotateX(90deg) translateZ(40px); }
+      .face-6 { transform: rotateX(-90deg) translateZ(40px); }
       .show-1 { transform: rotateX(0deg) rotateY(0deg); }
       .show-2 { transform: rotateX(0deg) rotateY(-90deg); }
       .show-3 { transform: rotateX(0deg) rotateY(-180deg); }
       .show-4 { transform: rotateX(0deg) rotateY(90deg); }
       .show-5 { transform: rotateX(-90deg) rotateY(0deg); }
       .show-6 { transform: rotateX(90deg) rotateY(0deg); }
-      .rolling { animation: rolling 0.5s linear infinite; }
+      .rolling { animation: rolling 0.4s linear infinite; }
       @keyframes rolling { 0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); } 100% { transform: rotateX(720deg) rotateY(360deg) rotateZ(180deg); } }
+      .dice-jump { animation: jump 0.4s ease-out; }
+      @keyframes jump { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-40px); } }
     </style>
     <script type="importmap">
 {
