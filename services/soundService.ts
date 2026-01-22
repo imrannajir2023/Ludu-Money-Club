@@ -1,30 +1,49 @@
 
 const SOUND_URLS = {
-  // Classic board game dice shake sound
-  dice: 'https://cdn.pixabay.com/audio/2022/03/15/audio_7314732688.mp3', 
-  // Solid landing sound
-  dice_stop: 'https://assets.mixkit.co/active_storage/sfx/2567/2567-preview.mp3', 
-  // Pop/Step sound for moving pieces
-  move: 'https://cdn.pixabay.com/audio/2021/08/04/audio_06d6a2f92d.mp3',
-  // Aggressive capture/knockout sound
-  kill: 'https://cdn.pixabay.com/audio/2022/03/10/audio_c983a54721.mp3',
-  // Grand victory fanfare
-  win: 'https://cdn.pixabay.com/audio/2021/08/04/audio_5eb103437a.mp3',
-  // UI Button click
-  click: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
-  // Special chime for rolling a six
-  six: 'https://cdn.pixabay.com/audio/2021/08/04/audio_c340d85915.mp3'
+  // Snappy rattling dice
+  dice: 'https://assets.mixkit.co/active_storage/sfx/2005/2005-preview.mp3', 
+  // Landing sound
+  dice_stop: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3', 
+  // "Tok" sound for movement
+  move: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
+  // Impact sound for capture
+  kill: 'https://assets.mixkit.co/active_storage/sfx/1110/1110-preview.mp3',
+  // Finish/Home chime
+  win: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3',
+  // Button click
+  click: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
+  // Success chime for six
+  six: 'https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3'
 };
 
 class SoundService {
   private sounds: Record<string, HTMLAudioElement> = {};
   private muted: boolean = false;
+  private unlocked: boolean = false;
 
   constructor() {
-    Object.entries(SOUND_URLS).forEach(([key, url]) => {
-      this.sounds[key] = new Audio(url);
-      this.sounds[key].preload = 'auto';
+    if (typeof window !== 'undefined') {
+      Object.entries(SOUND_URLS).forEach(([key, url]) => {
+        const audio = new Audio(url);
+        audio.preload = 'auto';
+        this.sounds[key] = audio;
+      });
+    }
+  }
+
+  // This should be called on the first user interaction
+  unlock() {
+    if (this.unlocked) return;
+    Object.values(this.sounds).forEach(sound => {
+      sound.play().then(() => {
+        sound.pause();
+        sound.currentTime = 0;
+      }).catch(() => {
+        // Still locked or failed, that's fine
+      });
     });
+    this.unlocked = true;
+    console.log("Audio Unlocked");
   }
 
   play(name: keyof typeof SOUND_URLS) {
@@ -32,7 +51,16 @@ class SoundService {
     const sound = this.sounds[name];
     if (sound) {
       sound.currentTime = 0;
-      sound.play().catch(e => console.warn(`Sound ${name} play failed:`, e));
+      if (name === 'move') sound.playbackRate = 2.0; // Fast tok-tok
+      
+      const playPromise = sound.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.warn(`Playback failed for ${name}:`, error);
+          // If playback fails, it's usually because user hasn't interacted yet
+          this.unlocked = false;
+        });
+      }
     }
   }
 
