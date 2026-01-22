@@ -291,7 +291,8 @@ const App: React.FC = () => {
         if (token.distanceTraveled >= 51) { token.position = 100 + (token.distanceTraveled - 51); } else { token.position = (token.position + 1) % 52; }
         soundManager.play('move'); 
         setGameState(prev => prev ? ({ ...prev, players: [...players] }) : null);
-        await new Promise(r => setTimeout(r, 120)); 
+        // Faster piece move: 100ms like Ludo King
+        await new Promise(r => setTimeout(r, 100)); 
       }
     }
 
@@ -331,7 +332,7 @@ const App: React.FC = () => {
         setGameState(null); setView('LOBBY'); return;
       }
       switchTurn(dice === 6 || didCapture || didReachFinish);
-    }, 200); 
+    }, 150); 
   };
 
   const rollDice = useCallback(async () => {
@@ -356,14 +357,14 @@ const App: React.FC = () => {
             const player = prev.players[prev.currentPlayerIndex];
             const canMove = player.tokens.some(t => (t.state === TokenState.HOME && finalVal === 6) || (t.state === TokenState.PATH && (t.distanceTraveled + finalVal) <= 57));
             if (!canMove) { 
-                setTimeout(() => switchTurn(false), 600); 
+                setTimeout(() => switchTurn(false), 500); 
             }
             const nextState = { ...prev, diceValue: finalVal, isDiceRolled: true };
             syncMatchState(nextState); return nextState;
         });
         
         setIsRolling(false);
-    }, 650); 
+    }, 600); 
   }, [animating, isRolling, gameState, syncMatchState, switchTurn, isPracticeMode, handleInteraction]);
 
   useEffect(() => {
@@ -375,12 +376,14 @@ const App: React.FC = () => {
 
     if (cp.isBot) {
         if (!gameState.isDiceRolled) {
-            const rollDelay = 400 + Math.random() * 300;
+            // Faster bot roll: 300-600ms
+            const rollDelay = 300 + Math.random() * 300;
             turnTimeoutRef.current = window.setTimeout(rollDice, rollDelay);
         } else if (gameState.diceValue !== null) {
             const possibleMoves = cp.tokens.filter(t => (t.state === TokenState.HOME && gameState.diceValue === 6) || (t.state === TokenState.PATH && t.distanceTraveled + gameState.diceValue <= 57)).map(t => t.id);
             if (possibleMoves.length > 0) {
-                const moveDelay = 300 + Math.random() * 300;
+                // Faster bot move: 200-400ms after roll
+                const moveDelay = 200 + Math.random() * 200;
                 turnTimeoutRef.current = window.setTimeout(() => moveToken(possibleMoves[0]), moveDelay);
             }
         }

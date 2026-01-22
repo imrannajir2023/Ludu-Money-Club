@@ -1,18 +1,18 @@
 
 const SOUND_URLS = {
-  // Snappy rattling dice
-  dice: 'https://assets.mixkit.co/active_storage/sfx/2005/2005-preview.mp3', 
-  // Landing sound
-  dice_stop: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3', 
-  // "Tok" sound for movement
-  move: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
-  // Impact sound for capture
+  // Shaking dice in a cup sound
+  dice: 'https://www.soundjay.com/misc/sounds/dice-shake-1.mp3', 
+  // Clean dice stop click
+  dice_stop: 'https://www.soundjay.com/buttons/sounds/button-16.mp3', 
+  // Sharp pop sound (the iconic Tok-Tok)
+  move: 'https://www.soundjay.com/communication/sounds/pop-1.mp3',
+  // Impact/Crash for killing a piece
   kill: 'https://assets.mixkit.co/active_storage/sfx/1110/1110-preview.mp3',
-  // Finish/Home chime
+  // Home/Win chime
   win: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3',
-  // Button click
-  click: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
-  // Success chime for six
+  // Simple UI click
+  click: 'https://www.soundjay.com/buttons/sounds/button-20.mp3',
+  // Success chime for a six
   six: 'https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3'
 };
 
@@ -31,19 +31,15 @@ class SoundService {
     }
   }
 
-  // This should be called on the first user interaction
   unlock() {
     if (this.unlocked) return;
     Object.values(this.sounds).forEach(sound => {
       sound.play().then(() => {
         sound.pause();
         sound.currentTime = 0;
-      }).catch(() => {
-        // Still locked or failed, that's fine
-      });
+      }).catch(() => {});
     });
     this.unlocked = true;
-    console.log("Audio Unlocked");
   }
 
   play(name: keyof typeof SOUND_URLS) {
@@ -51,13 +47,18 @@ class SoundService {
     const sound = this.sounds[name];
     if (sound) {
       sound.currentTime = 0;
-      if (name === 'move') sound.playbackRate = 2.0; // Fast tok-tok
+      
+      // Speed up the "Tok" sound slightly to make it snappier
+      if (name === 'move') {
+        sound.playbackRate = 2.5; 
+      } else {
+        sound.playbackRate = 1.0;
+      }
       
       const playPromise = sound.play();
       if (playPromise !== undefined) {
         playPromise.catch(error => {
           console.warn(`Playback failed for ${name}:`, error);
-          // If playback fails, it's usually because user hasn't interacted yet
           this.unlocked = false;
         });
       }
