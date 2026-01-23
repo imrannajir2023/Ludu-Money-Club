@@ -26,20 +26,8 @@ const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value,
 };
 
 const PlayerProfileOverlay: React.FC<{ player: Player, isActive: boolean, position: 'TL' | 'TR' | 'BL' | 'BR' }> = ({ player, isActive, position }) => {
-  const posClasses = {
-    TL: 'top-[-85px] left-0',
-    TR: 'top-[-85px] right-0',
-    BL: 'bottom-[-85px] left-0',
-    BR: 'bottom-[-85px] right-0'
-  };
-
-  const borderColors = {
-    [PlayerColor.RED]: 'border-red-500',
-    [PlayerColor.GREEN]: 'border-green-500',
-    [PlayerColor.YELLOW]: 'border-yellow-400',
-    [PlayerColor.BLUE]: 'border-blue-500'
-  };
-
+  const posClasses = { TL: 'top-[-85px] left-0', TR: 'top-[-85px] right-0', BL: 'bottom-[-85px] left-0', BR: 'bottom-[-85px] right-0' };
+  const borderColors = { [PlayerColor.RED]: 'border-red-500', [PlayerColor.GREEN]: 'border-green-500', [PlayerColor.YELLOW]: 'border-yellow-400', [PlayerColor.BLUE]: 'border-blue-500' };
   return (
     <div className={`absolute ${posClasses[position]} flex flex-col items-center z-50 transition-all duration-300 ${isActive ? 'scale-110' : 'opacity-60 scale-90'}`}>
        <div className={`relative p-1 rounded-2xl border-4 ${isActive ? 'border-yellow-500 shadow-[0_0_25px_#fbbf24]' : borderColors[player.color]}`}>
@@ -60,29 +48,27 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
-  
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [authError, setAuthError] = useState('');
-
   const [adminId, setAdminId] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [adminTapCount, setAdminTapCount] = useState(0);
-
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isWalletOpen, setWalletOpen] = useState(false);
   const [isProfileOpen, setProfileOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [isRolling, setIsRolling] = useState(false);
   const [selectedStake, setSelectedStake] = useState(50);
   const [playerCount, setPlayerCount] = useState<2 | 4>(2);
   const [foundPlayers, setFoundPlayers] = useState<Player[]>([]);
   const [commentary, setCommentary] = useState<string>('Welcome to Ludo Money Arena!');
-
   const botActionTimeout = useRef<any>(null);
   const autoForwardTimeout = useRef<any>(null);
+  const autoMoveTimeout = useRef<any>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -122,16 +108,12 @@ const App: React.FC = () => {
     setAuthError('');
     if (!phone || !password) return setAuthError('Please fill all fields');
     if (isSignUp && !name) return setAuthError('Please enter name');
-
     if (isSignUp) {
       const exists = allUsers.find(u => u.phone === phone);
       if (exists) return setAuthError('User already exists');
       const newUser: UserProfile = {
-        name, phone, password, balance: 50,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name + Math.random()}`,
-        stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
-        history: [],
-        country: 'Bangladesh'
+        name, phone, password, balance: 50, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name + Math.random()}`,
+        stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: [], country: 'Bangladesh'
       };
       await databaseService.updateUser(newUser);
       setUser(newUser);
@@ -139,13 +121,7 @@ const App: React.FC = () => {
       setView('LOBBY');
     } else {
       const found = allUsers.find(u => u.phone === phone && u.password === password);
-      if (found) {
-        setUser(found);
-        localStorage.setItem('LUDO_SESSION', JSON.stringify(found));
-        setView('LOBBY');
-      } else {
-        setAuthError('Invalid credentials');
-      }
+      if (found) { setUser(found); localStorage.setItem('LUDO_SESSION', JSON.stringify(found)); setView('LOBBY'); } else { setAuthError('Invalid credentials'); }
     }
   };
 
@@ -155,122 +131,57 @@ const App: React.FC = () => {
     setUser(updatedUser);
     localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
     await databaseService.updateUser(updatedUser);
-    soundManager.play('win');
-  };
-
-  const handleAdminAuth = () => {
-    setAuthError('');
-    if (adminId === 'admin' && adminPass === 'admin123') {
-      setView('ADMIN');
-      setAdminId('');
-      setAdminPass('');
-      setAdminTapCount(0);
-    } else {
-      setAuthError('Invalid Admin Credentials');
-    }
-  };
-
-  const handleHiddenAdminTap = () => {
-    const newCount = adminTapCount + 1;
-    setAdminTapCount(newCount);
-    if (newCount >= 3) {
-      setView('ADMIN_AUTH');
-      setAdminTapCount(0);
-    }
-    setTimeout(() => {
-      setAdminTapCount(0);
-    }, 2000);
   };
 
   const startFinding = async (count: 2 | 4) => {
-    if (!user) return;
-    if (user.balance < selectedStake) return alert("Insufficient Balance!");
+    if (!user || user.balance < selectedStake) {
+      alert("Insufficient balance!");
+      return;
+    }
     
-    const updatedUser = { ...user, balance: user.balance - selectedStake };
-    setUser(updatedUser);
-    await databaseService.updateUser(updatedUser);
-
-    setPlayerCount(count);
+    soundManager.play('click');
+    const updatedUser = { ...user, balance: user.balance - selectedStake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
+    await handleUpdateProfile(updatedUser);
+    
     setView('FINDING');
     setFoundPlayers([]);
-    soundManager.play('click');
+    const simulatedBots: Player[] = [];
+    const opponentColors = count === 2 ? [PlayerColor.YELLOW] : [PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
 
-    const playersToFind = count - 1;
-    let found = 0;
-    const colors = [PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
-    
-    const bots: Player[] = [];
-    const searchInterval = setInterval(() => {
-      if (found < playersToFind) {
-        const botIden = getRandomBotIdentity();
-        const newBot: Player = {
-          id: `bot-${found}`,
-          name: botIden.name,
-          country: botIden.country,
-          flag: botIden.flag,
-          color: colors[found],
-          isBot: true,
-          avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIden.name + Math.random()}`,
-          tokens: []
-        };
-        bots.push(newBot);
-        setFoundPlayers([...bots]);
-        found++;
-        soundManager.play('click');
-      } else {
-        clearInterval(searchInterval);
-        setTimeout(() => initGame(count, bots), 1000);
-      }
-    }, 1200 + Math.random() * 1500);
-  };
-
-  const initGame = (count: number, bots: Player[]) => {
-    if (!user) return;
-    const colors = count === 2 
-      ? [PlayerColor.RED, PlayerColor.YELLOW] 
-      : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
-
-    const players: Player[] = colors.map((color, i) => {
-      const isUser = i === 0;
-      const botIdentity = isUser ? null : bots[i-1];
-      return {
-        id: isUser ? 'user' : `bot-${i}`,
-        name: isUser ? user.name : (botIdentity?.name || 'Bot Player'),
-        country: isUser ? 'Bangladesh' : (botIdentity?.country || 'Global'),
-        flag: isUser ? '🇧🇩' : (botIdentity?.flag || '🚩'),
-        color, isBot: !isUser,
-        avatarUrl: isUser ? user.avatar : (botIdentity?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=Bot${i}`),
-        tokens: Array(4).fill(null).map((_, ti) => ({
-          id: (i * 10) + ti, color, state: TokenState.HOME, position: 0, distanceTraveled: 0
-        }))
+    for (const color of opponentColors) {
+      await new Promise(r => setTimeout(r, 1200 + Math.random() * 1000));
+      const botIdentity = getRandomBotIdentity();
+      const bot: Player = {
+        id: `bot-${color}-${Date.now()}`,
+        name: botIdentity.name, country: botIdentity.country, flag: botIdentity.flag, color: color, isBot: true,
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIdentity.name + Math.random()}`, tokens: []
       };
+      simulatedBots.push(bot);
+      setFoundPlayers([...simulatedBots]);
+      soundManager.play('click');
+    }
+
+    await new Promise(r => setTimeout(r, 1000));
+    const gamePlayers: Player[] = [];
+    const allColors = count === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+
+    allColors.forEach((color, i) => {
+      let p: Player;
+      if (color === PlayerColor.RED) {
+        p = { id: 'user', name: user.name, country: user.country || 'Bangladesh', flag: user.flag || '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user.avatar, tokens: [] };
+      } else {
+        const simBot = simulatedBots.find(b => b.color === color)!;
+        p = { ...simBot };
+      }
+      p.tokens = [0, 1, 2, 3].map(id => ({ id: (i * 4) + id, color: p.color, state: TokenState.HOME, position: 0, distanceTraveled: 0 }));
+      gamePlayers.push(p);
     });
 
-    setGameState({
-      players, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false,
-      winner: null, log: ['Game Started'], lastAction: 'Roll Dice', consecutiveSixes: 0
-    });
+    setGameState({ players: gamePlayers, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: 'Battle Started', consecutiveSixes: 0 });
     setView('GAME');
     soundManager.play('six');
-    setCommentary('Good luck everyone! Let the battle begin.');
+    setCommentary(`Tournament started! Total Pool: ৳${selectedStake * count}`);
   };
-
-  const nextTurn = useCallback(() => {
-    if (autoForwardTimeout.current) {
-        clearTimeout(autoForwardTimeout.current);
-        autoForwardTimeout.current = null;
-    }
-    setGameState(prev => {
-      if (!prev || prev.winner) return prev;
-      return { 
-        ...prev, 
-        currentPlayerIndex: (prev.currentPlayerIndex + 1) % prev.players.length, 
-        diceValue: null, 
-        isDiceRolled: false,
-        consecutiveSixes: 0 
-      };
-    });
-  }, []);
 
   const rollDice = async () => {
     if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
@@ -282,32 +193,41 @@ const App: React.FC = () => {
       soundManager.play('dice_stop');
       setGameState(prev => {
         if (!prev) return null;
-        return { 
-          ...prev, 
-          diceValue: val, 
-          isDiceRolled: true, 
-          consecutiveSixes: val === 6 ? prev.consecutiveSixes + 1 : 0 
-        };
+        const newConsecSixes = val === 6 ? prev.consecutiveSixes + 1 : 0;
+        if (newConsecSixes === 3) {
+           setCommentary("Oh no! 3 Sixes in a row. Turn skipped!");
+           setTimeout(nextTurn, 1000);
+           return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: 3 };
+        }
+        return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: newConsecSixes };
       });
     }, 800);
   };
 
+  const nextTurn = useCallback(() => {
+    if (autoForwardTimeout.current) { clearTimeout(autoForwardTimeout.current); autoForwardTimeout.current = null; }
+    if (autoMoveTimeout.current) { clearTimeout(autoMoveTimeout.current); autoMoveTimeout.current = null; }
+    setGameState(prev => {
+      if (!prev || prev.winner) return prev;
+      return { ...prev, currentPlayerIndex: (prev.currentPlayerIndex + 1) % prev.players.length, diceValue: null, isDiceRolled: false, consecutiveSixes: 0 };
+    });
+  }, []);
+
   const moveToken = async (tokenData: Token) => {
-    if (autoForwardTimeout.current) {
-        clearTimeout(autoForwardTimeout.current);
-        autoForwardTimeout.current = null;
-    }
-    if (!gameState || !gameState.isDiceRolled || isRolling || gameState.winner) return;
+    if (!gameState || !gameState.isDiceRolled || isRolling || gameState.winner || gameState.consecutiveSixes === 3) return;
+    if (autoForwardTimeout.current) { clearTimeout(autoForwardTimeout.current); autoForwardTimeout.current = null; }
+    if (autoMoveTimeout.current) { clearTimeout(autoMoveTimeout.current); autoMoveTimeout.current = null; }
+    
     const players = [...gameState.players];
     const player = players[gameState.currentPlayerIndex];
-    if (!player) return;
     const tokenIdx = player.tokens.findIndex(t => t.id === tokenData.id);
-    if (tokenIdx === -1) return;
     const token = { ...player.tokens[tokenIdx] };
     const val = gameState.diceValue!;
+
     if (token.state === TokenState.WIN) return;
     if (token.state === TokenState.HOME && val !== 6) return;
     if (token.state === TokenState.PATH && token.distanceTraveled + val > 56) return;
+
     let capturedToken = false;
     if (token.state === TokenState.HOME && val === 6) {
       token.state = TokenState.PATH;
@@ -317,20 +237,19 @@ const App: React.FC = () => {
       if (token.distanceTraveled === 56) {
         token.state = TokenState.WIN;
         soundManager.play('win');
-      } else {
+      } else if (token.distanceTraveled < 51) {
         const startPos = START_POSITIONS[token.color];
         const absolutePos = (token.distanceTraveled + startPos) % 52;
         const isSafe = SAFE_SPOTS.includes(absolutePos);
         if (!isSafe) {
-          players.forEach((otherPlayer, pIdx) => {
+          players.forEach((otherP, pIdx) => {
             if (pIdx !== gameState.currentPlayerIndex) {
-              otherPlayer.tokens.forEach((otherToken) => {
-                if (otherToken.state === TokenState.PATH) {
-                  const otherStart = START_POSITIONS[otherToken.color];
-                  const otherAbsolute = (otherToken.distanceTraveled + otherStart) % 52;
-                  if (otherAbsolute === absolutePos) {
-                    otherToken.state = TokenState.HOME;
-                    otherToken.distanceTraveled = 0;
+              otherP.tokens.forEach((otherT) => {
+                if (otherT.state === TokenState.PATH && otherT.distanceTraveled < 51) {
+                  const oStart = START_POSITIONS[otherT.color];
+                  if ((otherT.distanceTraveled + oStart) % 52 === absolutePos) {
+                    otherT.state = TokenState.HOME;
+                    otherT.distanceTraveled = 0;
                     capturedToken = true;
                   }
                 }
@@ -340,151 +259,133 @@ const App: React.FC = () => {
         }
       }
     }
+    
     player.tokens[tokenIdx] = token;
     soundManager.play('move');
     if (capturedToken) {
       soundManager.play('kill');
-      const comment = await generateGameCommentary("just executed a brilliant capture!", player.name);
+      const comment = await generateGameCommentary("just captured an opponent!", player.name);
       setCommentary(comment);
     }
+
     if (player.tokens.every(t => t.state === TokenState.WIN)) {
-      setGameState(prev => prev ? { ...prev, players, winner: player.color } : null);
-      if (player.id === 'user' && user) {
-        const prize = Math.floor(selectedStake * 1.8);
-        const updatedUser = { ...user, balance: user.balance + prize };
-        setUser(updatedUser);
-        await databaseService.updateUser(updatedUser);
-      }
+      setGameState(prev => {
+         if (!prev) return null;
+         if (player.color === PlayerColor.RED) {
+             const pool = selectedStake * players.length;
+             handleUpdateProfile({ 
+                 balance: (user?.balance || 0) + pool,
+                 stats: { 
+                     ...user!.stats, 
+                     wins: user!.stats.wins + 1, 
+                     totalWinnings: user!.stats.totalWinnings + pool 
+                 } 
+             });
+         }
+         return { ...prev, players, winner: player.color };
+      });
       return;
     }
+
     const continueTurn = val === 6 || capturedToken;
-    setGameState(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        players,
-        isDiceRolled: false,
-        diceValue: null,
-        currentPlayerIndex: continueTurn ? prev.currentPlayerIndex : (prev.currentPlayerIndex + 1) % prev.players.length
-      };
-    });
+    setGameState(prev => prev ? { 
+        ...prev, players, isDiceRolled: false, diceValue: null, 
+        currentPlayerIndex: continueTurn ? prev.currentPlayerIndex : (prev.currentPlayerIndex + 1) % prev.players.length 
+    } : null);
   };
 
+  // AUTO-MOVE LOGIC FOR HUMAN PLAYERS
   useEffect(() => {
-    if (!gameState || gameState.winner || isRolling) return;
+    if (view !== 'GAME' || !gameState || gameState.winner || isRolling) return;
+    
     const activePlayer = gameState.players[gameState.currentPlayerIndex];
     if (!activePlayer) return;
+
     if (activePlayer.isBot) {
+        // Existing Bot Logic
         if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
         botActionTimeout.current = setTimeout(() => {
+            if (!gameState.isDiceRolled) rollDice();
+            else {
+                const val = gameState.diceValue!;
+                const valid = activePlayer.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
+                if (valid.length > 0) moveToken(valid[0]); else nextTurn();
+            }
+        }, 1200);
+    } else {
+        // Auto-Move Logic for Human Player (10s timer)
+        if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
+        
+        autoMoveTimeout.current = setTimeout(() => {
             if (!gameState.isDiceRolled) {
                 rollDice();
             } else {
                 const val = gameState.diceValue!;
-                const valid = activePlayer.tokens.filter(t => {
-                    if (t.state === TokenState.WIN) return false;
-                    if (t.state === TokenState.HOME) return val === 6;
-                    return t.distanceTraveled + val <= 56;
-                });
+                const valid = activePlayer.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
                 if (valid.length > 0) {
-                    let bestToken = valid[0];
-                    const captureToken = valid.find(t => {
-                        const start = START_POSITIONS[t.color];
-                        const dist = t.state === TokenState.HOME ? 0 : t.distanceTraveled + val;
-                        const abs = (dist + start) % 52;
-                        if (SAFE_SPOTS.includes(abs)) return false;
-                        return gameState.players.some((other, pIdx) => {
-                            if (pIdx === gameState.currentPlayerIndex) return false;
-                            return other.tokens.some(ot => ot.state === TokenState.PATH && (ot.distanceTraveled + START_POSITIONS[ot.color]) % 52 === abs);
-                        });
-                    });
-                    if (captureToken) bestToken = captureToken;
-                    else {
-                        const nearingWin = valid.find(t => t.distanceTraveled > 40);
-                        const outFromHome = valid.find(t => t.state === TokenState.HOME);
-                        if (nearingWin) bestToken = nearingWin;
-                        else if (outFromHome) bestToken = outFromHome;
-                    }
-                    moveToken(bestToken);
+                    moveToken(valid[0]);
                 } else {
                     nextTurn();
                 }
             }
-        }, 1500 + Math.random() * 1000);
+        }, 10000); // 10 seconds timeout matched with CSS animation
     }
-  }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled, isRolling]);
+
+    return () => {
+      if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
+      if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
+    };
+  }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled, isRolling, view]);
+
+  const handleHiddenAdminTap = () => {
+    const newCount = adminTapCount + 1;
+    setAdminTapCount(newCount);
+    if (newCount >= 3) { setView('ADMIN_AUTH'); setAdminTapCount(0); }
+    setTimeout(() => setAdminTapCount(0), 2000);
+  };
 
   return (
     <div className="h-screen w-full bg-[#020617] text-white font-['Fredoka'] dotted-bg overflow-hidden flex flex-col relative">
       {view === 'SPLASH' && (
         <div className="h-full flex flex-col items-center justify-center animate-in fade-in">
           <h1 className="ludo-money-logo text-7xl mb-12">LUDO MONEY</h1>
-          <div className="w-72 h-3 bg-white/5 rounded-full overflow-hidden border border-white/10 p-0.5">
-            <div className="h-full bg-gradient-to-r from-yellow-500 to-amber-500 shadow-[0_0_15px_rgba(251,191,36,0.5)] rounded-full transition-all duration-300" style={{width: `${loadingProgress}%`}}></div>
-          </div>
+          <div className="w-72 h-3 bg-white/5 rounded-full overflow-hidden border border-white/10 p-0.5"><div className="h-full bg-gradient-to-r from-yellow-500 to-amber-500 shadow-lg rounded-full transition-all duration-300" style={{width: `${loadingProgress}%`}}></div></div>
           <p className="mt-4 text-xs font-black uppercase tracking-[0.5em] text-white/20">Loading Arena</p>
         </div>
       )}
 
       {(view === 'LOGIN' || view === 'ADMIN_AUTH') && (
         <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18] relative">
-           <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-blue-600/10 to-transparent"></div>
-           <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 py-12 rounded-[50px] w-full max-w-[420px] border border-white/10 flex flex-col items-center shadow-[0_30px_60px_rgba(0,0,0,0.5)] animate-in zoom-in-95 z-10">
-              <h2 className="ludo-money-logo text-6xl mb-12 uppercase font-black italic tracking-tight scale-110">
-                {view === 'ADMIN_AUTH' ? 'ADMIN' : (isSignUp ? 'SIGNUP' : 'LOGIN')}
-              </h2>
-              {authError && <div className="text-red-500 mb-6 text-[11px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">{authError}</div>}
+           <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 py-12 rounded-[50px] w-full max-w-[420px] border border-white/10 flex flex-col items-center shadow-2xl animate-in zoom-in-95 z-10">
+              <h2 className="ludo-money-logo text-6xl mb-12 italic font-black">{view === 'ADMIN_AUTH' ? 'ADMIN' : (isSignUp ? 'SIGNUP' : 'LOGIN')}</h2>
+              {authError && <div className="text-red-500 mb-6 text-[10px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">{authError}</div>}
               <div className="w-full space-y-5 mb-10">
-                 {view === 'LOGIN' && isSignUp && (
-                   <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-white/20 ml-5 tracking-widest">Display Name</label>
-                      <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />
-                   </div>
-                 )}
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-white/20 ml-5 tracking-widest">Phone Number</label>
-                    <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />
-                 </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-white/20 ml-5 tracking-widest">Password</label>
-                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />
-                 </div>
+                 {view === 'LOGIN' && isSignUp && <input type="text" placeholder="Display Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />}
+                 <input type="tel" placeholder="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />
+                 <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />
               </div>
-              <button onClick={view === 'ADMIN_AUTH' ? handleAdminAuth : handleAuth} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all">
-                 {view === 'ADMIN_AUTH' ? 'Enter Console' : (isSignUp ? 'Create Account' : 'Login Now')}
-              </button>
-              {view === 'LOGIN' && (
-                <button onClick={() => setIsSignUp(!isSignUp)} className="mt-6 text-white/40 text-[10px] font-black uppercase tracking-widest hover:text-white transition-colors">
-                   {isSignUp ? 'Already have an account? Login' : 'New here? Create Account'}
-                </button>
-              )}
+              <button onClick={view === 'ADMIN_AUTH' ? async () => { if (adminId === 'admin' && adminPass === 'admin123') setView('ADMIN'); else setAuthError('Invalid Admin Credentials'); } : handleAuth} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all">Enter</button>
+              {view === 'LOGIN' && <button onClick={() => setIsSignUp(!isSignUp)} className="mt-6 text-white/40 text-[10px] font-black uppercase tracking-widest">{isSignUp ? 'Login instead' : 'Create Account'}</button>}
            </div>
-           {view === 'LOGIN' && (
-             <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/10 transition-opacity text-[10px] font-black uppercase tracking-widest hover:opacity-50">
-                VER 1.0.6 PRO
-             </button>
-           )}
+           {view === 'LOGIN' && <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/10 text-[10px] font-black uppercase tracking-widest">VER 1.0.6 PRO</button>}
         </div>
       )}
 
       {view === 'LOBBY' && user && (
         <div className="flex-1 flex flex-col animate-in fade-in overflow-y-auto no-scrollbar">
-          {/* Header */}
           <div className="flex justify-between items-center p-6 pb-2">
-            <div className="flex items-center gap-3 cursor-pointer group active:scale-95 transition-transform" onClick={() => setProfileOpen(true)}>
+            <div className="flex items-center gap-3 cursor-pointer group active:scale-95 transition-all" onClick={() => setProfileOpen(true)}>
               <div className="w-12 h-12 rounded-xl border-2 border-yellow-500 bg-slate-800 overflow-hidden relative shadow-lg">
                 <img src={user.avatar} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                   <span className="text-[8px] font-black uppercase text-white">View</span>
-                </div>
               </div>
               <div>
                 <h3 className="text-sm font-black uppercase italic tracking-tighter leading-none">{user.name}</h3>
                 <p className="text-[8px] font-bold text-white/40 uppercase tracking-widest mt-1">Player Rank: Gold</p>
               </div>
             </div>
+            
             <div className="flex items-center gap-2">
-                <button onClick={() => setSettingsOpen(true)} className="bg-slate-900/80 border border-white/10 p-2.5 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform">
+                <button onClick={() => setSettingsOpen(true)} className="bg-slate-900/80 border border-red-600/50 p-2.5 rounded-full shadow-[0_0_15px_rgba(220,38,38,0.3)] active:scale-90 transition-transform">
                    <span className="text-lg">⚙️</span>
                 </button>
                 <button onClick={() => setWalletOpen(true)} className="bg-slate-900/80 border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg active:scale-95 transition-transform">
@@ -493,60 +394,45 @@ const App: React.FC = () => {
                 </button>
             </div>
           </div>
-
           <div className="bg-yellow-400 h-8 flex items-center overflow-hidden border-y border-yellow-600 shadow-md">
-             <div className="animate-scroll-text whitespace-nowrap flex items-center gap-10">
-                <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🏆 TOURNAMENT STARTING IN 15 MINS! JOIN NOW 🏆</span>
-                <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🎲 RONY JUST WITHDREW ৳২০০০ TO BKASH 🎲</span>
-                <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🏆 TOURNAMENT STARTING IN 15 MINS! JOIN NOW 🏆</span>
-             </div>
+            <div className="animate-scroll-text whitespace-nowrap flex items-center gap-10">
+              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🏆 TOURNAMENT STARTING IN 15 MINS! JOIN NOW 🏆</span>
+              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🎲 RONY JUST WITHDREW ৳২০০০ TO BKASH 🎲</span>
+            </div>
           </div>
-
           <div className="p-6 pt-4 space-y-6 flex-1 flex flex-col">
             <div className="grid grid-cols-2 gap-4">
-               <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 p-4 rounded-[30px] flex items-center gap-3 border border-indigo-400/30 shadow-xl relative overflow-hidden group active:scale-95 transition-all">
-                  <div className="absolute -right-2 -bottom-2 opacity-10 text-6xl group-hover:scale-125 transition-all">🎁</div>
+               <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 p-4 rounded-[30px] border border-indigo-400/30 flex items-center gap-3 shadow-xl active:scale-95 transition-all relative overflow-hidden group">
                   <span className="text-3xl">🎁</span>
-                  <div>
-                    <p className="text-[8px] font-black uppercase text-indigo-300 tracking-widest mb-0.5">Daily Reward</p>
-                    <h4 className="text-[11px] font-black uppercase italic tracking-tighter">Claim ৳৫০</h4>
-                  </div>
+                  <div><p className="text-[8px] font-black uppercase text-indigo-300">Daily Reward</p><h4 className="text-[11px] font-black uppercase italic">Claim ৳৫০</h4></div>
                </div>
-               <div className="bg-gradient-to-br from-orange-600 to-orange-800 p-4 rounded-[30px] flex items-center gap-3 border border-orange-400/30 shadow-xl relative overflow-hidden group active:scale-95 transition-all">
-                  <div className="absolute -right-2 -bottom-2 opacity-10 text-6xl group-hover:scale-125 transition-all">🔥</div>
+               <div className="bg-gradient-to-br from-orange-600 to-orange-800 p-4 rounded-[30px] border border-orange-400/30 flex items-center gap-3 shadow-xl active:scale-95 transition-all relative overflow-hidden group">
                   <span className="text-3xl">🔥</span>
-                  <div>
-                    <p className="text-[8px] font-black uppercase text-orange-200 tracking-widest mb-0.5">Hot Event</p>
-                    <h4 className="text-[11px] font-black uppercase italic tracking-tighter">2X Points</h4>
-                  </div>
+                  <div><p className="text-[8px] font-black uppercase text-orange-200">Hot Event</p><h4 className="text-[11px] font-black uppercase italic">2X Points</h4></div>
                </div>
             </div>
-
-            <div className="flex-1 bg-gradient-to-b from-blue-600 to-blue-800 rounded-[50px] p-8 border-4 border-blue-400/20 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center justify-between relative overflow-hidden">
-               <div className="bg-slate-900/40 p-1.5 rounded-full flex gap-1 border border-white/5 backdrop-blur-sm z-10">
-                  <button onClick={() => setPlayerCount(2)} className={`px-8 py-2.5 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40 hover:text-white/60'}`}>2 Player</button>
-                  <button onClick={() => setPlayerCount(4)} className={`px-8 py-2.5 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40 hover:text-white/60'}`}>4 Player</button>
+            <div className="flex-1 bg-gradient-to-b from-blue-600 to-blue-800 rounded-[50px] p-8 border-4 border-blue-400/20 shadow-2xl flex flex-col items-center justify-between relative overflow-hidden">
+               <div className="bg-slate-900/40 p-1.5 rounded-full flex gap-1 z-10">
+                  <button onClick={() => setPlayerCount(2)} className={`px-8 py-2.5 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40 hover:text-white'}`}>2 Player</button>
+                  <button onClick={() => setPlayerCount(4)} className={`px-8 py-2.5 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40 hover:text-white'}`}>4 Player</button>
                </div>
                <div className="flex flex-col items-center gap-4 py-6 z-10">
-                  <div className="w-32 h-32 bg-yellow-400 rounded-[35px] flex items-center justify-center shadow-[0_15px_30px_rgba(0,0,0,0.3)] border-b-8 border-yellow-600 active:translate-y-1 transition-all">
+                  <div className="w-32 h-32 bg-yellow-400 rounded-[35px] flex items-center justify-center shadow-2xl border-b-8 border-yellow-600 active:translate-y-1">
                      <div className="w-16 h-16 bg-white rounded-xl rotate-12 flex items-center justify-center shadow-lg border-b-4 border-slate-300">
                         <div className="w-4 h-4 bg-red-600 rounded-full"></div>
                      </div>
                   </div>
                   <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.2)]">Pro Arena</h2>
                </div>
-               <div className="w-full max-sm grid grid-cols-4 gap-2 z-10">
-                  {[50, 100, 500, 1000].map(stake => (
-                    <button key={stake} onClick={() => setSelectedStake(stake)} className={`py-3 rounded-xl font-black text-[10px] border-2 transition-all ${selectedStake === stake ? 'bg-yellow-400 border-yellow-300 text-black shadow-lg scale-105' : 'bg-slate-900/40 border-white/5 text-white/40'}`}>৳{stake}</button>
-                  ))}
+               <div className="w-full grid grid-cols-4 gap-2 z-10">
+                  {[50, 100, 500, 1000].map(stake => (<button key={stake} onClick={() => setSelectedStake(stake)} className={`py-3 rounded-xl font-black text-[10px] border-2 transition-all ${selectedStake === stake ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-md' : 'bg-slate-900/40 border-white/5 text-white/40'}`}>৳{stake}</button>))}
                </div>
-               <button onClick={() => startFinding(playerCount)} className="w-full mt-6 py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[30px] font-black text-xl uppercase italic tracking-tight text-black border-b-8 border-amber-800 active:translate-y-2 transition-all shadow-xl z-10">Start Battle</button>
+               <button onClick={() => startFinding(playerCount)} className="w-full mt-6 py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[30px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 transition-all shadow-xl z-10">Start Battle</button>
             </div>
           </div>
-
           <div className="bg-slate-900/90 backdrop-blur-xl border-t border-white/5 flex justify-around p-4">
              <button className="flex flex-col items-center gap-1 group">
-                <div className="w-6 h-6 bg-yellow-400 rounded-md flex items-center justify-center text-xs shadow-md">🏠</div>
+                <div className="w-6 h-6 bg-yellow-400 rounded-md flex items-center justify-center text-xs shadow-md group-active:scale-90 transition-transform">🏠</div>
                 <span className="text-[8px] font-black uppercase text-yellow-400 tracking-widest">Home</span>
              </button>
              <button className="flex flex-col items-center gap-1 opacity-40 hover:opacity-100 transition-opacity">
@@ -561,38 +447,19 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Profile Modal */}
+      {/* Profile & Settings Modals Implementation */}
       {isProfileOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
            <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 overflow-hidden shadow-2xl relative">
-              <div className="p-6 bg-gradient-to-r from-blue-700 to-indigo-900 flex justify-between items-center">
-                 <h2 className="text-xl font-black uppercase italic tracking-tighter">My Profile</h2>
-                 <button onClick={() => setProfileOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button>
-              </div>
+              <div className="p-6 bg-gradient-to-r from-blue-700 to-indigo-900 flex justify-between items-center"><h2 className="text-xl font-black uppercase italic tracking-tighter">My Profile</h2><button onClick={() => setProfileOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button></div>
               <div className="p-8 space-y-6">
                  <div className="flex flex-col items-center gap-4">
-                    <div className="relative group">
-                       <div className="w-28 h-28 rounded-[35px] border-4 border-yellow-500 overflow-hidden shadow-xl bg-slate-800">
-                          <img src={user.avatar} className="w-full h-full object-cover" />
-                       </div>
-                       <button onClick={() => handleUpdateProfile({ avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name + Math.random()}` })} className="absolute -bottom-2 -right-2 bg-yellow-500 text-black w-10 h-10 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform">
-                          <span className="text-xl">📷</span>
-                       </button>
-                    </div>
-                    <div className="text-center">
-                       <h3 className="text-2xl font-black text-white italic tracking-tighter leading-none">{user.name}</h3>
-                       <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest mt-1">{user.phone}</p>
-                    </div>
+                    <div className="relative group"><div className="w-28 h-28 rounded-[35px] border-4 border-yellow-500 overflow-hidden shadow-xl bg-slate-800"><img src={user.avatar} className="w-full h-full object-cover" /></div><button onClick={() => handleUpdateProfile({ avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name + Math.random()}` })} className="absolute -bottom-2 -right-2 bg-yellow-500 text-black w-10 h-10 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform">📷</button></div>
+                    <div className="text-center"><h3 className="text-2xl font-black text-white italic tracking-tighter leading-none">{user.name}</h3><p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest mt-1">{user.phone}</p></div>
                  </div>
                  <div className="space-y-4">
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-black uppercase text-white/20 ml-2 tracking-widest">Full Name</label>
-                       <input type="text" defaultValue={user.name} onBlur={(e) => handleUpdateProfile({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-yellow-500 outline-none transition-all" />
-                    </div>
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-black uppercase text-white/20 ml-2 tracking-widest">Address / Country</label>
-                       <input type="text" defaultValue={user.country || 'Bangladesh'} onBlur={(e) => handleUpdateProfile({ country: e.target.value })} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-yellow-500 outline-none transition-all" />
-                    </div>
+                    <input type="text" defaultValue={user.name} onBlur={(e) => handleUpdateProfile({ name: e.target.value })} placeholder="Full Name" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-yellow-500 outline-none transition-all" />
+                    <input type="text" defaultValue={user.country || 'Bangladesh'} onBlur={(e) => handleUpdateProfile({ country: e.target.value })} placeholder="Country" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-yellow-500 outline-none transition-all" />
                  </div>
                  <button onClick={() => setProfileOpen(false)} className="w-full py-5 bg-yellow-500 text-black rounded-3xl font-black uppercase shadow-xl active:scale-95 transition-all mt-4">Save Changes</button>
               </div>
@@ -600,109 +467,94 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Settings Modal */}
       {isSettingsOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
            <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 overflow-hidden shadow-2xl relative">
-              <div className="p-6 bg-gradient-to-r from-slate-700 to-slate-900 flex justify-between items-center">
-                 <h2 className="text-xl font-black uppercase italic tracking-tighter">Account Settings</h2>
-                 <button onClick={() => setSettingsOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button>
-              </div>
+              <div className="p-6 bg-gradient-to-r from-slate-700 to-slate-900 flex justify-between items-center"><h2 className="text-xl font-black uppercase italic tracking-tighter text-white">Settings</h2><button onClick={() => setSettingsOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button></div>
               <div className="p-8 space-y-6">
-                 <div className="space-y-4">
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-black uppercase text-white/20 ml-2 tracking-widest">New Phone Number</label>
-                       <input type="tel" defaultValue={user.phone} onBlur={(e) => handleUpdateProfile({ phone: e.target.value })} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-sky-500 outline-none transition-all" />
-                    </div>
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-black uppercase text-white/20 ml-2 tracking-widest">Update Password</label>
-                       <input type="password" defaultValue={user.password} onBlur={(e) => handleUpdateProfile({ password: e.target.value })} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-sky-500 outline-none transition-all" />
-                    </div>
-                 </div>
-                 <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl">
-                    <p className="text-[9px] font-bold text-red-500 text-center uppercase">Never share your password with anyone, including support.</p>
-                 </div>
-                 <button onClick={() => setSettingsOpen(false)} className="w-full py-5 bg-sky-500 text-white rounded-3xl font-black uppercase shadow-xl active:scale-95 transition-all mt-4">Apply Settings</button>
-                 <button onClick={() => { localStorage.removeItem('LUDO_SESSION'); window.location.reload(); }} className="w-full text-red-500 font-black uppercase text-[10px] tracking-[0.2em] mt-2 opacity-60 hover:opacity-100 transition-opacity">Logout Account</button>
+                 <input type="tel" defaultValue={user.phone} onBlur={(e) => handleUpdateProfile({ phone: e.target.value })} placeholder="New Phone" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white outline-none" />
+                 <input type="password" defaultValue={user.password} onBlur={(e) => handleUpdateProfile({ password: e.target.value })} placeholder="Update Password" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white outline-none" />
+                 <button onClick={() => setSettingsOpen(false)} className="w-full py-5 bg-sky-500 text-white rounded-3xl font-black uppercase shadow-xl active:scale-95 transition-all mt-4">Update Account</button>
+                 <button onClick={() => { localStorage.removeItem('LUDO_SESSION'); window.location.reload(); }} className="w-full text-red-500 font-black uppercase text-[10px] tracking-widest mt-2 opacity-60">Logout Account</button>
               </div>
            </div>
         </div>
       )}
 
-      {view === 'FINDING' && (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#020617] animate-in zoom-in-95">
-           <div className="relative w-32 h-32 mb-10 flex items-center justify-center">
-              <div className="absolute inset-0 border-[10px] border-slate-900 rounded-full"></div>
-              <div className="absolute inset-0 border-[10px] border-yellow-500 border-t-transparent rounded-full animate-spin shadow-[0_0_15px_#fbbf24]"></div>
-           </div>
-           <h2 className="text-5xl font-black italic tracking-tighter text-yellow-400 uppercase drop-shadow-[0_0_20px_rgba(251,191,36,0.4)] mb-2">Searching...</h2>
-           <p className="text-white/40 font-black uppercase tracking-widest text-[10px] mb-12">POOL STAKE: ৳ {selectedStake} • PRO BATTLE</p>
-           <div className="grid grid-cols-2 gap-x-12 gap-y-12 mb-16">
-              <div className="flex flex-col items-center gap-3">
-                 <div className="w-24 h-24 rounded-[25px] border-4 border-yellow-500 shadow-[0_0_25px_rgba(251,191,36,0.5)] p-1 bg-slate-800 relative">
-                    <img src={user?.avatar} className="w-full h-full rounded-[20px] object-cover" alt="You" />
-                 </div>
-                 <div className="bg-yellow-500 px-4 py-0.5 rounded-full"><span className="text-[8px] font-black text-black uppercase">YOU</span></div>
-              </div>
-              {Array(3).fill(0).map((_, i) => {
-                  const p = foundPlayers[i];
-                  return (
-                    <div key={i} className={`flex flex-col items-center gap-3 transition-all duration-500 ${p ? 'scale-100 opacity-100' : 'opacity-20 scale-90'}`}>
-                       <div className={`w-24 h-24 rounded-[25px] border-4 ${p ? 'border-green-500 shadow-[0_0_25px_rgba(34,197,94,0.5)]' : 'border-white/10'} p-1 bg-slate-800`}>
-                          {p ? <img src={p.avatarUrl} className="w-full h-full rounded-[20px] object-cover" /> : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-white/10">?</div>}
-                       </div>
-                       <span className="text-[10px] font-black uppercase italic tracking-tighter text-white/60">{p?.name || 'WAITING...'}</span>
-                    </div>
-                  );
-              })}
-           </div>
-           <button onClick={() => setView('LOBBY')} className="px-10 py-3 bg-slate-900/50 border border-white/5 rounded-full text-[10px] font-black uppercase tracking-widest text-white/20 hover:text-white transition-all">Abort Matchmaking</button>
-        </div>
-      )}
-
+      {/* GAME VIEW */}
       {view === 'GAME' && gameState && (
         <div className="flex-1 flex flex-col p-4 relative animate-in fade-in">
-          <div className="absolute top-4 left-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl border border-white/10 z-[60] flex items-center gap-3">
-             <span className="text-xl">🎙️</span>
-             <p className="text-[11px] font-bold text-sky-400 italic leading-tight">{commentary}</p>
+          {/* Commentary Bar - POSITIONED AT TOP-CENTER (MIDDLE) AND SMALLER */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 sm:w-36 bg-[#1c212e]/95 backdrop-blur-xl p-3 rounded-[20px] border border-white/10 z-[100] flex flex-col items-center gap-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] animate-in slide-in-from-top-10">
+             <div className="bg-yellow-500/20 p-1.5 rounded-full border border-yellow-500/30">
+                <span className="text-sm">🎙️</span>
+             </div>
+             <p className="text-[9px] sm:text-[10px] font-black text-sky-400 italic leading-tight text-center uppercase tracking-tighter">
+                {commentary}
+             </p>
           </div>
-          <div className="flex-1 flex items-center justify-center p-2 mt-12">
+
+          {/* EXIT BUTTON - Top Left */}
+          <div className="absolute top-4 left-4 z-[100]">
+             <button onClick={() => setIsExitModalOpen(true)} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-2xl border-b-4 border-red-900 shadow-[0_4px_15px_rgba(220,38,38,0.4)] active:translate-y-1 active:border-b-0 transition-all font-black uppercase italic text-[10px] tracking-tighter">
+                Exit Game
+             </button>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center p-2 mt-16 sm:mt-20">
             <div className="w-full max-w-[500px] aspect-square relative">
-              <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => { if (t.state === TokenState.WIN) return false; if (t.state === TokenState.HOME) return val === 6; return t.distanceTraveled + val <= 56; }).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
+              <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0 || gameState.consecutiveSixes === 3) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
               {gameState.players.map((p, i) => { const positions: ('TL' | 'TR' | 'BR' | 'BL')[] = playerCount === 2 ? ['TL', 'BR'] : ['TL', 'TR', 'BR', 'BL']; return <PlayerProfileOverlay key={p.id} player={p} isActive={gameState.currentPlayerIndex === i} position={positions[i]} />; })}
             </div>
           </div>
-          <div className="h-44 flex flex-col items-center justify-center gap-4 bg-[#020617]/80 rounded-t-[40px] border-t border-white/5 backdrop-blur-xl">
+          
+          <div className="h-44 flex flex-col items-center justify-center gap-4 bg-[#020617]/80 rounded-t-[40px] border-t border-white/5 backdrop-blur-xl mt-4">
              <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling} className={`group flex flex-col items-center gap-4 transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled ? 'scale-100 opacity-100' : 'opacity-40 grayscale pointer-events-none'}`}>
-                <div className="relative w-28 h-28 rounded-[35px] border-4 border-yellow-500 shadow-[0_0_20px_rgba(251,191,36,0.6)] flex items-center justify-center bg-slate-800 transition-transform group-active:scale-95">
+                <div className="relative w-28 h-28 rounded-[35px] border-4 border-yellow-500 shadow-2xl flex items-center justify-center bg-slate-800 group-active:scale-95 transition-transform">
                     <Dice3D value={gameState.diceValue} isRolling={isRolling} />
                 </div>
                 <div className="flex flex-col items-center gap-2">
-                   <span className="text-xs font-black uppercase italic tracking-tighter text-yellow-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">Roll the dice!</span>
-                   <div className="w-32 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className={`h-full bg-yellow-400 ${!gameState.isDiceRolled && gameState.currentPlayerIndex === 0 ? 'animate-[timer_10s_linear_forwards]' : 'w-0'}`}></div>
+                   <span className="text-xs font-black uppercase italic tracking-tighter text-yellow-400">Roll the dice!</span>
+                   {/* ENHANCED GOLDEN TIMER BAR */}
+                   <div className="w-40 h-2 bg-white/5 rounded-full overflow-hidden border border-white/10 shadow-inner">
+                      <div className={`h-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 shadow-[0_0_15px_rgba(251,191,36,0.6)] rounded-full ${!gameState.isDiceRolled && gameState.currentPlayerIndex === 0 ? 'animate-[timer_10s_linear_forwards]' : 'w-0'}`}></div>
                    </div>
                 </div>
              </button>
           </div>
+
+          {/* EXIT CONFIRMATION MODAL */}
+          {isExitModalOpen && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6 animate-in zoom-in-95">
+               <div className="bg-[#1c212e] border-4 border-red-600/30 rounded-[50px] p-10 text-center shadow-2xl max-w-sm w-full relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-red-600"></div>
+                  <div className="text-6xl mb-6">⚠️</div>
+                  <h2 className="text-3xl font-black italic text-white mb-4 uppercase tracking-tighter leading-none">Caution!</h2>
+                  <p className="text-white/70 text-sm font-medium mb-10 leading-relaxed px-2">
+                    আপনি কি নিশ্চিতভাবে বের হতে চান? খেলা শেষ না করে বের হলে আপনার এন্ট্র ফি <b>৳{selectedStake}</b> লস হয়ে যাবে।
+                  </p>
+                  <div className="space-y-4">
+                     <button onClick={() => { setIsExitModalOpen(false); setView('LOBBY'); }} className="w-full bg-red-600 text-white py-5 rounded-[25px] font-black uppercase text-sm shadow-[0_5px_20px_rgba(220,38,38,0.4)] active:scale-95 transition-all">
+                        Yes, Exit Anyway
+                     </button>
+                     <button onClick={() => setIsExitModalOpen(false)} className="w-full bg-white/5 text-white/40 py-5 rounded-[25px] font-black uppercase text-[10px] tracking-widest hover:text-white transition-all border border-white/10">
+                        Stay in Game
+                     </button>
+                  </div>
+               </div>
+            </div>
+          )}
         </div>
       )}
 
+      {/* ADMIN VIEW */}
       {view === 'ADMIN' && user && (
         <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={async (u) => { const updated = allUsers.map(usr => usr.phone === u.phone ? u : usr); setAllUsers(updated); await databaseService.updateUser(u); }} onApproveTransaction={async (tx) => { const u = allUsers.find(usr => usr.name === tx.userName); if (u) { const updatedUser = { ...u, balance: tx.type === 'DEPOSIT' ? u.balance + tx.amount : u.balance - tx.amount, history: u.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' as const } : h) }; await databaseService.updateUser(updatedUser); setAllUsers(allUsers.map(usr => usr.phone === updatedUser.phone ? updatedUser : usr)); setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); } }} onRejectTransaction={async (txId) => { setPendingTransactions(prev => prev.filter(p => p.id !== txId)); }} onExit={() => setView('LOBBY')} />
       )}
 
+      {/* Wallet Modal */}
       {isWalletOpen && user && (
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { setPendingTransactions(prev => [...prev, tx]); const updatedUser = { ...user, history: [...(user.history || []), tx] }; setUser(updatedUser); databaseService.updateUser(updatedUser); }} />
-      )}
-
-      {gameState?.winner && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-xl p-6">
-           <div className="bg-slate-900 border-2 border-yellow-500 rounded-[50px] p-12 text-center shadow-[0_0_50px_rgba(234,179,8,0.3)] max-w-sm w-full">
-              <h2 className="text-4xl font-black italic text-white mb-2 uppercase tracking-tighter">Winner!</h2>
-              <button onClick={() => setView('LOBBY')} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-xl uppercase shadow-xl active:scale-95 transition-all">Lobby</button>
-           </div>
-        </div>
       )}
     </div>
   );
