@@ -1,19 +1,21 @@
 
 const BOT_IDENTITIES = [
+  { name: "Alex Rivera", country: "USA", flag: "🇺🇸" },
+  { name: "Sofia Silva", country: "Brazil", flag: "🇧🇷" },
+  { name: "Hiroshi Sato", country: "Japan", flag: "🇯🇵" },
+  { name: "Emma Wilson", country: "UK", flag: "🇬🇧" },
+  { name: "Hans Müller", country: "Germany", flag: "🇩🇪" },
+  { name: "Luca Rossi", country: "Italy", flag: "🇮🇹" },
+  { name: "Mateo Garcia", country: "Spain", flag: "🇪🇸" },
+  { name: "Chloe Dupont", country: "France", flag: "🇫🇷" },
+  { name: "Kim Min-su", country: "South Korea", flag: "🇰🇷" },
+  { name: "Zhang Wei", country: "China", flag: "🇨🇳" },
+  { name: "Arjun Gupta", country: "India", flag: "🇮🇳" },
   { name: "Rony Khan", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Sajid Ahmed", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Hamim King", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Mehedi Hasan", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Tanvir Hossain", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Zubair Al-Mahmud", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Ayaan Rahman", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Nabil Islam", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Fahim Shahriar", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Sakib Al-Hasan", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Tamim Iqbal", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Mushfiqur", country: "Bangladesh", flag: "🇧🇩" },
-  { name: "Aryan Dev", country: "India", flag: "🇮🇳" },
-  { name: "Rahul Das", country: "India", flag: "🇮🇳" }
+  { name: "Fatima Al-Sayed", country: "Egypt", flag: "🇪🇬" },
+  { name: "Oliver Brown", country: "Australia", flag: "🇦🇺" },
+  { name: "Elena Petrova", country: "Russia", flag: "🇷🇺" },
+  { name: "Diego Messi", country: "Argentina", flag: "🇦🇷" }
 ];
 
 export const getRandomBotIdentity = () => {

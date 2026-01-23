@@ -229,6 +229,8 @@ const App: React.FC = () => {
     if (token.state === TokenState.PATH && token.distanceTraveled + val > 56) return;
 
     let capturedToken = false;
+    let finishedToken = false;
+
     if (token.state === TokenState.HOME && val === 6) {
       token.state = TokenState.PATH;
       token.distanceTraveled = 0;
@@ -237,10 +239,12 @@ const App: React.FC = () => {
       if (token.distanceTraveled === 56) {
         token.state = TokenState.WIN;
         soundManager.play('win');
+        finishedToken = true;
       } else if (token.distanceTraveled < 51) {
         const startPos = START_POSITIONS[token.color];
         const absolutePos = (token.distanceTraveled + startPos) % 52;
         const isSafe = SAFE_SPOTS.includes(absolutePos);
+        
         if (!isSafe) {
           players.forEach((otherP, pIdx) => {
             if (pIdx !== gameState.currentPlayerIndex) {
@@ -262,9 +266,13 @@ const App: React.FC = () => {
     
     player.tokens[tokenIdx] = token;
     soundManager.play('move');
+    
     if (capturedToken) {
       soundManager.play('kill');
-      const comment = await generateGameCommentary("just captured an opponent!", player.name);
+      const comment = await generateGameCommentary("just captured an opponent with high precision!", player.name);
+      setCommentary(comment);
+    } else if (finishedToken) {
+      const comment = await generateGameCommentary("just moved into the final destination! Bonus turn earned.", player.name);
       setCommentary(comment);
     }
 
@@ -287,14 +295,66 @@ const App: React.FC = () => {
       return;
     }
 
-    const continueTurn = val === 6 || capturedToken;
+    const continueTurn = val === 6 || capturedToken || finishedToken;
+    
     setGameState(prev => prev ? { 
         ...prev, players, isDiceRolled: false, diceValue: null, 
         currentPlayerIndex: continueTurn ? prev.currentPlayerIndex : (prev.currentPlayerIndex + 1) % prev.players.length 
     } : null);
   };
 
-  // AUTO-MOVE LOGIC FOR HUMAN PLAYERS
+  // ADVANCED STRATEGIC BOT LOGIC
+  const getBestBotMove = (player: Player, diceVal: number): Token | null => {
+    const validMoves = player.tokens.filter(t => 
+      t.state !== TokenState.WIN && 
+      (t.state === TokenState.HOME ? diceVal === 6 : t.distanceTraveled + diceVal <= 56)
+    );
+
+    if (validMoves.length === 0) return null;
+
+    // 1. Prioritize Capturing Opponent (Kill)
+    for (const t of validMoves) {
+      if (t.state === TokenState.PATH && t.distanceTraveled + diceVal < 51) {
+        const startPos = START_POSITIONS[t.color];
+        const targetPos = (t.distanceTraveled + diceVal + startPos) % 52;
+        if (!SAFE_SPOTS.includes(targetPos)) {
+          for (const otherP of gameState!.players) {
+            if (otherP.color !== player.color) {
+              for (const otherT of otherP.tokens) {
+                if (otherT.state === TokenState.PATH && otherT.distanceTraveled < 51) {
+                  const oStart = START_POSITIONS[otherT.color];
+                  if ((otherT.distanceTraveled + oStart) % 52 === targetPos) return t;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Prioritize Reaching Home (Win Bonus)
+    const winningMove = validMoves.find(t => t.distanceTraveled + diceVal === 56);
+    if (winningMove) return winningMove;
+
+    // 3. Prioritize Reaching Home Lane (Safety Zone)
+    const enteringHomeLane = validMoves.find(t => t.distanceTraveled < 51 && t.distanceTraveled + diceVal >= 51);
+    if (enteringHomeLane) return enteringHomeLane;
+
+    // 4. Prioritize Moving Out of Base
+    const outOfBase = validMoves.find(t => t.state === TokenState.HOME && diceVal === 6);
+    if (outOfBase) return outOfBase;
+
+    // 5. Prioritize Reaching Safe Spots (Star)
+    for (const t of validMoves) {
+        const startPos = START_POSITIONS[t.color];
+        const targetPos = (t.distanceTraveled + diceVal + startPos) % 52;
+        if (SAFE_SPOTS.includes(targetPos)) return t;
+    }
+
+    // 6. Default: Move the token furthest along the path
+    return validMoves.sort((a, b) => b.distanceTraveled - a.distanceTraveled)[0];
+  };
+
   useEffect(() => {
     if (view !== 'GAME' || !gameState || gameState.winner || isRolling) return;
     
@@ -302,33 +362,25 @@ const App: React.FC = () => {
     if (!activePlayer) return;
 
     if (activePlayer.isBot) {
-        // Existing Bot Logic
         if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
         botActionTimeout.current = setTimeout(() => {
             if (!gameState.isDiceRolled) rollDice();
             else {
-                const val = gameState.diceValue!;
-                const valid = activePlayer.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
-                if (valid.length > 0) moveToken(valid[0]); else nextTurn();
+                const bestToken = getBestBotMove(activePlayer, gameState.diceValue!);
+                if (bestToken) moveToken(bestToken); else nextTurn();
             }
         }, 1200);
     } else {
-        // Auto-Move Logic for Human Player (10s timer)
         if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
-        
         autoMoveTimeout.current = setTimeout(() => {
             if (!gameState.isDiceRolled) {
                 rollDice();
             } else {
                 const val = gameState.diceValue!;
                 const valid = activePlayer.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
-                if (valid.length > 0) {
-                    moveToken(valid[0]);
-                } else {
-                    nextTurn();
-                }
+                if (valid.length > 0) moveToken(valid[0]); else nextTurn();
             }
-        }, 10000); // 10 seconds timeout matched with CSS animation
+        }, 10000); 
     }
 
     return () => {
@@ -397,7 +449,7 @@ const App: React.FC = () => {
           <div className="bg-yellow-400 h-8 flex items-center overflow-hidden border-y border-yellow-600 shadow-md">
             <div className="animate-scroll-text whitespace-nowrap flex items-center gap-10">
               <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🏆 TOURNAMENT STARTING IN 15 MINS! JOIN NOW 🏆</span>
-              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🎲 RONY JUST WITHDREW ৳২০০০ TO BKASH 🎲</span>
+              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🎲 OLIVER JUST WITHDREW $500 TO PAYPAL 🎲</span>
             </div>
           </div>
           <div className="p-6 pt-4 space-y-6 flex-1 flex flex-col">
@@ -422,7 +474,7 @@ const App: React.FC = () => {
                         <div className="w-4 h-4 bg-red-600 rounded-full"></div>
                      </div>
                   </div>
-                  <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.2)]">Pro Arena</h2>
+                  <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.2)]">Global Arena</h2>
                </div>
                <div className="w-full grid grid-cols-4 gap-2 z-10">
                   {[50, 100, 500, 1000].map(stake => (<button key={stake} onClick={() => setSelectedStake(stake)} className={`py-3 rounded-xl font-black text-[10px] border-2 transition-all ${selectedStake === stake ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-md' : 'bg-slate-900/40 border-white/5 text-white/40'}`}>৳{stake}</button>))}
@@ -447,10 +499,10 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Profile & Settings Modals Implementation */}
+      {/* Profile & Settings Modals */}
       {isProfileOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
-           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 overflow-hidden shadow-2xl relative">
+           <div className="bg-[#1e293b] rounded-[40px] w-full max-sm border border-white/10 overflow-hidden shadow-2xl relative">
               <div className="p-6 bg-gradient-to-r from-blue-700 to-indigo-900 flex justify-between items-center"><h2 className="text-xl font-black uppercase italic tracking-tighter">My Profile</h2><button onClick={() => setProfileOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button></div>
               <div className="p-8 space-y-6">
                  <div className="flex flex-col items-center gap-4">
@@ -459,7 +511,7 @@ const App: React.FC = () => {
                  </div>
                  <div className="space-y-4">
                     <input type="text" defaultValue={user.name} onBlur={(e) => handleUpdateProfile({ name: e.target.value })} placeholder="Full Name" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-yellow-500 outline-none transition-all" />
-                    <input type="text" defaultValue={user.country || 'Bangladesh'} onBlur={(e) => handleUpdateProfile({ country: e.target.value })} placeholder="Country" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-yellow-500 outline-none transition-all" />
+                    <input type="text" defaultValue={user.country || 'Global'} onBlur={(e) => handleUpdateProfile({ country: e.target.value })} placeholder="Country" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white focus:border-yellow-500 outline-none transition-all" />
                  </div>
                  <button onClick={() => setProfileOpen(false)} className="w-full py-5 bg-yellow-500 text-black rounded-3xl font-black uppercase shadow-xl active:scale-95 transition-all mt-4">Save Changes</button>
               </div>
@@ -469,7 +521,7 @@ const App: React.FC = () => {
 
       {isSettingsOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
-           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 overflow-hidden shadow-2xl relative">
+           <div className="bg-[#1e293b] rounded-[40px] w-full max-sm border border-white/10 overflow-hidden shadow-2xl relative">
               <div className="p-6 bg-gradient-to-r from-slate-700 to-slate-900 flex justify-between items-center"><h2 className="text-xl font-black uppercase italic tracking-tighter text-white">Settings</h2><button onClick={() => setSettingsOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button></div>
               <div className="p-8 space-y-6">
                  <input type="tel" defaultValue={user.phone} onBlur={(e) => handleUpdateProfile({ phone: e.target.value })} placeholder="New Phone" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white outline-none" />
@@ -484,7 +536,7 @@ const App: React.FC = () => {
       {/* GAME VIEW */}
       {view === 'GAME' && gameState && (
         <div className="flex-1 flex flex-col p-4 relative animate-in fade-in">
-          {/* Commentary Bar - POSITIONED AT TOP-CENTER (MIDDLE) AND SMALLER */}
+          {/* Commentary Bar */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 sm:w-36 bg-[#1c212e]/95 backdrop-blur-xl p-3 rounded-[20px] border border-white/10 z-[100] flex flex-col items-center gap-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] animate-in slide-in-from-top-10">
              <div className="bg-yellow-500/20 p-1.5 rounded-full border border-yellow-500/30">
                 <span className="text-sm">🎙️</span>
@@ -494,7 +546,7 @@ const App: React.FC = () => {
              </p>
           </div>
 
-          {/* EXIT BUTTON - Top Left */}
+          {/* EXIT BUTTON */}
           <div className="absolute top-4 left-4 z-[100]">
              <button onClick={() => setIsExitModalOpen(true)} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-2xl border-b-4 border-red-900 shadow-[0_4px_15px_rgba(220,38,38,0.4)] active:translate-y-1 active:border-b-0 transition-all font-black uppercase italic text-[10px] tracking-tighter">
                 Exit Game
@@ -531,7 +583,7 @@ const App: React.FC = () => {
                   <div className="text-6xl mb-6">⚠️</div>
                   <h2 className="text-3xl font-black italic text-white mb-4 uppercase tracking-tighter leading-none">Caution!</h2>
                   <p className="text-white/70 text-sm font-medium mb-10 leading-relaxed px-2">
-                    আপনি কি নিশ্চিতভাবে বের হতে চান? খেলা শেষ না করে বের হলে আপনার এন্ট্র ফি <b>৳{selectedStake}</b> লস হয়ে যাবে।
+                    Are you sure you want to exit? If you leave now, you will lose your stake of <b>৳{selectedStake}</b>.
                   </p>
                   <div className="space-y-4">
                      <button onClick={() => { setIsExitModalOpen(false); setView('LOBBY'); }} className="w-full bg-red-600 text-white py-5 rounded-[25px] font-black uppercase text-sm shadow-[0_5px_20px_rgba(220,38,38,0.4)] active:scale-95 transition-all">
