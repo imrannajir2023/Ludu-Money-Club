@@ -75,6 +75,7 @@ const App: React.FC = () => {
 
   const [adminId, setAdminId] = useState('');
   const [adminPass, setAdminPass] = useState('');
+  const [adminTapCount, setAdminTapCount] = useState(0);
 
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isWalletOpen, setWalletOpen] = useState(false);
@@ -157,9 +158,23 @@ const App: React.FC = () => {
       setView('ADMIN');
       setAdminId('');
       setAdminPass('');
+      setAdminTapCount(0);
     } else {
       setAuthError('Invalid Admin Credentials');
     }
+  };
+
+  const handleHiddenAdminTap = () => {
+    const newCount = adminTapCount + 1;
+    setAdminTapCount(newCount);
+    if (newCount >= 3) {
+      setView('ADMIN_AUTH');
+      setAdminTapCount(0);
+    }
+    // Auto reset count after 2 seconds of inactivity
+    setTimeout(() => {
+      setAdminTapCount(0);
+    }, 2000);
   };
 
   const startFinding = async (count: 2 | 4) => {
@@ -483,8 +498,8 @@ const App: React.FC = () => {
            </div>
            
            {view === 'LOGIN' && (
-             <button onClick={() => setView('ADMIN_AUTH')} className="absolute bottom-10 text-white/10 hover:text-white/40 transition-colors text-[10px] font-black uppercase tracking-widest">
-                Admin Access
+             <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/10 transition-opacity text-[10px] font-black uppercase tracking-widest hover:opacity-50">
+                VER 1.0.6 PRO
              </button>
            )}
         </div>
