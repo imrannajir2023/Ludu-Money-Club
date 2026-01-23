@@ -15,7 +15,9 @@ const BOT_IDENTITIES = [
   { name: "Fatima Al-Sayed", country: "Egypt", flag: "🇪🇬" },
   { name: "Oliver Brown", country: "Australia", flag: "🇦🇺" },
   { name: "Elena Petrova", country: "Russia", flag: "🇷🇺" },
-  { name: "Diego Messi", country: "Argentina", flag: "🇦🇷" }
+  { name: "Diego Messi", country: "Argentina", flag: "🇦🇷" },
+  { name: "Isabella Jones", country: "Canada", flag: "🇨🇦" },
+  { name: "Youssef Hassan", country: "Morocco", flag: "🇲🇦" }
 ];
 
 export const getRandomBotIdentity = () => {

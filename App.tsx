@@ -62,6 +62,7 @@ const App: React.FC = () => {
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [isRolling, setIsRolling] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
   const [selectedStake, setSelectedStake] = useState(50);
   const [playerCount, setPlayerCount] = useState<2 | 4>(2);
   const [foundPlayers, setFoundPlayers] = useState<Player[]>([]);
@@ -69,6 +70,17 @@ const App: React.FC = () => {
   const botActionTimeout = useRef<any>(null);
   const autoForwardTimeout = useRef<any>(null);
   const autoMoveTimeout = useRef<any>(null);
+
+  const handleHiddenAdminTap = () => {
+    setAdminTapCount(prev => {
+      const next = prev + 1;
+      if (next >= 10) {
+        setView('ADMIN_AUTH');
+        return 0;
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -184,7 +196,7 @@ const App: React.FC = () => {
   };
 
   const rollDice = async () => {
-    if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
+    if (!gameState || isRolling || isMoving || gameState.isDiceRolled || gameState.winner) return;
     setIsRolling(true);
     soundManager.play('dice');
     setTimeout(() => {
@@ -214,65 +226,77 @@ const App: React.FC = () => {
   }, []);
 
   const moveToken = async (tokenData: Token) => {
-    if (!gameState || !gameState.isDiceRolled || isRolling || gameState.winner || gameState.consecutiveSixes === 3) return;
+    if (!gameState || !gameState.isDiceRolled || isRolling || isMoving || gameState.winner || gameState.consecutiveSixes === 3) return;
     if (autoForwardTimeout.current) { clearTimeout(autoForwardTimeout.current); autoForwardTimeout.current = null; }
     if (autoMoveTimeout.current) { clearTimeout(autoMoveTimeout.current); autoMoveTimeout.current = null; }
     
+    setIsMoving(true);
     const players = [...gameState.players];
     const player = players[gameState.currentPlayerIndex];
     const tokenIdx = player.tokens.findIndex(t => t.id === tokenData.id);
-    const token = { ...player.tokens[tokenIdx] };
     const val = gameState.diceValue!;
 
-    if (token.state === TokenState.WIN) return;
-    if (token.state === TokenState.HOME && val !== 6) return;
-    if (token.state === TokenState.PATH && token.distanceTraveled + val > 56) return;
+    let currentToken = { ...player.tokens[tokenIdx] };
+    if (currentToken.state === TokenState.WIN) { setIsMoving(false); return; }
+    if (currentToken.state === TokenState.HOME && val !== 6) { setIsMoving(false); return; }
+    if (currentToken.state === TokenState.PATH && currentToken.distanceTraveled + val > 56) { setIsMoving(false); return; }
+
+    // REALISTIC STEP-BY-STEP MOVEMENT
+    if (currentToken.state === TokenState.HOME && val === 6) {
+      currentToken.state = TokenState.PATH;
+      currentToken.distanceTraveled = 0;
+      player.tokens[tokenIdx] = currentToken;
+      setGameState(prev => prev ? { ...prev, players: [...players] } : null);
+      soundManager.play('move');
+      await new Promise(r => setTimeout(r, 200));
+    } else {
+      const targetDistance = currentToken.distanceTraveled + val;
+      for (let d = currentToken.distanceTraveled + 1; d <= targetDistance; d++) {
+          currentToken.distanceTraveled = d;
+          player.tokens[tokenIdx] = { ...currentToken };
+          setGameState(prev => prev ? { ...prev, players: [...players] } : null);
+          soundManager.play('move');
+          await new Promise(r => setTimeout(r, 250)); // Slow realistic movement
+      }
+    }
 
     let capturedToken = false;
     let finishedToken = false;
-
-    if (token.state === TokenState.HOME && val === 6) {
-      token.state = TokenState.PATH;
-      token.distanceTraveled = 0;
-    } else if (token.state === TokenState.PATH) {
-      token.distanceTraveled += val;
-      if (token.distanceTraveled === 56) {
-        token.state = TokenState.WIN;
+    
+    if (currentToken.distanceTraveled === 56) {
+        currentToken.state = TokenState.WIN;
         soundManager.play('win');
         finishedToken = true;
-      } else if (token.distanceTraveled < 51) {
-        const startPos = START_POSITIONS[token.color];
-        const absolutePos = (token.distanceTraveled + startPos) % 52;
+    } else if (currentToken.distanceTraveled < 51) {
+        const startPos = START_POSITIONS[currentToken.color];
+        const absolutePos = (currentToken.distanceTraveled + startPos) % 52;
         const isSafe = SAFE_SPOTS.includes(absolutePos);
         
         if (!isSafe) {
-          players.forEach((otherP, pIdx) => {
-            if (pIdx !== gameState.currentPlayerIndex) {
-              otherP.tokens.forEach((otherT) => {
-                if (otherT.state === TokenState.PATH && otherT.distanceTraveled < 51) {
-                  const oStart = START_POSITIONS[otherT.color];
-                  if ((otherT.distanceTraveled + oStart) % 52 === absolutePos) {
-                    otherT.state = TokenState.HOME;
-                    otherT.distanceTraveled = 0;
-                    capturedToken = true;
-                  }
+            players.forEach((otherP, pIdx) => {
+                if (pIdx !== gameState.currentPlayerIndex) {
+                    otherP.tokens.forEach((otherT) => {
+                        if (otherT.state === TokenState.PATH && otherT.distanceTraveled < 51) {
+                            const oStart = START_POSITIONS[otherT.color];
+                            if ((otherT.distanceTraveled + oStart) % 52 === absolutePos) {
+                                otherT.state = TokenState.HOME;
+                                otherT.distanceTraveled = 0;
+                                capturedToken = true;
+                            }
+                        }
+                    });
                 }
-              });
-            }
-          });
+            });
         }
-      }
     }
-    
-    player.tokens[tokenIdx] = token;
-    soundManager.play('move');
-    
+
+    player.tokens[tokenIdx] = currentToken;
     if (capturedToken) {
       soundManager.play('kill');
-      const comment = await generateGameCommentary("just captured an opponent with high precision!", player.name);
+      const comment = await generateGameCommentary("just knocked an opponent back to base!", player.name);
       setCommentary(comment);
     } else if (finishedToken) {
-      const comment = await generateGameCommentary("just moved into the final destination! Bonus turn earned.", player.name);
+      const comment = await generateGameCommentary("reached home! Bonus turn granted.", player.name);
       setCommentary(comment);
     }
 
@@ -283,27 +307,23 @@ const App: React.FC = () => {
              const pool = selectedStake * players.length;
              handleUpdateProfile({ 
                  balance: (user?.balance || 0) + pool,
-                 stats: { 
-                     ...user!.stats, 
-                     wins: user!.stats.wins + 1, 
-                     totalWinnings: user!.stats.totalWinnings + pool 
-                 } 
+                 stats: { ...user!.stats, wins: user!.stats.wins + 1, totalWinnings: user!.stats.totalWinnings + pool } 
              });
          }
          return { ...prev, players, winner: player.color };
       });
+      setIsMoving(false);
       return;
     }
 
     const continueTurn = val === 6 || capturedToken || finishedToken;
-    
     setGameState(prev => prev ? { 
-        ...prev, players, isDiceRolled: false, diceValue: null, 
+        ...prev, players: [...players], isDiceRolled: false, diceValue: null, 
         currentPlayerIndex: continueTurn ? prev.currentPlayerIndex : (prev.currentPlayerIndex + 1) % prev.players.length 
     } : null);
+    setIsMoving(false);
   };
 
-  // ADVANCED STRATEGIC BOT LOGIC
   const getBestBotMove = (player: Player, diceVal: number): Token | null => {
     const validMoves = player.tokens.filter(t => 
       t.state !== TokenState.WIN && 
@@ -312,7 +332,7 @@ const App: React.FC = () => {
 
     if (validMoves.length === 0) return null;
 
-    // 1. Prioritize Capturing Opponent (Kill)
+    // BOT STRATEGY: CAPTURE > WIN > SAFE > DISTANCE
     for (const t of validMoves) {
       if (t.state === TokenState.PATH && t.distanceTraveled + diceVal < 51) {
         const startPos = START_POSITIONS[t.color];
@@ -332,31 +352,23 @@ const App: React.FC = () => {
       }
     }
 
-    // 2. Prioritize Reaching Home (Win Bonus)
     const winningMove = validMoves.find(t => t.distanceTraveled + diceVal === 56);
     if (winningMove) return winningMove;
 
-    // 3. Prioritize Reaching Home Lane (Safety Zone)
     const enteringHomeLane = validMoves.find(t => t.distanceTraveled < 51 && t.distanceTraveled + diceVal >= 51);
     if (enteringHomeLane) return enteringHomeLane;
 
-    // 4. Prioritize Moving Out of Base
-    const outOfBase = validMoves.find(t => t.state === TokenState.HOME && diceVal === 6);
-    if (outOfBase) return outOfBase;
-
-    // 5. Prioritize Reaching Safe Spots (Star)
     for (const t of validMoves) {
         const startPos = START_POSITIONS[t.color];
         const targetPos = (t.distanceTraveled + diceVal + startPos) % 52;
         if (SAFE_SPOTS.includes(targetPos)) return t;
     }
 
-    // 6. Default: Move the token furthest along the path
     return validMoves.sort((a, b) => b.distanceTraveled - a.distanceTraveled)[0];
   };
 
   useEffect(() => {
-    if (view !== 'GAME' || !gameState || gameState.winner || isRolling) return;
+    if (view !== 'GAME' || !gameState || gameState.winner || isRolling || isMoving) return;
     
     const activePlayer = gameState.players[gameState.currentPlayerIndex];
     if (!activePlayer) return;
@@ -373,9 +385,8 @@ const App: React.FC = () => {
     } else {
         if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
         autoMoveTimeout.current = setTimeout(() => {
-            if (!gameState.isDiceRolled) {
-                rollDice();
-            } else {
+            if (!gameState.isDiceRolled) rollDice();
+            else {
                 const val = gameState.diceValue!;
                 const valid = activePlayer.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
                 if (valid.length > 0) moveToken(valid[0]); else nextTurn();
@@ -387,14 +398,7 @@ const App: React.FC = () => {
       if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
       if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
     };
-  }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled, isRolling, view]);
-
-  const handleHiddenAdminTap = () => {
-    const newCount = adminTapCount + 1;
-    setAdminTapCount(newCount);
-    if (newCount >= 3) { setView('ADMIN_AUTH'); setAdminTapCount(0); }
-    setTimeout(() => setAdminTapCount(0), 2000);
-  };
+  }, [gameState?.currentPlayerIndex, gameState?.isDiceRolled, isRolling, isMoving, view]);
 
   return (
     <div className="h-screen w-full bg-[#020617] text-white font-['Fredoka'] dotted-bg overflow-hidden flex flex-col relative">
@@ -409,7 +413,7 @@ const App: React.FC = () => {
       {(view === 'LOGIN' || view === 'ADMIN_AUTH') && (
         <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18] relative">
            <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 py-12 rounded-[50px] w-full max-w-[420px] border border-white/10 flex flex-col items-center shadow-2xl animate-in zoom-in-95 z-10">
-              <h2 className="ludo-money-logo text-6xl mb-12 italic font-black">{view === 'ADMIN_AUTH' ? 'ADMIN' : (isSignUp ? 'SIGNUP' : 'LOGIN')}</h2>
+              <h2 className="ludo-money-logo text-6xl mb-12 italic font-black uppercase">{view === 'ADMIN_AUTH' ? 'ADMIN' : (isSignUp ? 'SIGNUP' : 'LOGIN')}</h2>
               {authError && <div className="text-red-500 mb-6 text-[10px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">{authError}</div>}
               <div className="w-full space-y-5 mb-10">
                  {view === 'LOGIN' && isSignUp && <input type="text" placeholder="Display Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />}
@@ -425,6 +429,7 @@ const App: React.FC = () => {
 
       {view === 'LOBBY' && user && (
         <div className="flex-1 flex flex-col animate-in fade-in overflow-y-auto no-scrollbar">
+          {/* Header Section from Image */}
           <div className="flex justify-between items-center p-6 pb-2">
             <div className="flex items-center gap-3 cursor-pointer group active:scale-95 transition-all" onClick={() => setProfileOpen(true)}>
               <div className="w-12 h-12 rounded-xl border-2 border-yellow-500 bg-slate-800 overflow-hidden relative shadow-lg">
@@ -446,12 +451,16 @@ const App: React.FC = () => {
                 </button>
             </div>
           </div>
+
+          {/* Scrolling Announcement Bar */}
           <div className="bg-yellow-400 h-8 flex items-center overflow-hidden border-y border-yellow-600 shadow-md">
             <div className="animate-scroll-text whitespace-nowrap flex items-center gap-10">
-              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🏆 TOURNAMENT STARTING IN 15 MINS! JOIN NOW 🏆</span>
-              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🎲 OLIVER JUST WITHDREW $500 TO PAYPAL 🎲</span>
+              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🏆 INTERNATIONAL TOURNAMENT STARTING NOW 🏆</span>
+              <span className="text-[10px] font-black text-black uppercase tracking-tighter flex items-center gap-2">🎲 {user.name} IS READY FOR THE BATTLE! 🎲</span>
             </div>
           </div>
+
+          {/* Feature Cards Section */}
           <div className="p-6 pt-4 space-y-6 flex-1 flex flex-col">
             <div className="grid grid-cols-2 gap-4">
                <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 p-4 rounded-[30px] border border-indigo-400/30 flex items-center gap-3 shadow-xl active:scale-95 transition-all relative overflow-hidden group">
@@ -463,35 +472,44 @@ const App: React.FC = () => {
                   <div><p className="text-[8px] font-black uppercase text-orange-200">Hot Event</p><h4 className="text-[11px] font-black uppercase italic">2X Points</h4></div>
                </div>
             </div>
+
+            {/* Main Arena Card from Image */}
             <div className="flex-1 bg-gradient-to-b from-blue-600 to-blue-800 rounded-[50px] p-8 border-4 border-blue-400/20 shadow-2xl flex flex-col items-center justify-between relative overflow-hidden">
                <div className="bg-slate-900/40 p-1.5 rounded-full flex gap-1 z-10">
                   <button onClick={() => setPlayerCount(2)} className={`px-8 py-2.5 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40 hover:text-white'}`}>2 Player</button>
                   <button onClick={() => setPlayerCount(4)} className={`px-8 py-2.5 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40 hover:text-white'}`}>4 Player</button>
                </div>
+               
                <div className="flex flex-col items-center gap-4 py-6 z-10">
                   <div className="w-32 h-32 bg-yellow-400 rounded-[35px] flex items-center justify-center shadow-2xl border-b-8 border-yellow-600 active:translate-y-1">
                      <div className="w-16 h-16 bg-white rounded-xl rotate-12 flex items-center justify-center shadow-lg border-b-4 border-slate-300">
                         <div className="w-4 h-4 bg-red-600 rounded-full"></div>
                      </div>
                   </div>
-                  <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.2)]">Global Arena</h2>
+                  <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.2)] text-center">Global Arena</h2>
                </div>
+
                <div className="w-full grid grid-cols-4 gap-2 z-10">
-                  {[50, 100, 500, 1000].map(stake => (<button key={stake} onClick={() => setSelectedStake(stake)} className={`py-3 rounded-xl font-black text-[10px] border-2 transition-all ${selectedStake === stake ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-md' : 'bg-slate-900/40 border-white/5 text-white/40'}`}>৳{stake}</button>))}
+                  {[50, 100, 500, 1000].map(stake => (
+                    <button key={stake} onClick={() => setSelectedStake(stake)} className={`py-3 rounded-xl font-black text-[10px] border-2 transition-all ${selectedStake === stake ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-md' : 'bg-slate-900/40 border-white/5 text-white/40'}`}>৳{stake}</button>
+                  ))}
                </div>
+               
                <button onClick={() => startFinding(playerCount)} className="w-full mt-6 py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[30px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 transition-all shadow-xl z-10">Start Battle</button>
             </div>
           </div>
-          <div className="bg-slate-900/90 backdrop-blur-xl border-t border-white/5 flex justify-around p-4">
+
+          {/* Footer Nav from Image */}
+          <div className="bg-slate-900/90 backdrop-blur-xl border-t border-white/5 flex justify-around p-4 shrink-0">
              <button className="flex flex-col items-center gap-1 group">
-                <div className="w-6 h-6 bg-yellow-400 rounded-md flex items-center justify-center text-xs shadow-md group-active:scale-90 transition-transform">🏠</div>
+                <div className="w-6 h-6 bg-yellow-400 rounded-md flex items-center justify-center text-xs shadow-md">🏠</div>
                 <span className="text-[8px] font-black uppercase text-yellow-400 tracking-widest">Home</span>
              </button>
-             <button className="flex flex-col items-center gap-1 opacity-40 hover:opacity-100 transition-opacity">
+             <button className="flex flex-col items-center gap-1 opacity-40">
                 <div className="w-6 h-6 flex items-center justify-center text-xl">🏆</div>
                 <span className="text-[8px] font-black uppercase tracking-widest">Rank</span>
              </button>
-             <button className="flex flex-col items-center gap-1 opacity-40 hover:opacity-100 transition-opacity">
+             <button className="flex flex-col items-center gap-1 opacity-40">
                 <div className="w-6 h-6 flex items-center justify-center text-xl">🛡️</div>
                 <span className="text-[8px] font-black uppercase tracking-widest">Shop</span>
              </button>
@@ -499,7 +517,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Profile & Settings Modals */}
+      {/* Profile & Wallet Modals */}
       {isProfileOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
            <div className="bg-[#1e293b] rounded-[40px] w-full max-sm border border-white/10 overflow-hidden shadow-2xl relative">
@@ -519,25 +537,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isSettingsOpen && user && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
-           <div className="bg-[#1e293b] rounded-[40px] w-full max-sm border border-white/10 overflow-hidden shadow-2xl relative">
-              <div className="p-6 bg-gradient-to-r from-slate-700 to-slate-900 flex justify-between items-center"><h2 className="text-xl font-black uppercase italic tracking-tighter text-white">Settings</h2><button onClick={() => setSettingsOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button></div>
-              <div className="p-8 space-y-6">
-                 <input type="tel" defaultValue={user.phone} onBlur={(e) => handleUpdateProfile({ phone: e.target.value })} placeholder="New Phone" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white outline-none" />
-                 <input type="password" defaultValue={user.password} onBlur={(e) => handleUpdateProfile({ password: e.target.value })} placeholder="Update Password" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white outline-none" />
-                 <button onClick={() => setSettingsOpen(false)} className="w-full py-5 bg-sky-500 text-white rounded-3xl font-black uppercase shadow-xl active:scale-95 transition-all mt-4">Update Account</button>
-                 <button onClick={() => { localStorage.removeItem('LUDO_SESSION'); window.location.reload(); }} className="w-full text-red-500 font-black uppercase text-[10px] tracking-widest mt-2 opacity-60">Logout Account</button>
-              </div>
-           </div>
-        </div>
-      )}
-
       {/* GAME VIEW */}
       {view === 'GAME' && gameState && (
         <div className="flex-1 flex flex-col p-4 relative animate-in fade-in">
-          {/* Commentary Bar */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 sm:w-36 bg-[#1c212e]/95 backdrop-blur-xl p-3 rounded-[20px] border border-white/10 z-[100] flex flex-col items-center gap-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] animate-in slide-in-from-top-10">
+          {/* Top Commentary Bar */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 sm:w-36 bg-[#1c212e]/95 backdrop-blur-xl p-3 rounded-[20px] border border-white/10 z-[100] flex flex-col items-center gap-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
              <div className="bg-yellow-500/20 p-1.5 rounded-full border border-yellow-500/30">
                 <span className="text-sm">🎙️</span>
              </div>
@@ -546,7 +550,6 @@ const App: React.FC = () => {
              </p>
           </div>
 
-          {/* EXIT BUTTON */}
           <div className="absolute top-4 left-4 z-[100]">
              <button onClick={() => setIsExitModalOpen(true)} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-2xl border-b-4 border-red-900 shadow-[0_4px_15px_rgba(220,38,38,0.4)] active:translate-y-1 active:border-b-0 transition-all font-black uppercase italic text-[10px] tracking-tighter">
                 Exit Game
@@ -555,27 +558,25 @@ const App: React.FC = () => {
 
           <div className="flex-1 flex items-center justify-center p-2 mt-16 sm:mt-20">
             <div className="w-full max-w-[500px] aspect-square relative">
-              <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0 || gameState.consecutiveSixes === 3) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
+              <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0 || gameState.consecutiveSixes === 3 || isMoving) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
               {gameState.players.map((p, i) => { const positions: ('TL' | 'TR' | 'BR' | 'BL')[] = playerCount === 2 ? ['TL', 'BR'] : ['TL', 'TR', 'BR', 'BL']; return <PlayerProfileOverlay key={p.id} player={p} isActive={gameState.currentPlayerIndex === i} position={positions[i]} />; })}
             </div>
           </div>
           
           <div className="h-44 flex flex-col items-center justify-center gap-4 bg-[#020617]/80 rounded-t-[40px] border-t border-white/5 backdrop-blur-xl mt-4">
-             <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling} className={`group flex flex-col items-center gap-4 transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled ? 'scale-100 opacity-100' : 'opacity-40 grayscale pointer-events-none'}`}>
+             <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || isMoving} className={`group flex flex-col items-center gap-4 transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled && !isMoving ? 'scale-100 opacity-100' : 'opacity-40 grayscale pointer-events-none'}`}>
                 <div className="relative w-28 h-28 rounded-[35px] border-4 border-yellow-500 shadow-2xl flex items-center justify-center bg-slate-800 group-active:scale-95 transition-transform">
                     <Dice3D value={gameState.diceValue} isRolling={isRolling} />
                 </div>
                 <div className="flex flex-col items-center gap-2">
                    <span className="text-xs font-black uppercase italic tracking-tighter text-yellow-400">Roll the dice!</span>
-                   {/* ENHANCED GOLDEN TIMER BAR */}
                    <div className="w-40 h-2 bg-white/5 rounded-full overflow-hidden border border-white/10 shadow-inner">
-                      <div className={`h-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 shadow-[0_0_15px_rgba(251,191,36,0.6)] rounded-full ${!gameState.isDiceRolled && gameState.currentPlayerIndex === 0 ? 'animate-[timer_10s_linear_forwards]' : 'w-0'}`}></div>
+                      <div className={`h-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 shadow-[0_0_15px_rgba(251,191,36,0.6)] rounded-full ${!gameState.isDiceRolled && gameState.currentPlayerIndex === 0 && !isMoving ? 'animate-[timer_10s_linear_forwards]' : 'w-0'}`}></div>
                    </div>
                 </div>
              </button>
           </div>
 
-          {/* EXIT CONFIRMATION MODAL */}
           {isExitModalOpen && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6 animate-in zoom-in-95">
                <div className="bg-[#1c212e] border-4 border-red-600/30 rounded-[50px] p-10 text-center shadow-2xl max-w-sm w-full relative overflow-hidden">
@@ -599,12 +600,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* ADMIN VIEW */}
+      {/* Admin and Wallet Modals */}
       {view === 'ADMIN' && user && (
         <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={async (u) => { const updated = allUsers.map(usr => usr.phone === u.phone ? u : usr); setAllUsers(updated); await databaseService.updateUser(u); }} onApproveTransaction={async (tx) => { const u = allUsers.find(usr => usr.name === tx.userName); if (u) { const updatedUser = { ...u, balance: tx.type === 'DEPOSIT' ? u.balance + tx.amount : u.balance - tx.amount, history: u.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' as const } : h) }; await databaseService.updateUser(updatedUser); setAllUsers(allUsers.map(usr => usr.phone === updatedUser.phone ? updatedUser : usr)); setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); } }} onRejectTransaction={async (txId) => { setPendingTransactions(prev => prev.filter(p => p.id !== txId)); }} onExit={() => setView('LOBBY')} />
       )}
 
-      {/* Wallet Modal */}
       {isWalletOpen && user && (
         <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { setPendingTransactions(prev => [...prev, tx]); const updatedUser = { ...user, history: [...(user.history || []), tx] }; setUser(updatedUser); databaseService.updateUser(updatedUser); }} />
       )}
