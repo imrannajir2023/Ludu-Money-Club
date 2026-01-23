@@ -1,18 +1,18 @@
 
 const SOUND_URLS = {
-  // Iconic dice rattle
-  dice: 'https://www.soundjay.com/misc/sounds/dice-shake-1.mp3', 
-  // Snappy click
-  dice_stop: 'https://www.soundjay.com/buttons/sounds/button-16.mp3', 
-  // Authentic Tok-Tok pop
+  // Dice rolling sound (rattling in a cup)
+  dice: 'https://assets.mixkit.co/active_storage/sfx/2004/2004-preview.mp3', 
+  // Dice landing/stop sound
+  dice_stop: 'https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3', 
+  // Short snappy movement sound for each step
   move: 'https://www.soundjay.com/communication/sounds/pop-1.mp3',
-  // Crunchy impact for capture
+  // Crunchy impact sound for capturing an opponent
   kill: 'https://assets.mixkit.co/active_storage/sfx/1110/1110-preview.mp3',
-  // Joyful bell for finish
+  // Triumphant sound when reaching home or winning
   win: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3',
-  // System click
-  click: 'https://www.soundjay.com/buttons/sounds/button-20.mp3',
-  // Success fanfare
+  // General UI interaction sound
+  click: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
+  // Celebratory sound for rolling a six
   six: 'https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3'
 };
 
@@ -31,6 +31,7 @@ class SoundService {
     }
   }
 
+  // Critical for mobile browsers: Must be called on first user interaction
   unlock() {
     if (this.unlocked) return;
     Object.values(this.sounds).forEach(sound => {
@@ -40,6 +41,7 @@ class SoundService {
       }).catch(() => {});
     });
     this.unlocked = true;
+    console.log("Audio Engine Unlocked");
   }
 
   play(name: keyof typeof SOUND_URLS) {
@@ -47,9 +49,10 @@ class SoundService {
     const sound = this.sounds[name];
     if (sound) {
       sound.currentTime = 0;
-      // High playback rate for sharp pop
+      
+      // Adjust playback rate to get that perfect "Tok" sound for movement
       if (name === 'move') {
-        sound.playbackRate = 2.8; 
+        sound.playbackRate = 3.5; 
       } else {
         sound.playbackRate = 1.0;
       }
@@ -57,7 +60,7 @@ class SoundService {
       const playPromise = sound.play();
       if (playPromise !== undefined) {
         playPromise.catch(error => {
-          console.warn(`Playback failed for ${name}:`, error);
+          // Silent catch for interaction rules
           this.unlocked = false;
         });
       }

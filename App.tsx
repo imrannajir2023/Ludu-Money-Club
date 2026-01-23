@@ -26,7 +26,6 @@ const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value,
 };
 
 const PlayerProfileOverlay: React.FC<{ player: Player, isActive: boolean, position: 'TL' | 'TR' | 'BL' | 'BR' }> = ({ player, isActive, position }) => {
-  // Adjusted offsets to sit closer to the board bases as seen in high-end ludo games
   const posClasses = { 
     TL: 'top-[-75px] left-[-10px]', 
     TR: 'top-[-75px] right-[-10px]', 
@@ -94,6 +93,21 @@ const App: React.FC = () => {
   const autoMoveTimeout = useRef<any>(null);
   const findingInterval = useRef<any>(null);
   const viewRef = useRef(view);
+
+  // Initialize sound system on first interaction
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      soundManager.unlock();
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+    };
+    window.addEventListener('click', handleFirstInteraction);
+    window.addEventListener('touchstart', handleFirstInteraction);
+    return () => {
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+    };
+  }, []);
 
   useEffect(() => {
     viewRef.current = view;
@@ -205,7 +219,6 @@ const App: React.FC = () => {
     if (viewRef.current !== 'FINDING') return;
 
     const simulatedBots: Player[] = [];
-    // Red=TL, Green=TR, Yellow=BR, Blue=BL
     const opponentColors = count === 2 ? [PlayerColor.YELLOW] : [PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
 
     for (const color of opponentColors) {
@@ -250,6 +263,8 @@ const App: React.FC = () => {
       const val = Math.floor(Math.random() * 6) + 1;
       setIsRolling(false);
       soundManager.play('dice_stop');
+      if (val === 6) soundManager.play('six');
+      
       setGameState(prev => {
         if (!prev) return null;
         const newConsecSixes = val === 6 ? prev.consecutiveSixes + 1 : 0;
@@ -300,7 +315,7 @@ const App: React.FC = () => {
           player.tokens[tokenIdx] = { ...currentToken };
           setGameState(prev => prev ? { ...prev, players: [...players] } : null);
           soundManager.play('move');
-          await new Promise(r => setTimeout(r, 200)); 
+          await new Promise(r => setTimeout(r, 250)); 
       }
     }
 
@@ -415,7 +430,7 @@ const App: React.FC = () => {
                 const bestToken = getBestBotMove(activePlayer, gameState.diceValue!);
                 if (bestToken) moveToken(bestToken); else nextTurn();
             }
-        }, 1000);
+        }, 1200);
     } else {
         if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
         autoMoveTimeout.current = setTimeout(() => {
@@ -605,12 +620,10 @@ const App: React.FC = () => {
             <div className="w-full max-w-[500px] aspect-square relative">
               <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0 || gameState.consecutiveSixes === 3 || isMoving) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
               
-              {/* CORRECTED POSITIONING LOGIC TO MATCH LUDOBOARD.TSX BASES */}
               {gameState.players.map((p, i) => { 
-                // Red=TL, Green=TR, Yellow=BR, Blue=BL according to LudoBoard.tsx rendering
                 const positionsMap: ('TL' | 'TR' | 'BR' | 'BL')[] = playerCount === 2 
-                  ? ['TL', 'BR'] // 2-player: Player 1 (Red) Top-Left, Player 2 (Yellow) Bottom-Right
-                  : ['TL', 'TR', 'BR', 'BL']; // 4-player: R-TL, G-TR, Y-BR, B-BL
+                  ? ['TL', 'BR'] 
+                  : ['TL', 'TR', 'BR', 'BL']; 
                 
                 return <PlayerProfileOverlay 
                   key={p.id} 
