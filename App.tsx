@@ -94,7 +94,6 @@ const App: React.FC = () => {
   const findingInterval = useRef<any>(null);
   const viewRef = useRef(view);
 
-  // Initialize sound system on first interaction
   useEffect(() => {
     const handleFirstInteraction = () => {
       soundManager.unlock();
@@ -360,17 +359,15 @@ const App: React.FC = () => {
     }
 
     if (player.tokens.every(t => t.state === TokenState.WIN)) {
-      setGameState(prev => {
-         if (!prev) return null;
-         if (player.color === PlayerColor.RED) {
-             const pool = selectedStake * players.length;
-             handleUpdateProfile({ 
-                 balance: (user?.balance || 0) + pool,
-                 stats: { ...user!.stats, wins: user!.stats.wins + 1, totalWinnings: user!.stats.totalWinnings + pool } 
-             });
-         }
-         return { ...prev, players, winner: player.color };
-      });
+      const pool = selectedStake * players.length;
+      if (player.color === PlayerColor.RED) {
+          handleUpdateProfile({ 
+              balance: (user?.balance || 0) + pool,
+              stats: { ...user!.stats, wins: user!.stats.wins + 1, totalWinnings: user!.stats.totalWinnings + pool } 
+          });
+      }
+      setGameState(prev => prev ? { ...prev, players: [...players], winner: player.color } : null);
+      soundManager.play('win');
       setIsMoving(false);
       return;
     }
@@ -422,6 +419,7 @@ const App: React.FC = () => {
     const activePlayer = gameState.players[gameState.currentPlayerIndex];
     if (!activePlayer) return;
 
+    // BOT LOGIC
     if (activePlayer.isBot) {
         if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
         botActionTimeout.current = setTimeout(() => {
@@ -432,6 +430,17 @@ const App: React.FC = () => {
             }
         }, 1200);
     } else {
+        // HUMAN PLAYER AUTO-SKIP LOGIC (Skip if no moves possible after roll)
+        if (gameState.isDiceRolled && !isMoving) {
+            const val = gameState.diceValue!;
+            const valid = activePlayer.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
+            if (valid.length === 0) {
+               setTimeout(nextTurn, 1000); // Auto skip if no valid moves
+               return;
+            }
+        }
+
+        // AFK TIMEOUT
         if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
         autoMoveTimeout.current = setTimeout(() => {
             if (!gameState.isDiceRolled) rollDice();
@@ -648,6 +657,32 @@ const App: React.FC = () => {
                 </div>
              </button>
           </div>
+
+          {gameState.winner && (
+            <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 backdrop-blur-xl animate-in zoom-in">
+               <div className="relative bg-gradient-to-b from-indigo-900 to-black p-12 rounded-[60px] border-4 border-yellow-500 shadow-[0_0_50px_rgba(251,191,36,0.5)] text-center max-w-sm w-full">
+                  <div className="absolute -top-16 left-1/2 -translate-x-1/2 text-8xl">🏆</div>
+                  <h2 className="text-4xl font-black italic uppercase text-yellow-400 mb-2 mt-4 tracking-tighter">Victory!</h2>
+                  <p className="text-white/60 font-black uppercase text-[10px] tracking-widest mb-8">Tournament Winner</p>
+                  
+                  <div className="flex flex-col items-center gap-4 mb-10">
+                     <div className="w-24 h-24 rounded-[30px] border-4 border-yellow-500 p-1 overflow-hidden">
+                        <img src={gameState.players.find(p => p.color === gameState.winner)?.avatarUrl} className="w-full h-full object-cover rounded-2xl" />
+                     </div>
+                     <h3 className="text-2xl font-black italic uppercase text-white">{gameState.players.find(p => p.color === gameState.winner)?.name}</h3>
+                  </div>
+
+                  <div className="bg-yellow-400 p-6 rounded-[30px] mb-8">
+                     <p className="text-[10px] font-black text-black uppercase mb-1">Total Winnings</p>
+                     <p className="text-3xl font-black text-black tracking-tighter">৳ {selectedStake * gameState.players.length}</p>
+                  </div>
+
+                  <button onClick={() => { setGameState(null); setView('LOBBY'); }} className="w-full bg-white text-black py-5 rounded-[25px] font-black uppercase text-sm shadow-xl active:scale-95 transition-all">
+                     Collect Prize & Exit
+                  </button>
+               </div>
+            </div>
+          )}
 
           {isExitModalOpen && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6 animate-in zoom-in-95">
