@@ -26,11 +26,12 @@ const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value,
 };
 
 const PlayerProfileOverlay: React.FC<{ player: Player, isActive: boolean, position: 'TL' | 'TR' | 'BL' | 'BR' }> = ({ player, isActive, position }) => {
+  // Adjusted offsets: Profiles stay clearly outside the board boundaries
   const posClasses = { 
-    TL: 'top-[-75px] left-[-10px]', 
-    TR: 'top-[-75px] right-[-10px]', 
-    BL: 'bottom-[-75px] left-[-10px]', 
-    BR: 'bottom-[-75px] right-[-10px]' 
+    TL: 'top-[-85px] left-[-15px]', 
+    TR: 'top-[-85px] right-[-15px]', 
+    BL: 'bottom-[-85px] left-[-15px]', 
+    BR: 'bottom-[-85px] right-[-15px]' 
   };
   
   const borderColors = { 
@@ -419,7 +420,6 @@ const App: React.FC = () => {
     const activePlayer = gameState.players[gameState.currentPlayerIndex];
     if (!activePlayer) return;
 
-    // BOT LOGIC
     if (activePlayer.isBot) {
         if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
         botActionTimeout.current = setTimeout(() => {
@@ -430,17 +430,15 @@ const App: React.FC = () => {
             }
         }, 1200);
     } else {
-        // HUMAN PLAYER AUTO-SKIP LOGIC (Skip if no moves possible after roll)
         if (gameState.isDiceRolled && !isMoving) {
             const val = gameState.diceValue!;
             const valid = activePlayer.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
             if (valid.length === 0) {
-               setTimeout(nextTurn, 1000); // Auto skip if no valid moves
+               setTimeout(nextTurn, 1000); 
                return;
             }
         }
 
-        // AFK TIMEOUT
         if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
         autoMoveTimeout.current = setTimeout(() => {
             if (!gameState.isDiceRolled) rollDice();
@@ -625,8 +623,9 @@ const App: React.FC = () => {
              <button onClick={() => setIsExitModalOpen(true)} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full border-b-4 border-red-900 shadow-[0_4px_15px_rgba(220,38,38,0.4)] active:translate-y-1 active:border-b-0 transition-all font-black uppercase italic text-[9px] tracking-tighter">Exit</button>
           </div>
 
-          <div className="flex-1 flex items-center justify-center p-2 mt-28 sm:mt-32">
-            <div className="w-full max-w-[500px] aspect-square relative">
+          {/* Expanded Board Container with reduced margins */}
+          <div className="flex-1 flex items-center justify-center p-2 mt-20 sm:mt-24">
+            <div className="w-full max-w-[600px] aspect-square relative">
               <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0 || gameState.consecutiveSixes === 3 || isMoving) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
               
               {gameState.players.map((p, i) => { 
@@ -644,14 +643,15 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <div className="h-44 flex flex-col items-center justify-center gap-4 bg-[#020617]/90 rounded-t-[50px] border-t border-white/10 backdrop-blur-2xl mt-4 shrink-0 shadow-[0_-15px_30px_rgba(0,0,0,0.5)]">
-             <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || isMoving} className={`group flex flex-col items-center gap-4 transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled && !isMoving ? 'scale-100 opacity-100' : 'opacity-40 grayscale pointer-events-none'}`}>
-                <div className="relative w-28 h-28 rounded-[35px] border-[4px] border-yellow-500 shadow-2xl flex items-center justify-center bg-slate-800 group-active:scale-90 transition-transform">
+          {/* Reduced height bottom bar */}
+          <div className="h-32 flex flex-col items-center justify-center gap-2 bg-[#020617]/90 rounded-t-[50px] border-t border-white/10 backdrop-blur-2xl mt-4 shrink-0 shadow-[0_-15px_30px_rgba(0,0,0,0.5)]">
+             <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || isMoving} className={`group flex flex-col items-center gap-2 transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled && !isMoving ? 'scale-100 opacity-100' : 'opacity-40 grayscale pointer-events-none'}`}>
+                <div className="relative w-24 h-24 rounded-[30px] border-[3px] border-yellow-500 shadow-2xl flex items-center justify-center bg-slate-800 group-active:scale-90 transition-transform">
                     <Dice3D value={gameState.diceValue} isRolling={isRolling} />
                 </div>
-                <div className="flex flex-col items-center gap-2">
-                   <span className="text-xs font-black uppercase italic tracking-tighter text-yellow-400">Roll the dice!</span>
-                   <div className="w-40 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/10">
+                <div className="flex flex-col items-center gap-1">
+                   <span className="text-[10px] font-black uppercase italic tracking-tighter text-yellow-400">Roll the dice!</span>
+                   <div className="w-32 h-1 bg-white/5 rounded-full overflow-hidden border border-white/10">
                       <div className={`h-full bg-gradient-to-r from-yellow-400 to-amber-600 shadow-[0_0_10px_#fbbf24] rounded-full ${!gameState.isDiceRolled && gameState.currentPlayerIndex === 0 && !isMoving ? 'animate-[timer_12s_linear_forwards]' : 'w-0'}`}></div>
                    </div>
                 </div>
