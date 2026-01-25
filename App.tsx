@@ -26,7 +26,6 @@ const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value,
 };
 
 const PlayerProfileOverlay: React.FC<{ player: Player, isActive: boolean, position: 'TL' | 'TR' | 'BL' | 'BR' }> = ({ player, isActive, position }) => {
-  // Adjusted offsets: Profiles stay clearly outside the board boundaries
   const posClasses = { 
     TL: 'top-[-85px] left-[-15px]', 
     TR: 'top-[-85px] right-[-15px]', 
@@ -473,10 +472,29 @@ const App: React.FC = () => {
               {authError && <div className="text-red-500 mb-6 text-[10px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">{authError}</div>}
               <div className="w-full space-y-5 mb-10">
                  {view === 'LOGIN' && isSignUp && <input type="text" placeholder="Display Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />}
-                 <input type="tel" placeholder="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />
-                 <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />
+                 
+                 <input 
+                   type={view === 'ADMIN_AUTH' ? "text" : "tel"} 
+                   placeholder={view === 'ADMIN_AUTH' ? "Admin ID" : "Phone Number"} 
+                   value={view === 'ADMIN_AUTH' ? adminId : phone} 
+                   onChange={(e) => view === 'ADMIN_AUTH' ? setAdminId(e.target.value) : setPhone(e.target.value)} 
+                   className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" 
+                 />
+                 
+                 <input 
+                   type="password" 
+                   placeholder="Password" 
+                   value={view === 'ADMIN_AUTH' ? adminPass : password} 
+                   onChange={(e) => view === 'ADMIN_AUTH' ? setAdminPass(e.target.value) : setPassword(e.target.value)} 
+                   className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" 
+                 />
               </div>
-              <button onClick={view === 'ADMIN_AUTH' ? async () => { if (adminId === 'admin' && adminPass === 'admin123') setView('ADMIN'); else setAuthError('Invalid Admin Credentials'); } : handleAuth} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all">Enter</button>
+              <button 
+                onClick={view === 'ADMIN_AUTH' ? async () => { if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') setView('ADMIN'); else setAuthError('Invalid Admin Credentials'); } : handleAuth} 
+                className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all"
+              >
+                Enter
+              </button>
               {view === 'LOGIN' && <button onClick={() => setIsSignUp(!isSignUp)} className="mt-6 text-white/40 text-[10px] font-black uppercase tracking-widest">{isSignUp ? 'Login instead' : 'Create Account'}</button>}
            </div>
            {view === 'LOGIN' && <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/10 text-[10px] font-black uppercase tracking-widest">VER 1.0.6 PRO</button>}
