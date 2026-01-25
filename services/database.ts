@@ -10,23 +10,28 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const STORAGE_KEY_SETTINGS = "LUDO_SETTINGS_BACKUP";
 const STORAGE_KEY_TRANSACTIONS = "LUDO_GLOBAL_TRANSACTIONS";
 
-const toSnakeCase = (obj: any) => {
-  const snakeObj: any = {};
-  for (const key in obj) {
-    const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-    snakeObj[snakeKey] = obj[key];
+const toSnakeCase = (obj: any): any => {
+  if (Array.isArray(obj)) return obj.map(toSnakeCase);
+  if (obj !== null && typeof obj === 'object') {
+    const n: any = {};
+    Object.keys(obj).forEach(k => {
+      n[k.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`)] = toSnakeCase(obj[k]);
+    });
+    return n;
   }
-  return snakeObj;
+  return obj;
 };
 
-const toCamelCase = (obj: any) => {
-  if (!obj) return obj;
-  const camelObj: any = {};
-  for (const key in obj) {
-    const camelKey = key.replace(/(_\w)/g, m => m[1].toUpperCase());
-    camelObj[camelKey] = obj[key];
+const toCamelCase = (obj: any): any => {
+  if (Array.isArray(obj)) return obj.map(toCamelCase);
+  if (obj !== null && typeof obj === 'object') {
+    const n: any = {};
+    Object.keys(obj).forEach(k => {
+      n[k.replace(/(_\w)/g, m => m[1].toUpperCase())] = toCamelCase(obj[k]);
+    });
+    return n;
   }
-  return camelObj;
+  return obj;
 };
 
 export const databaseService = {
@@ -42,10 +47,23 @@ export const databaseService = {
     }
   },
 
+  async getUserByPhone(phone: string): Promise<UserProfile | null> {
+    try {
+      const { data, error } = await supabase.from('users').select('*').eq('phone', phone).single();
+      if (error) throw error;
+      return toCamelCase(data);
+    } catch (e) {
+      const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
+      return db.find((u: any) => u.phone === phone) || null;
+    }
+  },
+
   async updateUser(user: UserProfile) {
     try {
-      await supabase.from('users').upsert(toSnakeCase(user));
+      const snakeData = toSnakeCase(user);
+      await supabase.from('users').upsert(snakeData);
     } catch (error: any) {
+      console.error("Local save fallback", error);
       const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
       const idx = db.findIndex((u: any) => u.phone === user.phone);
       if (idx !== -1) db[idx] = user; else db.push(user);
@@ -56,7 +74,6 @@ export const databaseService = {
   // --- Real-time Matchmaking ---
   async findOrCreateMatch(stake: number, playerCount: number, user: UserProfile): Promise<string> {
     try {
-      // 1. First, check if user is already in an active/waiting match to prevent duplicates
       const { data: existing } = await supabase
         .from('matches')
         .select('id')
@@ -66,7 +83,6 @@ export const databaseService = {
       
       if (existing && existing.length > 0) return existing[0].id;
 
-      // 2. Find existing WAITING match with same stake and player count
       const { data: matches, error } = await supabase
         .from('matches')
         .select('*')
@@ -81,8 +97,6 @@ export const databaseService = {
       if (matches && matches.length > 0) {
         const match = matches[0];
         const players = match.players || [];
-        
-        // Add user to the players list
         players.push({
           name: user.name,
           phone: user.phone,
@@ -91,13 +105,9 @@ export const databaseService = {
           flag: user.flag || '🚩',
           isBot: false
         });
-        
-        // Update the match with the new player list
-        // If players list length reaches playerCount, status will be updated to ACTIVE in App.tsx
         await supabase.from('matches').update({ players }).eq('id', match.id);
         return match.id;
       } else {
-        // 3. Create new match if none found
         const newId = Math.random().toString(36).substr(2, 9);
         const { error: createError } = await supabase.from('matches').insert({
           id: newId,
@@ -118,24 +128,19 @@ export const databaseService = {
         return newId;
       }
     } catch (e) {
-      console.error("Matchmaking Error:", e);
       return "local-" + Math.random().toString(36).substr(2, 5);
     }
   },
 
   listenToMatch(matchId: string, onUpdate: (match: any) => void) {
     if (matchId.startsWith('local-')) return () => {};
-
     const subscription = supabase
       .channel(`match-${matchId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
         onUpdate(payload.new);
       })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
+    return () => { supabase.removeChannel(subscription); };
   },
 
   async updateMatchStatus(matchId: string, status: 'ACTIVE' | 'TERMINATED' | 'FINISHED', finalGameState?: any) {
@@ -161,7 +166,6 @@ export const databaseService = {
             await supabase.from('matches').update({ players: newPlayers }).eq('id', matchId);
           }
         } else if (match.status === 'ACTIVE') {
-          // If match is active, terminating it as one player left
           await supabase.from('matches').update({ status: 'TERMINATED' }).eq('id', matchId);
         }
       }
@@ -178,11 +182,9 @@ export const databaseService = {
      } catch (e) {}
   },
 
-  // --- Transactions ---
   async createTransaction(tx: PendingTransaction) {
     try {
-      const { error } = await supabase.from('transactions').insert(toSnakeCase(tx));
-      if (error) throw error;
+      await supabase.from('transactions').insert(toSnakeCase(tx));
     } catch (e) {
       const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
       allTx.push(tx);
@@ -193,14 +195,7 @@ export const databaseService = {
   async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
     try {
       await supabase.from('transactions').update({ status }).eq('id', txId);
-    } catch (e) {
-      const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
-      const idx = allTx.findIndex((t: any) => t.id === txId);
-      if (idx !== -1) {
-        allTx[idx].status = status;
-        localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
-      }
-    }
+    } catch (e) {}
   },
 
   async getPendingTransactions(): Promise<PendingTransaction[]> {
@@ -223,9 +218,7 @@ export const databaseService = {
       data?.forEach(s => { settingsMap[s.key] = s.value; });
       localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settingsMap));
       return settingsMap;
-    } catch (error: any) {
-      return localBackup;
-    }
+    } catch (error: any) { return localBackup; }
   },
 
   async updateSetting(key: string, value: string) {

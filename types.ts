@@ -45,10 +45,11 @@ export interface GameState {
 export interface PendingTransaction {
   id: string;
   userName: string;
+  accountPhone: string; // Registered phone number
   type: 'DEPOSIT' | 'WITHDRAW';
   method: string;
   amount: number;
-  phone: string;
+  phone: string; // The bkash/nagad number entered in form
   trxId?: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   timestamp: string;
