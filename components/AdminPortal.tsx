@@ -268,44 +268,43 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
 
           {activeTab === 'settings' && (
             <div className="space-y-8 animate-in fade-in">
-                <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Payment Gateway</h3>
-                <div className="bg-slate-800/30 rounded-[50px] border border-white/5 p-12 space-y-10 max-w-2xl shadow-2xl">
-                    <div className="space-y-8">
+                <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">PAYMENT GATEWAY</h3>
+                <div className="bg-slate-900/40 rounded-[50px] border border-white/5 p-12 space-y-10 max-w-2xl shadow-2xl">
+                    <div className="space-y-10">
                         {/* bKash */}
-                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5 shadow-inner">
-                            <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-2xl shrink-0">
+                        <div className="flex items-center gap-10 bg-slate-800/40 p-8 rounded-3xl border border-white/5">
+                            <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center p-3 shadow-2xl shrink-0 border border-white/10">
                                 <img src={METHOD_LOGOS['bkash']} className="h-full w-full object-contain" />
                             </div>
-                            <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-[0.2em]">bKash Personal Number</label>
-                                <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none focus:border-pink-500 transition-all text-xl" />
+                            <div className="flex-1 space-y-2">
+                                <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">BKASH PERSONAL NUMBER</label>
+                                <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} className="w-full bg-[#0f172a] border border-white/5 p-6 rounded-2xl font-black text-white outline-none focus:border-pink-500 transition-all text-xl" />
                             </div>
                         </div>
                         {/* Nagad */}
-                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5 shadow-inner">
-                            <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-2xl shrink-0">
+                        <div className="flex items-center gap-10 bg-slate-800/40 p-8 rounded-3xl border border-white/5">
+                            <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center p-3 shadow-2xl shrink-0 border border-white/10">
                                 <img src={METHOD_LOGOS['nagad']} className="h-full w-full object-contain" />
                             </div>
-                            <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-[0.2em]">Nagad Personal Number</label>
-                                <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none focus:border-orange-500 transition-all text-xl" />
+                            <div className="flex-1 space-y-2">
+                                <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">NAGAD PERSONAL NUMBER</label>
+                                <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} className="w-full bg-[#0f172a] border border-white/5 p-6 rounded-2xl font-black text-white outline-none focus:border-orange-500 transition-all text-xl" />
                             </div>
                         </div>
                         {/* Rocket */}
-                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5 shadow-inner">
-                            <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-2xl shrink-0">
+                        <div className="flex items-center gap-10 bg-slate-800/40 p-8 rounded-3xl border border-white/5">
+                            <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center p-3 shadow-2xl shrink-0 border border-white/10">
                                 <img src={METHOD_LOGOS['rocket']} className="h-full w-full object-contain" />
                             </div>
-                            <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-[0.2em]">Rocket Personal Number</label>
-                                <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none focus:border-purple-500 transition-all text-xl" />
+                            <div className="flex-1 space-y-2">
+                                <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">ROCKET PERSONAL NUMBER</label>
+                                <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} className="w-full bg-[#0f172a] border border-white/5 p-6 rounded-2xl font-black text-white outline-none focus:border-purple-500 transition-all text-xl" />
                             </div>
                         </div>
                     </div>
-                    <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-sky-500 py-6 rounded-3xl font-black text-xl uppercase italic shadow-2xl transition-all active:scale-95 disabled:opacity-50">
-                        {isSaving ? "Syncing..." : "Update Official Numbers"}
+                    <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-[#0ea5e9] py-8 rounded-[30px] font-black text-2xl uppercase italic shadow-[0_10px_30px_rgba(14,165,233,0.3)] transition-all active:translate-y-2 active:shadow-none border-b-8 border-[#0369a1]">
+                        {isSaving ? "Syncing..." : "UPDATE OFFICIAL NUMBERS"}
                     </button>
-                    <p className="text-[10px] text-center text-white/20 font-medium italic tracking-widest">Safe Payment Verification Protocol v1.0</p>
                </div>
             </div>
           )}
