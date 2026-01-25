@@ -12,9 +12,9 @@ interface WalletModalProps {
 }
 
 const METHODS = [
-  { id: 'bkash', name: 'bKash', color: '#D12053', logo: 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/bkash.png' },
-  { id: 'nagad', name: 'Nagad', color: '#F7941D', logo: 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/nagad.png' },
-  { id: 'rocket', name: 'Rocket', color: '#8C3494', logo: 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/rocket.png' }
+  { id: 'bkash', name: 'bKash', color: '#D12053', logo: 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/bkash.png' },
+  { id: 'nagad', name: 'Nagad', color: '#F7941D', logo: 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/nagad.png' },
+  { id: 'rocket', name: 'Rocket', color: '#8C3494', logo: 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/rocket.png' }
 ];
 
 const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubmitTransaction }) => {
@@ -85,10 +85,10 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
       <div className="bg-[#1e293b] rounded-[40px] w-full max-w-md overflow-hidden shadow-2xl border border-white/10 relative">
         <div className="p-6 text-center bg-gradient-to-r from-blue-700 to-indigo-900 border-b border-white/10">
           <h2 className="text-2xl font-black uppercase tracking-tighter italic text-white flex items-center justify-center gap-3">
-             <span className="bg-yellow-500 text-black w-8 h-8 rounded-full flex items-center justify-center not-italic">৳</span>
+             <span className="bg-yellow-500 text-black w-8 h-8 rounded-full flex items-center justify-center not-italic shadow-[0_0_10px_rgba(251,191,36,0.5)]">৳</span>
              Wallet
           </h2>
-          <button onClick={onClose} className="absolute top-4 right-6 text-white/50 text-2xl hover:text-white transition-colors">✕</button>
+          <button onClick={onClose} className="absolute top-4 right-6 text-white/50 text-2xl hover:text-white transition-colors p-2">✕</button>
         </div>
 
         <div className="flex p-4 gap-2 bg-slate-900/50">
@@ -107,21 +107,21 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
           </div>
 
           <div className="space-y-4">
-             <div className="space-y-2">
+             <div className="space-y-3">
                 <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-2">Select Payment Method</label>
                 <div className="grid grid-cols-3 gap-3">
                     {METHODS.map(m => (
                       <button 
                         key={m.id} 
                         onClick={() => { soundManager.play('click'); setMethod(m.id); }} 
-                        className={`relative h-20 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 bg-white ${method === m.id ? 'border-yellow-500 ring-2 ring-yellow-500/50 shadow-lg' : 'border-white/5 opacity-60 hover:opacity-100'}`}
+                        className={`relative h-20 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 bg-white shadow-sm ${method === m.id ? 'border-yellow-500 ring-4 ring-yellow-500/20' : 'border-white/5 opacity-80 hover:opacity-100'}`}
                       >
                          <img 
                             src={m.logo} 
-                            className="h-full w-full object-contain pointer-events-none" 
+                            className="h-full w-full object-contain" 
                             alt={m.name}
                             onError={(e) => {
-                                (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${m.name}&background=fff&color=000&bold=true`;
+                                (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${m.name[0]}&background=ffffff&color=000&bold=true`;
                             }}
                          />
                       </button>
@@ -130,7 +130,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
              </div>
 
              {activeTab === 'deposit' && (
-                <div className="bg-yellow-400/10 border border-yellow-400/20 p-5 rounded-[30px] flex items-center justify-between group animate-in slide-in-from-left-4">
+                <div className="bg-slate-800/80 border border-yellow-400/20 p-5 rounded-[30px] flex items-center justify-between group animate-in slide-in-from-left-4">
                     <div>
                         <p className="text-[9px] font-black text-yellow-500 uppercase tracking-widest mb-1">{selectedMethod?.name} (Personal)</p>
                         <p className="text-xl font-black text-white tracking-tighter">{adminNumber}</p>
@@ -144,7 +144,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
              <div className="space-y-4">
                 <div className="relative group">
                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-white/20 group-focus-within:text-yellow-500 transition-colors">৳</span>
-                   <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full bg-white/5 border border-white/10 p-6 pl-12 rounded-3xl text-2xl font-black text-yellow-400 focus:outline-none focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/5 transition-all placeholder:text-white/10" />
+                   <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full bg-white/5 border border-white/10 p-6 pl-12 rounded-3xl text-2xl font-black text-yellow-400 focus:outline-none focus:border-yellow-400 transition-all placeholder:text-white/10" />
                 </div>
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={`${selectedMethod?.name} Mobile Number`} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" />
                 {activeTab === 'deposit' && (
@@ -153,7 +153,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                     value={trxId} 
                     onChange={(e) => setTrxId(e.target.value)} 
                     placeholder="Transaction ID (TrxID)" 
-                    className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" 
+                    className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all uppercase" 
                   />
                 )}
              </div>
@@ -169,7 +169,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
           
           <p className="text-[10px] text-center text-white/20 font-medium italic mt-6 px-4">
              {activeTab === 'deposit' 
-               ? "সঠিক তথ্য দিন, ভুল তথ্য দিলে আপনার অ্যাকাউন্ট ব্লক হতে পারে। টাকা পাঠানোর ৫-১০ মিনিটের মধ্যে ব্যালেন্স যোগ হবে।" 
+               ? "সঠিক তথ্য দিন, ভুল তথ্য দিলে আপনার অ্যাকাউন্ট ব্লক হতে পারে।" 
                : "উইথড্র রিকোয়েস্ট দেওয়ার ৩০-৬০ মিনিটের মধ্যে পেমেন্ট করা হয়।"}
           </p>
         </div>
@@ -178,5 +178,4 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
   );
 };
 
-// Fix for App.tsx line 5: Module has no default export.
 export default WalletModal;

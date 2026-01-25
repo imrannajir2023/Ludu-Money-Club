@@ -17,9 +17,9 @@ interface AdminPortalProps {
 }
 
 const METHOD_LOGOS: Record<string, string> = {
-  'bkash': 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/bkash.png',
-  'nagad': 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/nagad.png',
-  'rocket': 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/rocket.png'
+  'bkash': 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/bkash.png',
+  'nagad': 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/nagad.png',
+  'rocket': 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/rocket.png'
 };
 
 const AdminPortal: React.FC<AdminPortalProps> = ({ 
@@ -119,7 +119,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
             <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em]">System Online</p>
           </div>
         </div>
-        <button onClick={onExit} className="bg-red-600/10 text-red-500 px-8 py-3 rounded-2xl font-black uppercase text-xs border border-red-500/20">Exit Console</button>
+        <button onClick={onExit} className="bg-red-600/10 text-red-500 px-8 py-3 rounded-2xl font-black uppercase text-xs border border-red-500/20 hover:bg-red-600/20 transition-all">Exit Console</button>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -131,7 +131,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
              { id: 'transactions', label: 'Requests', icon: '💸', badge: pendingCount > 0 ? pendingCount : null },
              { id: 'settings', label: 'Gateway', icon: '⚙️' }
            ].map(tab => (
-             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`w-full p-5 rounded-3xl flex items-center justify-between font-black text-sm transition-all ${activeTab === tab.id ? 'bg-sky-500 text-white' : 'text-white/30 hover:bg-white/5'}`}>
+             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`w-full p-5 rounded-3xl flex items-center justify-between font-black text-sm transition-all ${activeTab === tab.id ? 'bg-sky-500 text-white shadow-lg' : 'text-white/30 hover:bg-white/5'}`}>
                <div className="flex items-center gap-4"><span>{tab.icon}</span> {tab.label}</div>
                {tab.badge && <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px] animate-bounce">{tab.badge}</span>}
              </button>
@@ -141,15 +141,15 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
         <div className="flex-1 p-12 overflow-y-auto no-scrollbar">
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4">
-                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5">
+                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-xl">
                      <p className="text-[11px] font-black uppercase text-sky-400 mb-4 tracking-widest">User Balances</p>
                      <h2 className="text-5xl font-black text-yellow-500 tracking-tighter">৳ {allUsers.reduce((acc, u) => acc + u.balance, 0).toLocaleString()}</h2>
                   </div>
-                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5">
+                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-xl">
                      <p className="text-[11px] font-black uppercase text-green-400 mb-4 tracking-widest">Total Players</p>
                      <h2 className="text-5xl font-black text-white tracking-tighter">{allUsers.length}</h2>
                   </div>
-                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5">
+                  <div className="bg-slate-800/40 p-10 rounded-[50px] border border-white/5 shadow-xl">
                      <p className="text-[11px] font-black uppercase text-red-400 mb-4 tracking-widest">Arena Matches</p>
                      <h2 className="text-5xl font-black text-white tracking-tighter">{arenaCount}</h2>
                   </div>
@@ -165,12 +165,12 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                       placeholder="Search by name or phone..." 
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="bg-slate-900 border border-white/10 p-4 rounded-2xl w-80 text-sm font-bold focus:border-sky-500 outline-none transition-all"
+                      className="bg-slate-900 border border-white/10 p-4 rounded-2xl w-80 text-sm font-bold focus:border-sky-500 outline-none transition-all shadow-inner"
                     />
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-2 bg-slate-800/30 rounded-[50px] border border-white/5 overflow-hidden">
+                    <div className="lg:col-span-2 bg-slate-800/30 rounded-[50px] border border-white/5 overflow-hidden shadow-2xl">
                         <table className="w-full text-left">
                            <thead className="bg-slate-900 border-b border-white/5 text-[11px] font-black uppercase text-white/40">
                               <tr><th className="p-6">Player</th><th className="p-6">Contact</th><th className="p-6">Balance</th></tr>
@@ -192,7 +192,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                         </table>
                     </div>
 
-                    <div className="bg-slate-800/50 rounded-[50px] border border-sky-500/20 p-10 h-fit sticky top-0">
+                    <div className="bg-slate-800/50 rounded-[50px] border border-sky-500/20 p-10 h-fit sticky top-0 shadow-2xl">
                         {selectedUser ? (
                            <div className="space-y-8 animate-in zoom-in-95">
                               <div className="text-center">
@@ -201,22 +201,22 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                                  <p className="text-sky-400 font-bold mt-2">{selectedUser.phone}</p>
                               </div>
 
-                              <div className="bg-black/40 p-6 rounded-[30px] border border-white/5 text-center">
+                              <div className="bg-black/40 p-6 rounded-[30px] border border-white/5 text-center shadow-inner">
                                  <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">Current Balance</p>
                                  <p className="text-3xl font-black text-yellow-500">৳ {selectedUser.balance.toLocaleString()}</p>
                               </div>
 
                               <div className="space-y-4">
                                  <div className="flex gap-2">
-                                    <button onClick={() => setAdjustType('add')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${adjustType === 'add' ? 'bg-green-500 text-black' : 'bg-white/5 text-white/40'}`}>+ Add</button>
-                                    <button onClick={() => setAdjustType('subtract')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${adjustType === 'subtract' ? 'bg-red-500 text-white' : 'bg-white/5 text-white/40'}`}>- Remove</button>
+                                    <button onClick={() => setAdjustType('add')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${adjustType === 'add' ? 'bg-green-500 text-black shadow-lg' : 'bg-white/5 text-white/40'}`}>+ Add</button>
+                                    <button onClick={() => setAdjustType('subtract')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${adjustType === 'subtract' ? 'bg-red-500 text-white shadow-lg' : 'bg-white/5 text-white/40'}`}>- Remove</button>
                                  </div>
                                  <input 
                                    type="number" 
                                    placeholder="Amount" 
                                    value={adjustAmount}
                                    onChange={(e) => setAdjustAmount(e.target.value)}
-                                   className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none" 
+                                   className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none focus:border-sky-500" 
                                  />
                                  <button onClick={handleAdjustBalance} className="w-full bg-sky-500 py-5 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all">Update Balance</button>
                               </div>
@@ -235,7 +235,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
           {activeTab === 'transactions' && (
             <div className="space-y-8 animate-in fade-in">
                <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Pending Requests</h3>
-               <div className="bg-slate-800/30 rounded-[60px] border border-white/5 overflow-hidden">
+               <div className="bg-slate-800/30 rounded-[60px] border border-white/5 overflow-hidden shadow-2xl">
                   {pendingTransactions.length === 0 ? <div className="p-32 text-center opacity-10 font-black uppercase italic text-2xl">No Requests</div> : (
                     <table className="w-full text-left">
                        <thead className="bg-slate-900 border-b border-white/5 text-[11px] font-black uppercase text-white/40">
@@ -253,8 +253,8 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                                  </td>
                                 <td className="p-8">
                                    <div className="flex gap-3">
-                                      <button onClick={() => onApproveTransaction(tx)} className="bg-green-500 text-black px-6 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg">Approve</button>
-                                      <button onClick={() => onRejectTransaction(tx.id)} className="bg-red-500/10 text-red-500 px-6 py-2 rounded-xl text-[10px] font-black uppercase border border-red-500/20">Reject</button>
+                                      <button onClick={() => onApproveTransaction(tx)} className="bg-green-500 text-black px-6 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-all">Approve</button>
+                                      <button onClick={() => onRejectTransaction(tx.id)} className="bg-red-500/10 text-red-500 px-6 py-2 rounded-xl text-[10px] font-black uppercase border border-red-500/20 hover:bg-red-500 hover:text-white transition-all">Reject</button>
                                    </div>
                                 </td>
                              </tr>
@@ -269,40 +269,43 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
           {activeTab === 'settings' && (
             <div className="space-y-8 animate-in fade-in">
                 <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Payment Gateway</h3>
-                <div className="bg-slate-800/30 rounded-[50px] border border-white/5 p-12 space-y-10 max-w-2xl">
+                <div className="bg-slate-800/30 rounded-[50px] border border-white/5 p-12 space-y-10 max-w-2xl shadow-2xl">
                     <div className="space-y-8">
-                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
-                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center p-1 shadow-lg shrink-0">
+                        {/* bKash */}
+                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5 shadow-inner">
+                            <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-2xl shrink-0">
                                 <img src={METHOD_LOGOS['bkash']} className="h-full w-full object-contain" />
                             </div>
                             <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">bKash Personal Number</label>
-                                <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-pink-500 transition-all" />
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-[0.2em]">bKash Personal Number</label>
+                                <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none focus:border-pink-500 transition-all text-xl" />
                             </div>
                         </div>
-                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
-                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center p-1 shadow-lg shrink-0">
+                        {/* Nagad */}
+                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5 shadow-inner">
+                            <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-2xl shrink-0">
                                 <img src={METHOD_LOGOS['nagad']} className="h-full w-full object-contain" />
                             </div>
                             <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Nagad Personal Number</label>
-                                <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-orange-500 transition-all" />
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-[0.2em]">Nagad Personal Number</label>
+                                <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none focus:border-orange-500 transition-all text-xl" />
                             </div>
                         </div>
-                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
-                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center p-1 shadow-lg shrink-0">
+                        {/* Rocket */}
+                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5 shadow-inner">
+                            <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-2xl shrink-0">
                                 <img src={METHOD_LOGOS['rocket']} className="h-full w-full object-contain" />
                             </div>
                             <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Rocket Personal Number</label>
-                                <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-purple-500 transition-all" />
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block tracking-[0.2em]">Rocket Personal Number</label>
+                                <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-black text-white outline-none focus:border-purple-500 transition-all text-xl" />
                             </div>
                         </div>
                     </div>
-                    <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-sky-500 py-6 rounded-3xl font-black text-lg uppercase shadow-2xl transition-all active:scale-95 disabled:opacity-50">
+                    <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-sky-500 py-6 rounded-3xl font-black text-xl uppercase italic shadow-2xl transition-all active:scale-95 disabled:opacity-50">
                         {isSaving ? "Syncing..." : "Update Official Numbers"}
                     </button>
-                    <p className="text-[10px] text-center text-white/20 font-medium italic">Note: These numbers will be shown to users in the Wallet section for deposits.</p>
+                    <p className="text-[10px] text-center text-white/20 font-medium italic tracking-widest">Safe Payment Verification Protocol v1.0</p>
                </div>
             </div>
           )}
