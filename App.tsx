@@ -645,7 +645,6 @@ const App: React.FC = () => {
         </div>
       )}
       
-      {/* ... Rest of the component remains same ... */}
       {view === 'FINDING' && (
         <div className="h-full flex flex-col items-center justify-center p-8 bg-[#020617] animate-in fade-in overflow-hidden">
            <div className="relative w-64 h-64 mb-12 flex items-center justify-center">
@@ -779,7 +778,7 @@ const App: React.FC = () => {
 
       {isProfileOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
-           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 overflow-hidden shadow-2xl relative">
+           <div className="bg-[#1e293b] rounded-[40px] w-full max-sm border border-white/10 overflow-hidden shadow-2xl relative">
               <div className="p-6 bg-gradient-to-r from-blue-700 to-indigo-900 flex justify-between items-center"><h2 className="text-xl font-black uppercase italic tracking-tighter">My Profile</h2><button onClick={() => setProfileOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button></div>
               <div className="p-8 space-y-6">
                  <div className="flex flex-col items-center gap-4">
@@ -798,7 +797,7 @@ const App: React.FC = () => {
 
       {isSettingsOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
-           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 overflow-hidden shadow-2xl relative">
+           <div className="bg-[#1e293b] rounded-[40px] w-full max-sm border border-white/10 overflow-hidden shadow-2xl relative">
               <div className="p-6 bg-gradient-to-r from-slate-700 to-slate-900 flex justify-between items-center"><h2 className="text-xl font-black uppercase italic tracking-tighter text-white">Settings</h2><button onClick={() => setSettingsOpen(false)} className="text-white/40 hover:text-white transition-colors">✕</button></div>
               <div className="p-8 space-y-6">
                  <input type="tel" defaultValue={user.phone} onBlur={(e) => handleUpdateProfile({ phone: e.target.value })} placeholder="New Phone" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl font-bold text-white outline-none" />
@@ -831,19 +830,34 @@ const App: React.FC = () => {
                 history: (u.history || []).map(h => h.id === tx.id ? { ...h, status: 'APPROVED' as const } : h) 
               }; 
               await databaseService.updateUser(updatedUser); 
+              await databaseService.updateTransactionStatus(tx.id, 'APPROVED');
               setAllUsers(allUsers.map(usr => usr.phone === updatedUser.phone ? updatedUser : usr)); 
               setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 
+              soundManager.play('win');
             } 
           }} 
           onRejectTransaction={async (txId) => { 
+            await databaseService.updateTransactionStatus(txId, 'REJECTED');
             setPendingTransactions(prev => prev.filter(p => p.id !== txId)); 
+            soundManager.play('kill');
           }} 
           onExit={() => setView('LOBBY')} 
         />
       )}
 
       {isWalletOpen && user && (
-        <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={(tx) => { setPendingTransactions(prev => [...prev, tx]); const updatedUser = { ...user, history: [...(user.history || []), tx] }; setUser(updatedUser); databaseService.updateUser(updatedUser); }} />
+        <WalletModal 
+          isOpen={isWalletOpen} 
+          onClose={() => setWalletOpen(false)} 
+          user={user} 
+          onSubmitTransaction={async (tx) => { 
+            setPendingTransactions(prev => [...prev, tx]); 
+            const updatedUser = { ...user, history: [...(user.history || []), tx] }; 
+            setUser(updatedUser); 
+            await databaseService.updateUser(updatedUser); 
+            await databaseService.createTransaction(tx);
+          }} 
+        />
       )}
     </div>
   );

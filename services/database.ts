@@ -8,6 +8,7 @@ const supabaseKey = 'sb_publishable_IymvinlNRCFKhicLAUXqFw_cc_xiOm6';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const STORAGE_KEY_SETTINGS = "LUDO_SETTINGS_BACKUP";
+const STORAGE_KEY_TRANSACTIONS = "LUDO_GLOBAL_TRANSACTIONS";
 
 const toSnakeCase = (obj: any) => {
   const snakeObj: any = {};
@@ -52,90 +53,41 @@ export const databaseService = {
     }
   },
 
-  async getLiveMatches(): Promise<LiveMatch[]> {
+  async createTransaction(tx: PendingTransaction) {
     try {
-      const { data, error } = await supabase.from('matches').select('*');
+      // Try to save to a dedicated transactions table in Supabase
+      const { error } = await supabase.from('transactions').insert(toSnakeCase(tx));
       if (error) throw error;
-      return (data || []).map(m => toCamelCase(m));
-    } catch (error: any) {
-      return JSON.parse(localStorage.getItem("LUDO_LIVE_MATCHES") || '[]');
+    } catch (e) {
+      // Fallback: Global storage for transactions in local browser
+      const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
+      allTx.push(tx);
+      localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
     }
   },
 
-  async findWaitingMatch(stake: number, requiredPlayers: number): Promise<any> {
+  async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
     try {
-      const { data, error } = await supabase
-        .from('matches')
-        .select('*')
-        .eq('status', 'WAITING')
-        .eq('stake', stake)
-        .eq('is_private', false)
-        .order('start_time', { ascending: true });
-      
-      if (error || !data || data.length === 0) return null;
-      const availableMatch = data.find(m => m.players.length < requiredPlayers);
-      return availableMatch ? toCamelCase(availableMatch) : null;
-    } catch {
-      return null;
+      await supabase.from('transactions').update({ status }).eq('id', txId);
+    } catch (e) {
+      const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
+      const idx = allTx.findIndex((t: any) => t.id === txId);
+      if (idx !== -1) {
+        allTx[idx].status = status;
+        localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
+      }
     }
   },
 
-  async findMatchByCode(code: string): Promise<any> {
-    try {
-      const { data, error } = await supabase
-        .from('matches')
-        .select('*')
-        .eq('invite_code', code)
-        .eq('status', 'WAITING')
-        .single();
-      
-      if (error || !data) return null;
-      return toCamelCase(data);
-    } catch {
-      return null;
-    }
-  },
-
-  async createMatch(match: any) {
-    try {
-      await supabase.from('matches').insert(toSnakeCase(match));
-    } catch (e) { console.error("Create Match Error:", e); }
-  },
-
-  async syncMatch(match: LiveMatch) {
-    try {
-      const dbMatch = toSnakeCase(match);
-      await supabase.from('matches').upsert(dbMatch, { onConflict: 'match_id' });
-    } catch (error: any) {
-      console.error("Sync Match Error:", error);
-    }
-  },
-
-  async deleteMatch(match_id: string) {
-    try {
-      await supabase.from('matches').delete().eq('match_id', match_id);
-    } catch (error: any) {
-      console.error("Delete Match Error:", error);
-    }
-  },
-
-  // Added missing method to handle fetching pending transactions from Supabase or local users' histories
   async getPendingTransactions(): Promise<PendingTransaction[]> {
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING');
       if (error) throw error;
       return (data || []).map(t => toCamelCase(t));
     } catch (error: any) {
-      const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
-      const allPending: PendingTransaction[] = [];
-      db.forEach((u: any) => {
-        if (u.history) {
-          u.history.forEach((tx: any) => {
-            if (tx.status === 'PENDING') allPending.push(tx);
-          });
-        }
-      });
-      return allPending;
+      // Local fallback: Filter the global transactions storage
+      const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
+      return allTx.filter((t: any) => t.status === 'PENDING');
     }
   },
 
@@ -146,7 +98,6 @@ export const databaseService = {
       if (error) throw error;
       const settingsMap: any = { ...localBackup };
       data?.forEach(s => { settingsMap[s.key] = s.value; });
-      // Fix: Added missing value argument and removed invalid truthiness check for localStorage.setItem (returns void)
       localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settingsMap));
       return settingsMap;
     } catch (error: any) {
