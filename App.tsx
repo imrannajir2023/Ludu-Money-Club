@@ -112,6 +112,25 @@ const App: React.FC = () => {
     viewRef.current = view;
   }, [view]);
 
+  // Special effect to refresh admin data when entering admin view
+  useEffect(() => {
+    if (view === 'ADMIN') {
+      const refreshAdminData = async () => {
+        try {
+          const [users, txs] = await Promise.all([
+            databaseService.getUsers(),
+            databaseService.getPendingTransactions()
+          ]);
+          setAllUsers(users);
+          setPendingTransactions(txs);
+        } catch (e) {
+          console.error("Admin Refresh Error:", e);
+        }
+      };
+      refreshAdminData();
+    }
+  }, [view]);
+
   const handleHiddenAdminTap = () => {
     setAdminTapCount(prev => {
       const next = prev + 1;
@@ -175,6 +194,25 @@ const App: React.FC = () => {
     } else {
       const found = allUsers.find(u => u.phone === phone && u.password === password);
       if (found) { setUser(found); localStorage.setItem('LUDO_SESSION', JSON.stringify(found)); setView('LOBBY'); } else { setAuthError('Invalid credentials'); }
+    }
+  };
+
+  const handleAdminLogin = async () => {
+    setAuthError('');
+    if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') {
+      // Set a mock user so that {view === 'ADMIN' && user && ...} passes
+      const adminProfile: UserProfile = {
+        name: 'System Admin',
+        balance: 0,
+        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
+        stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
+        history: []
+      };
+      setUser(adminProfile);
+      setView('ADMIN');
+      soundManager.play('win');
+    } else {
+      setAuthError('Invalid Admin Credentials');
     }
   };
 
@@ -490,7 +528,7 @@ const App: React.FC = () => {
                  />
               </div>
               <button 
-                onClick={view === 'ADMIN_AUTH' ? async () => { if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') setView('ADMIN'); else setAuthError('Invalid Admin Credentials'); } : handleAuth} 
+                onClick={view === 'ADMIN_AUTH' ? handleAdminLogin : handleAuth} 
                 className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all"
               >
                 Enter
@@ -641,7 +679,6 @@ const App: React.FC = () => {
              <button onClick={() => setIsExitModalOpen(true)} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full border-b-4 border-red-900 shadow-[0_4px_15px_rgba(220,38,38,0.4)] active:translate-y-1 active:border-b-0 transition-all font-black uppercase italic text-[9px] tracking-tighter">Exit</button>
           </div>
 
-          {/* Expanded Board Container with reduced margins */}
           <div className="flex-1 flex items-center justify-center p-2 mt-20 sm:mt-24">
             <div className="w-full max-w-[600px] aspect-square relative">
               <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0 || gameState.consecutiveSixes === 3 || isMoving) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
@@ -661,7 +698,6 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          {/* Reduced height bottom bar */}
           <div className="h-32 flex flex-col items-center justify-center gap-2 bg-[#020617]/90 rounded-t-[50px] border-t border-white/10 backdrop-blur-2xl mt-4 shrink-0 shadow-[0_-15px_30px_rgba(0,0,0,0.5)]">
              <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || isMoving} className={`group flex flex-col items-center gap-2 transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled && !isMoving ? 'scale-100 opacity-100' : 'opacity-40 grayscale pointer-events-none'}`}>
                 <div className="relative w-24 h-24 rounded-[30px] border-[3px] border-yellow-500 shadow-2xl flex items-center justify-center bg-slate-800 group-active:scale-90 transition-transform">
@@ -719,7 +755,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Profile, Wallet & Settings Modals */}
       {isProfileOpen && user && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in zoom-in-95">
            <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 overflow-hidden shadow-2xl relative">
@@ -754,7 +789,35 @@ const App: React.FC = () => {
       )}
 
       {view === 'ADMIN' && user && (
-        <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={async (u) => { const updated = allUsers.map(usr => usr.phone === u.phone ? u : usr); setAllUsers(updated); await databaseService.updateUser(u); }} onApproveTransaction={async (tx) => { const u = allUsers.find(usr => usr.name === tx.userName); if (u) { const updatedUser = { ...u, balance: tx.type === 'DEPOSIT' ? u.balance + tx.amount : u.balance - tx.amount, history: u.history.map(h => h.id === tx.id ? { ...h, status: 'APPROVED' as const } : h) }; await databaseService.updateUser(updatedUser); setAllUsers(allUsers.map(usr => usr.phone === updatedUser.phone ? updatedUser : usr)); setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); } }} onRejectTransaction={async (txId) => { setPendingTransactions(prev => prev.filter(p => p.id !== txId)); }} onExit={() => setView('LOBBY')} />
+        <AdminPortal 
+          user={user} 
+          allUsers={allUsers} 
+          onUpdateUsersDB={setAllUsers} 
+          pendingTransactions={pendingTransactions} 
+          liveMatches={[]} 
+          onUpdateUser={async (u) => { 
+            const updated = allUsers.map(usr => usr.phone === u.phone ? u : usr); 
+            setAllUsers(updated); 
+            await databaseService.updateUser(u); 
+          }} 
+          onApproveTransaction={async (tx) => { 
+            const u = allUsers.find(usr => usr.name === tx.userName); 
+            if (u) { 
+              const updatedUser = { 
+                ...u, 
+                balance: tx.type === 'DEPOSIT' ? u.balance + tx.amount : u.balance - tx.amount, 
+                history: (u.history || []).map(h => h.id === tx.id ? { ...h, status: 'APPROVED' as const } : h) 
+              }; 
+              await databaseService.updateUser(updatedUser); 
+              setAllUsers(allUsers.map(usr => usr.phone === updatedUser.phone ? updatedUser : usr)); 
+              setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 
+            } 
+          }} 
+          onRejectTransaction={async (txId) => { 
+            setPendingTransactions(prev => prev.filter(p => p.id !== txId)); 
+          }} 
+          onExit={() => setView('LOBBY')} 
+        />
       )}
 
       {isWalletOpen && user && (
