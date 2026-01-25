@@ -121,10 +121,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                             className="h-full w-full object-contain pointer-events-none" 
                             alt={m.name}
                             onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                if ((e.target as HTMLImageElement).parentElement) {
-                                  (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="text-[10px] font-black uppercase text-black">${m.name}</span>`;
-                                }
+                                (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${m.name}&background=fff&color=000&bold=true`;
                             }}
                          />
                       </button>
@@ -151,20 +148,35 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                 </div>
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={`${selectedMethod?.name} Mobile Number`} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" />
                 {activeTab === 'deposit' && (
-                  <input type="text" value={trxId} onChange={(e) => setTrxId(e.target.value)} placeholder="Transaction ID (TrxID)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all uppercase" />
+                  <input 
+                    type="text" 
+                    value={trxId} 
+                    onChange={(e) => setTrxId(e.target.value)} 
+                    placeholder="Transaction ID (TrxID)" 
+                    className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" 
+                  />
                 )}
              </div>
 
-             <button onClick={handleTransaction} disabled={processing} className={`w-full py-6 rounded-3xl font-black text-xl text-black bg-yellow-400 border-b-8 border-yellow-600 active:translate-y-2 active:border-b-0 transition-all flex items-center justify-center gap-3 mt-4 ${processing ? 'opacity-50' : 'shadow-2xl shadow-yellow-500/20'}`}>
-                {processing ? <div className="w-6 h-6 border-4 border-black/20 border-t-black rounded-full animate-spin"></div> : (activeTab === 'deposit' ? 'DEPOSIT NOW' : 'WITHDRAW NOW')}
+             <button 
+               onClick={handleTransaction} 
+               disabled={processing}
+               className={`w-full py-5 rounded-[30px] font-black text-xl uppercase italic shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-3 ${processing ? 'bg-slate-700 text-white/20 cursor-not-allowed' : 'bg-gradient-to-r from-yellow-400 to-amber-600 text-black border-b-8 border-amber-800'}`}
+             >
+                {processing ? 'Processing...' : (activeTab === 'deposit' ? 'Confirm Deposit' : 'Confirm Withdrawal')}
              </button>
-             
-             <p className="text-[9px] text-center text-white/20 font-black uppercase tracking-widest mt-4">Safe & Secure Transactions</p>
           </div>
+          
+          <p className="text-[10px] text-center text-white/20 font-medium italic mt-6 px-4">
+             {activeTab === 'deposit' 
+               ? "সঠিক তথ্য দিন, ভুল তথ্য দিলে আপনার অ্যাকাউন্ট ব্লক হতে পারে। টাকা পাঠানোর ৫-১০ মিনিটের মধ্যে ব্যালেন্স যোগ হবে।" 
+               : "উইথড্র রিকোয়েস্ট দেওয়ার ৩০-৬০ মিনিটের মধ্যে পেমেন্ট করা হয়।"}
+          </p>
         </div>
       </div>
     </div>
   );
 };
 
+// Fix for App.tsx line 5: Module has no default export.
 export default WalletModal;
