@@ -254,6 +254,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (view === 'FINDING' && currentMatchId && user) {
         const unsubscribe = databaseService.listenToMatch(currentMatchId, (updatedMatch) => {
+            if (!updatedMatch) return;
+
+            // If match status became terminated while we were waiting
+            if (updatedMatch.status === 'TERMINATED') {
+                alert("Match terminated by another player.");
+                handleExitGame();
+                return;
+            }
+
             const remotePlayers = updatedMatch.players || [];
             
             // Map the remote players to Player objects
@@ -275,7 +284,25 @@ const App: React.FC = () => {
 
         return () => unsubscribe();
     }
-  }, [view, currentMatchId, user]);
+  }, [view, currentMatchId, user, playerCount]);
+
+  const handleExitGame = useCallback(async () => {
+    soundManager.play('click');
+    if (currentMatchId && user?.phone) {
+        await databaseService.leaveMatch(currentMatchId, user.phone);
+    }
+    
+    // Completely Reset All States
+    setGameState(null);
+    setCurrentMatchId(null);
+    setFoundPlayers([]);
+    setIsExitModalOpen(false);
+    setView('LOBBY');
+    
+    if (findingInterval.current) clearInterval(findingInterval.current);
+    if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
+    if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
+  }, [currentMatchId, user?.phone]);
 
   const startFinding = async (count: 2 | 4) => {
     if (!user || user.balance < selectedStake) {
@@ -300,7 +327,6 @@ const App: React.FC = () => {
       setFindingTimer(t => {
         if (t <= 1) {
           clearInterval(findingInterval.current);
-          // If time's up and not full, fill with bots
           fillWithBotsAndStart(count);
           return 0;
         }
@@ -312,7 +338,6 @@ const App: React.FC = () => {
   const fillWithBotsAndStart = (count: 2 | 4) => {
     if (viewRef.current !== 'FINDING') return;
 
-    // This is the fallback: fill remaining spots with bots
     const currentFound = [...foundPlayers];
     const userPlayer: Player = { 
         id: 'user', name: user!.name, country: user!.country || 'Bangladesh', 
@@ -321,13 +346,11 @@ const App: React.FC = () => {
 
     const finalPlayers: Player[] = [userPlayer];
     
-    // Add real players already found
     currentFound.forEach((p, i) => {
         p.color = [PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE][i] as PlayerColor;
         finalPlayers.push(p);
     });
 
-    // Fill the rest with bots
     const needed = count - finalPlayers.length;
     for (let i = 0; i < needed; i++) {
         const botIden = getRandomBotIdentity();
@@ -483,15 +506,18 @@ const App: React.FC = () => {
           });
       }
       setGameState(prev => prev ? { ...prev, players: [...players], winner: player.color } : null);
+      if (currentMatchId) databaseService.updateMatchStatus(currentMatchId, 'FINISHED', { ...gameState, players, winner: player.color });
       soundManager.play('win');
       setIsMoving(false);
       return;
     }
 
     const continueTurn = val === 6 || capturedToken || finishedToken;
+    const nextPlayerIndex = continueTurn ? gameState.currentPlayerIndex : (gameState.currentPlayerIndex + 1) % gameState.players.length;
+    
     setGameState(prev => prev ? { 
         ...prev, players: [...players], isDiceRolled: false, diceValue: null, 
-        currentPlayerIndex: continueTurn ? prev.currentPlayerIndex : (prev.currentPlayerIndex + 1) % prev.players.length 
+        currentPlayerIndex: nextPlayerIndex 
     } : null);
     setIsMoving(false);
   };
@@ -728,7 +754,7 @@ const App: React.FC = () => {
                  ))}
               </div>
            </div>
-           <button onClick={() => { if(findingInterval.current) clearInterval(findingInterval.current); setView('LOBBY'); }} className="text-white/20 font-black uppercase text-[10px] tracking-[0.3em] hover:text-red-500 transition-colors border-b border-transparent hover:border-red-500 pb-1">Cancel Search</button>
+           <button onClick={handleExitGame} className="text-white/20 font-black uppercase text-[10px] tracking-[0.3em] hover:text-red-500 transition-colors border-b border-transparent hover:border-red-500 pb-1">Cancel Search</button>
         </div>
       )}
 
@@ -783,9 +809,23 @@ const App: React.FC = () => {
                      <p className="text-[10px] font-black text-black uppercase mb-1">Total Winnings</p>
                      <p className="text-3xl font-black text-black tracking-tighter">৳ {selectedStake * gameState.players.length}</p>
                   </div>
-                  <button onClick={() => { setGameState(null); setView('LOBBY'); }} className="w-full bg-white text-black py-5 rounded-[25px] font-black uppercase text-sm shadow-xl active:scale-95 transition-all">
+                  <button onClick={handleExitGame} className="w-full bg-white text-black py-5 rounded-[25px] font-black uppercase text-sm shadow-xl active:scale-95 transition-all">
                      Collect Prize & Exit
                   </button>
+               </div>
+            </div>
+          )}
+          {isExitModalOpen && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6 animate-in zoom-in-95">
+               <div className="bg-[#1c212e] border-4 border-red-600/30 rounded-[50px] p-10 text-center shadow-2xl max-w-sm w-full relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-red-600"></div>
+                  <div className="text-6xl mb-6">⚠️</div>
+                  <h2 className="text-3xl font-black italic text-white mb-4 uppercase tracking-tighter leading-none">Caution!</h2>
+                  <p className="text-white/70 text-sm font-medium mb-10 leading-relaxed px-2">Are you sure you want to exit? If you leave now, you will lose your stake of <b>৳{selectedStake}</b>.</p>
+                  <div className="space-y-4">
+                     <button onClick={handleExitGame} className="w-full bg-red-600 text-white py-5 rounded-[25px] font-black uppercase text-sm shadow-[0_5px_20px_rgba(220,38,38,0.4)] active:scale-95 transition-all">Yes, Exit Anyway</button>
+                     <button onClick={() => setIsExitModalOpen(false)} className="w-full bg-white/5 text-white/40 py-5 rounded-[25px] font-black uppercase text-[10px] tracking-widest hover:text-white transition-all border border-white/10">Stay in Game</button>
+                  </div>
                </div>
             </div>
           )}

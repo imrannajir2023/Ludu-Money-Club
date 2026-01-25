@@ -56,13 +56,24 @@ export const databaseService = {
   // --- Real-time Matchmaking ---
   async findOrCreateMatch(stake: number, playerCount: number, user: UserProfile): Promise<string> {
     try {
-      // 1. Find existing WAITING match with same stake and player count
+      // 1. First, check if user is already in an active/waiting match to prevent duplicates
+      const { data: existing } = await supabase
+        .from('matches')
+        .select('id')
+        .eq('status', 'WAITING')
+        .contains('players', [{ phone: user.phone }])
+        .limit(1);
+      
+      if (existing && existing.length > 0) return existing[0].id;
+
+      // 2. Find existing WAITING match with same stake and player count
       const { data: matches, error } = await supabase
         .from('matches')
         .select('*')
         .eq('status', 'WAITING')
         .eq('stake', stake)
         .eq('player_count', playerCount)
+        .order('created_at', { ascending: true })
         .limit(1);
 
       if (error) throw error;
@@ -71,22 +82,22 @@ export const databaseService = {
         const match = matches[0];
         const players = match.players || [];
         
-        // Don't add if already in
-        if (!players.find((p: any) => p.phone === user.phone)) {
-          players.push({
-            name: user.name,
-            phone: user.phone,
-            avatar: user.avatar,
-            country: user.country || 'Global',
-            flag: user.flag || '🚩',
-            isBot: false
-          });
-          
-          await supabase.from('matches').update({ players }).eq('id', match.id);
-        }
+        // Add user to the players list
+        players.push({
+          name: user.name,
+          phone: user.phone,
+          avatar: user.avatar,
+          country: user.country || 'Global',
+          flag: user.flag || '🚩',
+          isBot: false
+        });
+        
+        // Update the match with the new player list
+        // If players list length reaches playerCount, status will be updated to ACTIVE in App.tsx
+        await supabase.from('matches').update({ players }).eq('id', match.id);
         return match.id;
       } else {
-        // 2. Create new match if none found
+        // 3. Create new match if none found
         const newId = Math.random().toString(36).substr(2, 9);
         const { error: createError } = await supabase.from('matches').insert({
           id: newId,
@@ -117,7 +128,7 @@ export const databaseService = {
 
     const subscription = supabase
       .channel(`match-${matchId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
         onUpdate(payload.new);
       })
       .subscribe();
@@ -128,7 +139,7 @@ export const databaseService = {
   },
 
   async updateMatchStatus(matchId: string, status: 'ACTIVE' | 'TERMINATED' | 'FINISHED', finalGameState?: any) {
-    if (matchId.startsWith('local-')) return;
+    if (!matchId || matchId.startsWith('local-')) return;
     try {
       await supabase.from('matches').update({ 
         status, 
@@ -137,8 +148,28 @@ export const databaseService = {
     } catch (e) {}
   },
 
+  async leaveMatch(matchId: string, phone: string) {
+    if (!matchId || matchId.startsWith('local-')) return;
+    try {
+      const { data: match } = await supabase.from('matches').select('players, status').eq('id', matchId).single();
+      if (match) {
+        if (match.status === 'WAITING') {
+          const newPlayers = match.players.filter((p: any) => p.phone !== phone);
+          if (newPlayers.length === 0) {
+            await supabase.from('matches').delete().eq('id', matchId);
+          } else {
+            await supabase.from('matches').update({ players: newPlayers }).eq('id', matchId);
+          }
+        } else if (match.status === 'ACTIVE') {
+          // If match is active, terminating it as one player left
+          await supabase.from('matches').update({ status: 'TERMINATED' }).eq('id', matchId);
+        }
+      }
+    } catch (e) {}
+  },
+
   async syncGameState(matchId: string, gameState: GameState) {
-     if (matchId.startsWith('local-')) return;
+     if (!matchId || matchId.startsWith('local-')) return;
      try {
        await supabase.from('matches').update({ 
          game_state: toSnakeCase(gameState),
