@@ -92,10 +92,10 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
         </div>
 
         <div className="flex p-4 gap-2 bg-slate-900/50">
-           <button onClick={() => setActiveTab('deposit')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'deposit' ? 'bg-yellow-500 text-black shadow-lg scale-[1.02]' : 'bg-white/5 text-white/40'}`}>
+           <button onClick={() => setActiveTab('deposit')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'deposit' ? 'bg-yellow-400 text-black shadow-lg scale-[1.02]' : 'bg-white/5 text-white/40'}`}>
               📥 Deposit
            </button>
-           <button onClick={() => setActiveTab('withdraw')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'withdraw' ? 'bg-yellow-500 text-black shadow-lg scale-[1.02]' : 'bg-white/5 text-white/40'}`}>
+           <button onClick={() => setActiveTab('withdraw')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'withdraw' ? 'bg-yellow-400 text-black shadow-lg scale-[1.02]' : 'bg-white/5 text-white/40'}`}>
               📤 Withdraw
            </button>
         </div>
@@ -114,21 +114,31 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                       <button 
                         key={m.id} 
                         onClick={() => { soundManager.play('click'); setMethod(m.id); }} 
-                        className={`relative h-16 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 bg-white ${method === m.id ? 'border-yellow-500 ring-2 ring-yellow-500/50 shadow-lg' : 'border-white/5 opacity-60 hover:opacity-100'}`}
+                        className={`relative h-20 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 bg-white ${method === m.id ? 'border-yellow-500 ring-2 ring-yellow-500/50 shadow-lg' : 'border-white/5 opacity-60 hover:opacity-100'}`}
                       >
-                         <img src={m.logo} className="h-full w-full object-contain" alt={m.name} />
+                         <img 
+                            src={m.logo} 
+                            className="h-full w-full object-contain pointer-events-none" 
+                            alt={m.name}
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                if ((e.target as HTMLImageElement).parentElement) {
+                                  (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="text-[10px] font-black uppercase text-black">${m.name}</span>`;
+                                }
+                            }}
+                         />
                       </button>
                     ))}
                 </div>
              </div>
 
              {activeTab === 'deposit' && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 p-5 rounded-[30px] flex items-center justify-between group animate-in slide-in-from-left-4">
+                <div className="bg-yellow-400/10 border border-yellow-400/20 p-5 rounded-[30px] flex items-center justify-between group animate-in slide-in-from-left-4">
                     <div>
                         <p className="text-[9px] font-black text-yellow-500 uppercase tracking-widest mb-1">{selectedMethod?.name} (Personal)</p>
                         <p className="text-xl font-black text-white tracking-tighter">{adminNumber}</p>
                     </div>
-                    <button onClick={() => copyToClipboard(adminNumber)} className={`px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all active:scale-95 ${copied ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black'}`}>
+                    <button onClick={() => copyToClipboard(adminNumber)} className={`px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all active:scale-95 ${copied ? 'bg-green-500 text-white' : 'bg-yellow-400 text-black'}`}>
                         {copied ? '✓ Copied' : 'Copy'}
                     </button>
                 </div>
@@ -137,7 +147,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
              <div className="space-y-4">
                 <div className="relative group">
                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-white/20 group-focus-within:text-yellow-500 transition-colors">৳</span>
-                   <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full bg-white/5 border border-white/10 p-6 pl-12 rounded-3xl text-2xl font-black text-yellow-500 focus:outline-none focus:border-yellow-500 focus:ring-4 focus:ring-yellow-500/5 transition-all placeholder:text-white/10" />
+                   <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full bg-white/5 border border-white/10 p-6 pl-12 rounded-3xl text-2xl font-black text-yellow-400 focus:outline-none focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/5 transition-all placeholder:text-white/10" />
                 </div>
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={`${selectedMethod?.name} Mobile Number`} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-lg font-bold text-white focus:outline-none focus:border-sky-500 transition-all" />
                 {activeTab === 'deposit' && (
@@ -145,7 +155,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                 )}
              </div>
 
-             <button onClick={handleTransaction} disabled={processing} className={`w-full py-6 rounded-3xl font-black text-xl text-black bg-yellow-500 border-b-8 border-yellow-700 active:translate-y-2 active:border-b-0 transition-all flex items-center justify-center gap-3 mt-4 ${processing ? 'opacity-50' : 'shadow-2xl shadow-yellow-500/20'}`}>
+             <button onClick={handleTransaction} disabled={processing} className={`w-full py-6 rounded-3xl font-black text-xl text-black bg-yellow-400 border-b-8 border-yellow-600 active:translate-y-2 active:border-b-0 transition-all flex items-center justify-center gap-3 mt-4 ${processing ? 'opacity-50' : 'shadow-2xl shadow-yellow-500/20'}`}>
                 {processing ? <div className="w-6 h-6 border-4 border-black/20 border-t-black rounded-full animate-spin"></div> : (activeTab === 'deposit' ? 'DEPOSIT NOW' : 'WITHDRAW NOW')}
              </button>
              

@@ -272,21 +272,27 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                 <div className="bg-slate-800/30 rounded-[50px] border border-white/5 p-12 space-y-10 max-w-2xl">
                     <div className="space-y-8">
                         <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
-                            <img src={METHOD_LOGOS['bkash']} className="h-14 w-14 object-contain" />
+                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center p-1 shadow-lg shrink-0">
+                                <img src={METHOD_LOGOS['bkash']} className="h-full w-full object-contain" />
+                            </div>
                             <div className="flex-1">
                                 <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">bKash Personal Number</label>
                                 <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-pink-500 transition-all" />
                             </div>
                         </div>
                         <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
-                            <img src={METHOD_LOGOS['nagad']} className="h-14 w-14 object-contain" />
+                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center p-1 shadow-lg shrink-0">
+                                <img src={METHOD_LOGOS['nagad']} className="h-full w-full object-contain" />
+                            </div>
                             <div className="flex-1">
                                 <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Nagad Personal Number</label>
                                 <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-orange-500 transition-all" />
                             </div>
                         </div>
                         <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
-                            <img src={METHOD_LOGOS['rocket']} className="h-14 w-14 object-contain" />
+                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center p-1 shadow-lg shrink-0">
+                                <img src={METHOD_LOGOS['rocket']} className="h-full w-full object-contain" />
+                            </div>
                             <div className="flex-1">
                                 <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Rocket Personal Number</label>
                                 <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-purple-500 transition-all" />
