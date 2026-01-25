@@ -45,11 +45,11 @@ export interface GameState {
 export interface PendingTransaction {
   id: string;
   userName: string;
-  accountPhone: string; // Registered phone number
+  accountPhone: string;
   type: 'DEPOSIT' | 'WITHDRAW';
   method: string;
   amount: number;
-  phone: string; // The bkash/nagad number entered in form
+  phone: string;
   trxId?: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   timestamp: string;
@@ -57,11 +57,12 @@ export interface PendingTransaction {
 
 export interface UserProfile {
   name: string;
-  phone?: string;
+  phone: string;
   password?: string;
   balance: number;
   avatar: string;
   country?: string;
+  address?: string;
   flag?: string;
   isBlocked?: boolean;
   stats: {
