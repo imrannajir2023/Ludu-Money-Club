@@ -87,6 +87,7 @@ const App: React.FC = () => {
   const [foundPlayers, setFoundPlayers] = useState<Player[]>([]);
   const [findingTimer, setFindingTimer] = useState(30);
   const [commentary, setCommentary] = useState<string>('Welcome to Ludo Money Arena!');
+  const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   
   const botActionTimeout = useRef<any>(null);
   const autoForwardTimeout = useRef<any>(null);
@@ -123,8 +124,6 @@ const App: React.FC = () => {
             databaseService.getPendingTransactions()
           ]);
           setAllUsers(users);
-          
-          // Sound notification for new transactions
           if (txs.length > pendingTransactions.length) {
               soundManager.play('six');
           }
@@ -133,13 +132,11 @@ const App: React.FC = () => {
           console.error("Admin Refresh Error:", e);
         }
       };
-
       refreshAdminData();
-      adminPollingRef.current = setInterval(refreshAdminData, 5000); // Poll every 5 seconds
+      adminPollingRef.current = setInterval(refreshAdminData, 5000);
     } else {
       if (adminPollingRef.current) clearInterval(adminPollingRef.current);
     }
-
     return () => {
       if (adminPollingRef.current) clearInterval(adminPollingRef.current);
     };
@@ -199,7 +196,6 @@ const App: React.FC = () => {
     setAuthError('');
     if (!phone || !password) return setAuthError('Please fill all fields');
     if (isSignUp && !name) return setAuthError('Please enter name');
-    
     const users = await databaseService.getUsers();
     setAllUsers(users);
 
@@ -235,11 +231,8 @@ const App: React.FC = () => {
     setAuthError('');
     if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') {
       const adminProfile: UserProfile = {
-        name: 'System Admin',
-        balance: 0,
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
-        stats: { totalGames: 0, wins: 0, totalWinnings: 0 },
-        history: []
+        name: 'System Admin', balance: 0, avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
+        stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: []
       };
       setUser(adminProfile);
       setView('ADMIN');
@@ -257,6 +250,33 @@ const App: React.FC = () => {
     await databaseService.updateUser(updatedUser);
   };
 
+  // --- Matchmaking Effect ---
+  useEffect(() => {
+    if (view === 'FINDING' && currentMatchId && user) {
+        const unsubscribe = databaseService.listenToMatch(currentMatchId, (updatedMatch) => {
+            const remotePlayers = updatedMatch.players || [];
+            
+            // Map the remote players to Player objects
+            const playersList: Player[] = remotePlayers.map((rp: any, i: number) => ({
+                id: rp.phone === user.phone ? 'user' : `remote-${rp.phone}`,
+                name: rp.name, country: rp.country, flag: rp.flag, isBot: false, avatarUrl: rp.avatar,
+                color: [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE][i],
+                tokens: []
+            }));
+
+            setFoundPlayers(playersList.filter(p => p.id !== 'user'));
+
+            // Check if match is full
+            if (playersList.length === playerCount) {
+                if (findingInterval.current) clearInterval(findingInterval.current);
+                startActualGame(playersList, playerCount);
+            }
+        });
+
+        return () => unsubscribe();
+    }
+  }, [view, currentMatchId, user]);
+
   const startFinding = async (count: 2 | 4) => {
     if (!user || user.balance < selectedStake) {
       alert("Insufficient balance!");
@@ -271,13 +291,17 @@ const App: React.FC = () => {
     setFindingTimer(30);
     setFoundPlayers([]);
 
+    const matchId = await databaseService.findOrCreateMatch(selectedStake, count, user);
+    setCurrentMatchId(matchId);
+
     if (findingInterval.current) clearInterval(findingInterval.current);
     
     findingInterval.current = setInterval(() => {
       setFindingTimer(t => {
         if (t <= 1) {
           clearInterval(findingInterval.current);
-          connectBots(count);
+          // If time's up and not full, fill with bots
+          fillWithBotsAndStart(count);
           return 0;
         }
         return t - 1;
@@ -285,41 +309,62 @@ const App: React.FC = () => {
     }, 1000);
   };
 
-  const connectBots = async (count: 2 | 4) => {
+  const fillWithBotsAndStart = (count: 2 | 4) => {
     if (viewRef.current !== 'FINDING') return;
 
-    const simulatedBots: Player[] = [];
-    const opponentColors = count === 2 ? [PlayerColor.YELLOW] : [PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+    // This is the fallback: fill remaining spots with bots
+    const currentFound = [...foundPlayers];
+    const userPlayer: Player = { 
+        id: 'user', name: user!.name, country: user!.country || 'Bangladesh', 
+        flag: user!.flag || '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user!.avatar, tokens: [] 
+    };
 
-    for (const color of opponentColors) {
-      const botIdentity = getRandomBotIdentity();
-      const bot: Player = {
-        id: `bot-${color}-${Date.now()}`,
-        name: botIdentity.name, country: botIdentity.country, flag: botIdentity.flag, color: color, isBot: true,
-        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIdentity.name + Math.random()}`, tokens: []
-      };
-      simulatedBots.push(bot);
-      setFoundPlayers([...simulatedBots]);
-      soundManager.play('click');
-      await new Promise(r => setTimeout(r, 400));
-    }
-
-    const gamePlayers: Player[] = [];
-    const allColors = count === 2 ? [PlayerColor.RED, PlayerColor.YELLOW] : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
-
-    allColors.forEach((color, i) => {
-      let p: Player;
-      if (color === PlayerColor.RED) {
-        p = { id: 'user', name: user!.name, country: user!.country || 'Bangladesh', flag: user!.flag || '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user!.avatar, tokens: [] };
-      } else {
-        const simBot = simulatedBots.find(b => b.color === color) || simulatedBots[0];
-        p = { ...simBot };
-      }
-      p.tokens = [0, 1, 2, 3].map(id => ({ id: (i * 4) + id, color: p.color, state: TokenState.HOME, position: 0, distanceTraveled: 0 }));
-      gamePlayers.push(p);
+    const finalPlayers: Player[] = [userPlayer];
+    
+    // Add real players already found
+    currentFound.forEach((p, i) => {
+        p.color = [PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE][i] as PlayerColor;
+        finalPlayers.push(p);
     });
 
-    setGameState({ players: gamePlayers, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: 'Battle Started', consecutiveSixes: 0 });
+    // Fill the rest with bots
+    const needed = count - finalPlayers.length;
+    for (let i = 0; i < needed; i++) {
+        const botIden = getRandomBotIdentity();
+        const availableColors = [PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE].filter(c => !finalPlayers.find(fp => fp.color === c));
+        const bot: Player = {
+            id: `bot-${Date.now()}-${i}`, name: botIden.name, country: botIden.country, flag: botIden.flag,
+            isBot: true, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIden.name + Math.random()}`,
+            color: availableColors[0], tokens: []
+        };
+        finalPlayers.push(bot);
+    }
+
+    startActualGame(finalPlayers, count);
+  };
+
+  const startActualGame = (playersList: Player[], count: 2 | 4) => {
+    const finalPlayers = playersList.map((p, i) => {
+        const color = count === 2 
+            ? (i === 0 ? PlayerColor.RED : PlayerColor.YELLOW)
+            : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE][i];
+        
+        return {
+            ...p,
+            color,
+            tokens: [0, 1, 2, 3].map(tid => ({ id: (i * 4) + tid, color, state: TokenState.HOME, position: 0, distanceTraveled: 0 }))
+        } as Player;
+    });
+
+    setGameState({ 
+        players: finalPlayers, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, 
+        winner: null, log: [], lastAction: 'Battle Started', consecutiveSixes: 0 
+    });
+    
+    if (currentMatchId) {
+        databaseService.updateMatchStatus(currentMatchId, 'ACTIVE');
+    }
+    
     setView('GAME');
     soundManager.play('six');
     setCommentary(`Tournament started! Total Pool: ৳${selectedStake * count}`);
@@ -456,9 +501,7 @@ const App: React.FC = () => {
       t.state !== TokenState.WIN && 
       (t.state === TokenState.HOME ? diceVal === 6 : t.distanceTraveled + diceVal <= 56)
     );
-
     if (validMoves.length === 0) return null;
-
     for (const t of validMoves) {
       if (t.state === TokenState.PATH && t.distanceTraveled + diceVal < 51) {
         const startPos = START_POSITIONS[t.color];
@@ -477,7 +520,6 @@ const App: React.FC = () => {
         }
       }
     }
-
     const winningMove = validMoves.find(t => t.distanceTraveled + diceVal === 56);
     if (winningMove) return winningMove;
     const baseExit = validMoves.find(t => t.state === TokenState.HOME && diceVal === 6);
@@ -508,7 +550,6 @@ const App: React.FC = () => {
                return;
             }
         }
-
         if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
         autoMoveTimeout.current = setTimeout(() => {
             if (!gameState.isDiceRolled) rollDice();
@@ -519,7 +560,6 @@ const App: React.FC = () => {
             }
         }, 15000); 
     }
-
     return () => {
       if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
       if (autoMoveTimeout.current) clearTimeout(autoMoveTimeout.current);
@@ -543,7 +583,6 @@ const App: React.FC = () => {
               {authError && <div className="text-red-500 mb-6 text-[10px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20 text-center max-w-[80%]">{authError}</div>}
               <div className="w-full space-y-5 mb-10">
                  {view === 'LOGIN' && isSignUp && <input type="text" placeholder="Display Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />}
-                 
                  <input 
                    type={view === 'ADMIN_AUTH' ? "text" : "tel"} 
                    placeholder={view === 'ADMIN_AUTH' ? "Admin ID" : "Phone Number"} 
@@ -551,7 +590,6 @@ const App: React.FC = () => {
                    onChange={(e) => view === 'ADMIN_AUTH' ? setAdminId(e.target.value) : setPhone(e.target.value)} 
                    className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" 
                  />
-                 
                  <input 
                    type="password" 
                    placeholder="Password" 
@@ -584,7 +622,6 @@ const App: React.FC = () => {
                 <p className="text-[8px] font-bold text-white/40 uppercase tracking-widest mt-1">Player Rank: Gold</p>
               </div>
             </div>
-            
             <div className="flex items-center gap-2">
                 <button onClick={() => setSettingsOpen(true)} className="bg-slate-900/80 border border-red-600/50 p-2.5 rounded-full shadow-[0_0_15px_rgba(220,38,38,0.3)] active:scale-90 transition-transform">
                    <span className="text-lg">⚙️</span>
@@ -620,7 +657,6 @@ const App: React.FC = () => {
                   <button onClick={() => setPlayerCount(2)} className={`flex-1 py-3 rounded-2xl text-[11px] font-black uppercase transition-all flex items-center justify-center ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40'}`}>2 Player</button>
                   <button onClick={() => setPlayerCount(4)} className={`flex-1 py-3 rounded-2xl text-[11px] font-black uppercase transition-all flex items-center justify-center ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40'}`}>4 Player</button>
                </div>
-               
                <div className="flex flex-col items-center gap-4 py-6 z-10">
                   <div className="w-32 h-32 bg-yellow-400 rounded-[35px] flex items-center justify-center shadow-2xl border-b-8 border-yellow-600 active:translate-y-1">
                      <div className="w-16 h-16 bg-white rounded-xl rotate-12 flex items-center justify-center shadow-lg border-b-4 border-slate-300">
@@ -629,13 +665,11 @@ const App: React.FC = () => {
                   </div>
                   <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.2)] text-center">Global Arena</h2>
                </div>
-
                <div className="w-full grid grid-cols-4 gap-2 z-10">
                   {[50, 100, 500, 1000].map(stake => (
                     <button key={stake} onClick={() => setSelectedStake(stake)} className={`py-3 rounded-xl font-black text-[10px] border-2 transition-all ${selectedStake === stake ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-md' : 'bg-[#0f1d44] border-white/5 text-white/40'}`}>৳{stake}</button>
                   ))}
                </div>
-               
                <button onClick={() => startFinding(playerCount)} className="w-full mt-6 py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[30px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 transition-all shadow-xl z-10">Start Battle</button>
             </div>
           </div>
@@ -670,7 +704,7 @@ const App: React.FC = () => {
            
            <h2 className="text-4xl font-black italic uppercase text-white mb-2 tracking-tighter">Finding Players</h2>
            <p className="text-sky-400 font-bold uppercase text-[10px] tracking-widest mb-12 text-center max-w-[260px] leading-relaxed">
-              Connecting to the nearest available match in Global Arena...
+              Players Found: <span className="text-white">{foundPlayers.length + 1} / {playerCount}</span>
            </p>
            
            <div className="flex items-center gap-6 mb-16">
@@ -679,18 +713,19 @@ const App: React.FC = () => {
                  <span className="text-[10px] font-black uppercase text-white/60 tracking-tighter">{user?.name}</span>
               </div>
               <div className="text-2xl animate-pulse text-white/20 italic">VS</div>
-              <div className="flex flex-col items-center gap-3">
-                 {foundPlayers.length > 0 ? (
-                    <div className="flex flex-col items-center gap-3 animate-in zoom-in">
-                       <div className="w-16 h-16 rounded-2xl border-2 border-green-500 overflow-hidden shadow-xl bg-slate-800"><img src={foundPlayers[0].avatarUrl} className="w-full h-full object-cover" /></div>
-                       <span className="text-[10px] font-black uppercase text-white/60 tracking-tighter">{foundPlayers[0].name}</span>
+              <div className="flex items-center gap-4">
+                 {foundPlayers.map((p, i) => (
+                    <div key={p.id} className="flex flex-col items-center gap-3 animate-in zoom-in">
+                        <div className="w-16 h-16 rounded-2xl border-2 border-green-500 overflow-hidden shadow-xl bg-slate-800"><img src={p.avatarUrl} className="w-full h-full object-cover" /></div>
+                        <span className="text-[10px] font-black uppercase text-white/60 tracking-tighter">{p.name}</span>
                     </div>
-                 ) : (
-                    <div className="flex flex-col items-center gap-3 opacity-30">
+                 ))}
+                 {Array.from({ length: playerCount - 1 - foundPlayers.length }).map((_, i) => (
+                    <div key={i} className="flex flex-col items-center gap-3 opacity-30">
                        <div className="w-16 h-16 rounded-2xl border-2 border-white/20 bg-white/5 flex items-center justify-center text-3xl">?</div>
                        <span className="text-[10px] font-black uppercase text-white/20 tracking-tighter">Waiting...</span>
                     </div>
-                 )}
+                 ))}
               </div>
            </div>
            <button onClick={() => { if(findingInterval.current) clearInterval(findingInterval.current); setView('LOBBY'); }} className="text-white/20 font-black uppercase text-[10px] tracking-[0.3em] hover:text-red-500 transition-colors border-b border-transparent hover:border-red-500 pb-1">Cancel Search</button>
@@ -707,30 +742,18 @@ const App: React.FC = () => {
                 {commentary}
              </p>
           </div>
-
           <div className="absolute top-4 left-4 z-[110]">
              <button onClick={() => setIsExitModalOpen(true)} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full border-b-4 border-red-900 shadow-[0_4px_15px_rgba(220,38,38,0.4)] active:translate-y-1 active:border-b-0 transition-all font-black uppercase italic text-[9px] tracking-tighter">Exit</button>
           </div>
-
           <div className="flex-1 flex items-center justify-center p-2 mt-20 sm:mt-24">
             <div className="w-full max-w-[600px] aspect-square relative">
               <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={(() => { if (gameState.currentPlayerIndex !== 0 || gameState.consecutiveSixes === 3 || isMoving) return []; const player = gameState.players[0]; const val = gameState.diceValue; if (!val || !gameState.isDiceRolled) return []; return player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)).map(t => t.id); })()} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
-              
               {gameState.players.map((p, i) => { 
-                const positionsMap: ('TL' | 'TR' | 'BR' | 'BL')[] = playerCount === 2 
-                  ? ['TL', 'BR'] 
-                  : ['TL', 'TR', 'BR', 'BL']; 
-                
-                return <PlayerProfileOverlay 
-                  key={p.id} 
-                  player={p} 
-                  isActive={gameState.currentPlayerIndex === i} 
-                  position={positionsMap[i]} 
-                />; 
+                const positionsMap: ('TL' | 'TR' | 'BR' | 'BL')[] = playerCount === 2 ? ['TL', 'BR'] : ['TL', 'TR', 'BR', 'BL']; 
+                return <PlayerProfileOverlay key={p.id} player={p} isActive={gameState.currentPlayerIndex === i} position={positionsMap[i]} />; 
               })}
             </div>
           </div>
-          
           <div className="h-32 flex flex-col items-center justify-center gap-2 bg-[#020617]/90 rounded-t-[50px] border-t border-white/10 backdrop-blur-2xl mt-4 shrink-0 shadow-[0_-15px_30px_rgba(0,0,0,0.5)]">
              <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || isMoving} className={`group flex flex-col items-center gap-2 transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled && !isMoving ? 'scale-100 opacity-100' : 'opacity-40 grayscale pointer-events-none'}`}>
                 <div className="relative w-24 h-24 rounded-[30px] border-[3px] border-yellow-500 shadow-2xl flex items-center justify-center bg-slate-800 group-active:scale-90 transition-transform">
@@ -744,44 +767,25 @@ const App: React.FC = () => {
                 </div>
              </button>
           </div>
-
           {gameState.winner && (
             <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 backdrop-blur-xl animate-in zoom-in">
                <div className="relative bg-gradient-to-b from-indigo-900 to-black p-12 rounded-[60px] border-4 border-yellow-500 shadow-[0_0_50px_rgba(251,191,36,0.5)] text-center max-w-sm w-full">
                   <div className="absolute -top-16 left-1/2 -translate-x-1/2 text-8xl">🏆</div>
                   <h2 className="text-4xl font-black italic uppercase text-yellow-400 mb-2 mt-4 tracking-tighter">Victory!</h2>
                   <p className="text-white/60 font-black uppercase text-[10px] tracking-widest mb-8">Tournament Winner</p>
-                  
                   <div className="flex flex-col items-center gap-4 mb-10">
                      <div className="w-24 h-24 rounded-[30px] border-4 border-yellow-500 p-1 overflow-hidden">
                         <img src={gameState.players.find(p => p.color === gameState.winner)?.avatarUrl} className="w-full h-full object-cover rounded-2xl" />
                      </div>
                      <h3 className="text-2xl font-black italic uppercase text-white">{gameState.players.find(p => p.color === gameState.winner)?.name}</h3>
                   </div>
-
                   <div className="bg-yellow-400 p-6 rounded-[30px] mb-8">
                      <p className="text-[10px] font-black text-black uppercase mb-1">Total Winnings</p>
                      <p className="text-3xl font-black text-black tracking-tighter">৳ {selectedStake * gameState.players.length}</p>
                   </div>
-
                   <button onClick={() => { setGameState(null); setView('LOBBY'); }} className="w-full bg-white text-black py-5 rounded-[25px] font-black uppercase text-sm shadow-xl active:scale-95 transition-all">
                      Collect Prize & Exit
                   </button>
-               </div>
-            </div>
-          )}
-
-          {isExitModalOpen && (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6 animate-in zoom-in-95">
-               <div className="bg-[#1c212e] border-4 border-red-600/30 rounded-[50px] p-10 text-center shadow-2xl max-w-sm w-full relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-2 bg-red-600"></div>
-                  <div className="text-6xl mb-6">⚠️</div>
-                  <h2 className="text-3xl font-black italic text-white mb-4 uppercase tracking-tighter leading-none">Caution!</h2>
-                  <p className="text-white/70 text-sm font-medium mb-10 leading-relaxed px-2">Are you sure you want to exit? If you leave now, you will lose your stake of <b>৳{selectedStake}</b>.</p>
-                  <div className="space-y-4">
-                     <button onClick={() => { setIsExitModalOpen(false); setView('LOBBY'); }} className="w-full bg-red-600 text-white py-5 rounded-[25px] font-black uppercase text-sm shadow-[0_5px_20px_rgba(220,38,38,0.4)] active:scale-95 transition-all">Yes, Exit Anyway</button>
-                     <button onClick={() => setIsExitModalOpen(false)} className="w-full bg-white/5 text-white/40 py-5 rounded-[25px] font-black uppercase text-[10px] tracking-widest hover:text-white transition-all border border-white/10">Stay in Game</button>
-                  </div>
                </div>
             </div>
           )}
@@ -823,22 +827,13 @@ const App: React.FC = () => {
 
       {view === 'ADMIN' && user && (
         <AdminPortal 
-          user={user} 
-          allUsers={allUsers} 
-          onUpdateUsersDB={setAllUsers} 
-          pendingTransactions={pendingTransactions} 
-          liveMatches={[]} 
-          onUpdateUser={async (u) => { 
-            const updated = allUsers.map(usr => usr.phone === u.phone ? u : usr); 
-            setAllUsers(updated); 
-            await databaseService.updateUser(u); 
-          }} 
+          user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} 
+          onUpdateUser={async (u) => { const updated = allUsers.map(usr => usr.phone === u.phone ? u : usr); setAllUsers(updated); await databaseService.updateUser(u); }} 
           onApproveTransaction={async (tx) => { 
             const u = allUsers.find(usr => usr.name === tx.userName); 
             if (u) { 
               const updatedUser = { 
-                ...u, 
-                balance: tx.type === 'DEPOSIT' ? u.balance + tx.amount : u.balance - tx.amount, 
+                ...u, balance: tx.type === 'DEPOSIT' ? u.balance + tx.amount : u.balance - tx.amount, 
                 history: (u.history || []).map(h => h.id === tx.id ? { ...h, status: 'APPROVED' as const } : h) 
               }; 
               await databaseService.updateUser(updatedUser); 
@@ -848,20 +843,14 @@ const App: React.FC = () => {
               soundManager.play('win');
             } 
           }} 
-          onRejectTransaction={async (txId) => { 
-            await databaseService.updateTransactionStatus(txId, 'REJECTED');
-            setPendingTransactions(prev => prev.filter(p => p.id !== txId)); 
-            soundManager.play('kill');
-          }} 
+          onRejectTransaction={async (txId) => { await databaseService.updateTransactionStatus(txId, 'REJECTED'); setPendingTransactions(prev => prev.filter(p => p.id !== txId)); soundManager.play('kill'); }} 
           onExit={() => setView('LOBBY')} 
         />
       )}
 
       {isWalletOpen && user && (
         <WalletModal 
-          isOpen={isWalletOpen} 
-          onClose={() => setWalletOpen(false)} 
-          user={user} 
+          isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} 
           onSubmitTransaction={async (tx) => { 
             setPendingTransactions(prev => [...prev, tx]); 
             const updatedUser = { ...user, history: [...(user.history || []), tx] }; 
