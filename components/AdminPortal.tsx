@@ -17,9 +17,9 @@ interface AdminPortalProps {
 }
 
 const METHOD_LOGOS: Record<string, string> = {
-  'bkash': 'https://download.logo.wine/logo/BKash/BKash-Logo.wine.png',
-  'nagad': 'https://download.logo.wine/logo/Nagad/Nagad-Logo.wine.png',
-  'rocket': 'https://www.findlogovector.com/wp-content/uploads/2019/03/dutch-bangla-bank-rocket-logo-vector.png'
+  'bkash': 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/bkash.png',
+  'nagad': 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/nagad.png',
+  'rocket': 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/rocket.png'
 };
 
 const AdminPortal: React.FC<AdminPortalProps> = ({ 
@@ -271,31 +271,32 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                 <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Payment Gateway</h3>
                 <div className="bg-slate-800/30 rounded-[50px] border border-white/5 p-12 space-y-10 max-w-2xl">
                     <div className="space-y-8">
-                        <div className="flex items-center gap-8">
+                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
                             <img src={METHOD_LOGOS['bkash']} className="h-14 w-14 object-contain" />
                             <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">bKash Personal</label>
-                                <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none" />
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">bKash Personal Number</label>
+                                <input type="tel" value={bkashNum} onChange={(e) => setBkashNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-pink-500 transition-all" />
                             </div>
                         </div>
-                        <div className="flex items-center gap-8">
+                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
                             <img src={METHOD_LOGOS['nagad']} className="h-14 w-14 object-contain" />
                             <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Nagad Personal</label>
-                                <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none" />
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Nagad Personal Number</label>
+                                <input type="tel" value={nagadNum} onChange={(e) => setNagadNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-orange-500 transition-all" />
                             </div>
                         </div>
-                        <div className="flex items-center gap-8">
+                        <div className="flex items-center gap-8 bg-white/5 p-6 rounded-3xl border border-white/5">
                             <img src={METHOD_LOGOS['rocket']} className="h-14 w-14 object-contain" />
                             <div className="flex-1">
-                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Rocket Personal</label>
-                                <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none" />
+                                <label className="text-[10px] font-black uppercase text-white/40 mb-2 block">Rocket Personal Number</label>
+                                <input type="tel" value={rocketNum} onChange={(e) => setRocketNum(e.target.value)} className="w-full bg-slate-900 border border-white/10 p-5 rounded-2xl font-bold text-white outline-none focus:border-purple-500 transition-all" />
                             </div>
                         </div>
                     </div>
                     <button onClick={handleSaveSettings} disabled={isSaving} className="w-full bg-sky-500 py-6 rounded-3xl font-black text-lg uppercase shadow-2xl transition-all active:scale-95 disabled:opacity-50">
                         {isSaving ? "Syncing..." : "Update Official Numbers"}
                     </button>
+                    <p className="text-[10px] text-center text-white/20 font-medium italic">Note: These numbers will be shown to users in the Wallet section for deposits.</p>
                </div>
             </div>
           )}

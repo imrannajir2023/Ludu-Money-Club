@@ -12,9 +12,9 @@ interface WalletModalProps {
 }
 
 const METHODS = [
-  { id: 'bkash', name: 'bKash', color: '#D12053', logo: 'https://download.logo.wine/logo/BKash/BKash-Logo.wine.png' },
-  { id: 'nagad', name: 'Nagad', color: '#F7941D', logo: 'https://download.logo.wine/logo/Nagad/Nagad-Logo.wine.png' },
-  { id: 'rocket', name: 'Rocket', color: '#8C3494', logo: 'https://www.findlogovector.com/wp-content/uploads/2019/03/dutch-bangla-bank-rocket-logo-vector.png' }
+  { id: 'bkash', name: 'bKash', color: '#D12053', logo: 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/bkash.png' },
+  { id: 'nagad', name: 'Nagad', color: '#F7941D', logo: 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/nagad.png' },
+  { id: 'rocket', name: 'Rocket', color: '#8C3494', logo: 'https://raw.githubusercontent.com/tushar-asif/bd-payment-gateways/main/logos/rocket.png' }
 ];
 
 const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubmitTransaction }) => {
@@ -44,7 +44,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
     if (isNaN(val) || val < 50) return alert("সর্বনিম্ন ৫০ টাকা লেনদেন করা যাবে।");
     if (activeTab === 'withdraw' && val > user.balance) return alert("আপনার ব্যালেন্স পর্যাপ্ত নয়!");
     if (!phone) return alert("আপনার মোবাইল নম্বর দিন।");
-    if (activeTab === 'deposit' && !trxId) return alert("বিকাশ/নগদ ট্রানজেকশন আইডি (TrxID) দিন।");
+    if (activeTab === 'deposit' && !trxId) return alert("বিকাশ/নগদ/রকেট ট্রানজেকশন আইডি (TrxID) দিন।");
 
     setProcessing(true);
     soundManager.play('click');
@@ -114,7 +114,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
                       <button 
                         key={m.id} 
                         onClick={() => { soundManager.play('click'); setMethod(m.id); }} 
-                        className={`relative h-16 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 ${method === m.id ? 'border-yellow-500 bg-yellow-500/5 shadow-lg' : 'border-white/5 bg-white/5 opacity-40 hover:opacity-100'}`}
+                        className={`relative h-16 rounded-2xl overflow-hidden border-2 transition-all flex items-center justify-center p-2 bg-white ${method === m.id ? 'border-yellow-500 ring-2 ring-yellow-500/50 shadow-lg' : 'border-white/5 opacity-60 hover:opacity-100'}`}
                       >
                          <img src={m.logo} className="h-full w-full object-contain" alt={m.name} />
                       </button>
