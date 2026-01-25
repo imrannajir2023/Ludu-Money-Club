@@ -120,7 +120,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
 
   return (
     <div className="h-screen w-full bg-[#020617] flex flex-col text-white overflow-hidden">
-      <div className="p-6 bg-slate-900 border-b border-white/5 flex justify-between items-center z-10">
+      <div className="p-6 bg-slate-900 border-b border-white/5 flex justify-between items-center z-10 shadow-2xl">
         <div className="flex items-center gap-4">
           <div className="bg-sky-500/20 p-3 rounded-2xl border border-sky-500/30">🛡️</div>
           <div>
@@ -132,7 +132,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-64 bg-slate-900/50 border-r border-white/5 flex flex-col p-4 gap-2">
+        <div className="w-64 bg-slate-900/50 border-r border-white/5 flex flex-col p-4 gap-2 shadow-inner">
            {[
              { id: 'dashboard', label: 'Overview', icon: '📊' },
              { id: 'arena', label: 'Arena', icon: '🏟️' },
@@ -140,14 +140,66 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
              { id: 'transactions', label: 'Requests', icon: '💸', badge: pendingCount },
              { id: 'settings', label: 'Gateway', icon: '⚙️' }
            ].map(tab => (
-             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`w-full p-4 rounded-2xl flex items-center justify-between font-black text-sm ${activeTab === tab.id ? 'bg-sky-500 text-white' : 'text-white/30 hover:bg-white/5'}`}>
+             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`w-full p-4 rounded-2xl flex items-center justify-between font-black text-sm transition-all ${activeTab === tab.id ? 'bg-sky-500 text-white shadow-lg scale-[1.02]' : 'text-white/30 hover:bg-white/5'}`}>
                <div className="flex items-center gap-3"><span>{tab.icon}</span> {tab.label}</div>
-               {tab.badge ? <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px]">{tab.badge}</span> : null}
+               {tab.badge ? <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px] animate-pulse">{tab.badge}</span> : null}
              </button>
            ))}
         </div>
 
         <div className="flex-1 p-10 overflow-y-auto no-scrollbar">
+          {activeTab === 'transactions' && (
+            <div className="space-y-8 animate-in fade-in">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Pending Requests</h3>
+                    <div className="bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-full flex items-center gap-2">
+                        <span className="w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+                        <span className="text-[10px] font-black uppercase text-red-500 tracking-widest">{pendingCount} Waiting</span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                    {pendingTransactions.length === 0 ? (
+                        <div className="py-20 text-center opacity-20 flex flex-col items-center">
+                            <span className="text-6xl mb-4">💤</span>
+                            <p className="font-black uppercase italic text-xl">No pending requests found</p>
+                        </div>
+                    ) : (
+                        pendingTransactions.map((tx) => (
+                            <div key={tx.id} className="bg-slate-800/40 border border-white/5 rounded-[30px] p-6 flex items-center justify-between group hover:border-sky-500/30 transition-all shadow-xl">
+                                <div className="flex items-center gap-6">
+                                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center p-3 shadow-lg shrink-0">
+                                        <img src={REAL_LOGOS[tx.method.toLowerCase()]} className="h-full w-full object-contain" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-black text-xl text-white uppercase italic">{tx.userName}</span>
+                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${tx.type === 'DEPOSIT' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>{tx.type}</span>
+                                        </div>
+                                        <div className="flex items-center gap-4 mt-1 text-white/40 font-bold text-xs uppercase tracking-tight">
+                                            <span>📞 {tx.phone}</span>
+                                            {tx.trxId && <span>🆔 Trx: <span className="text-sky-400">{tx.trxId}</span></span>}
+                                            <span>⏰ {tx.timestamp}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-8">
+                                    <div className="text-right">
+                                        <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Amount</p>
+                                        <p className="text-3xl font-black text-yellow-500">৳{tx.amount.toLocaleString()}</p>
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <button onClick={() => onApproveTransaction(tx)} className="bg-green-500 hover:bg-green-400 text-black px-6 py-3 rounded-xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all">Approve</button>
+                                        <button onClick={() => onRejectTransaction(tx.id)} className="bg-red-600/20 text-red-500 border border-red-500/20 px-6 py-3 rounded-xl font-black uppercase text-xs hover:bg-red-600 hover:text-white transition-all">Reject</button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+          )}
+
           {activeTab === 'users' && (
              <div className="space-y-8 animate-in fade-in">
                 <div className="flex justify-between items-center">
@@ -284,10 +336,23 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
           )}
 
           {activeTab === 'dashboard' && (
-             <div className="text-white/20 text-center py-20 font-black uppercase italic">Dashboard Overview</div>
-          )}
-          {activeTab === 'transactions' && (
-             <div className="text-white/20 text-center py-20 font-black uppercase italic">Transaction Requests</div>
+             <div className="space-y-10 animate-in fade-in">
+                <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">System Overview</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-slate-800/40 border border-white/5 p-8 rounded-[40px] shadow-xl">
+                        <p className="text-[10px] font-black uppercase text-white/20 tracking-widest mb-2">Total Users</p>
+                        <p className="text-5xl font-black text-white">{allUsers.length}</p>
+                    </div>
+                    <div className="bg-slate-800/40 border border-white/5 p-8 rounded-[40px] shadow-xl">
+                        <p className="text-[10px] font-black uppercase text-white/20 tracking-widest mb-2">Pending Tasks</p>
+                        <p className="text-5xl font-black text-red-500">{pendingCount}</p>
+                    </div>
+                    <div className="bg-slate-800/40 border border-white/5 p-8 rounded-[40px] shadow-xl">
+                        <p className="text-[10px] font-black uppercase text-white/20 tracking-widest mb-2">System Status</p>
+                        <p className="text-5xl font-black text-green-500 italic uppercase">Live</p>
+                    </div>
+                </div>
+             </div>
           )}
           {activeTab === 'arena' && (
              <div className="text-white/20 text-center py-20 font-black uppercase italic">Arena Control Center</div>
