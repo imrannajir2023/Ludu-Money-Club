@@ -497,23 +497,43 @@ const App: React.FC = () => {
           onUpdateUser={async (u) => { const updated = allUsers.map(usr => usr.phone === u.phone ? u : usr); setAllUsers(updated); await databaseService.updateUser(u); }} 
           onApproveTransaction={async (tx) => { 
             try {
-              // CRITICAL: Finding user by the accountPhone (registered) rather than payment phone
-              const lookupPhone = tx.accountPhone || tx.phone;
-              const u = await databaseService.getUserByPhone(lookupPhone);
+              // Priority 1: Check normalized accountPhone from local allUsers
+              const normAccount = databaseService.normalizePhone(tx.accountPhone);
+              const normPhone = databaseService.normalizePhone(tx.phone);
+              
+              let u = allUsers.find(usr => 
+                databaseService.normalizePhone(usr.phone) === normAccount || 
+                databaseService.normalizePhone(usr.phone) === normPhone
+              );
+              
+              // Priority 2: Fetch fresh from database if not found locally
+              if (!u) {
+                u = await databaseService.getUserByPhone(tx.accountPhone || tx.phone);
+              }
+              
               if (u) { 
                 const updatedUser = { 
                   ...u, 
                   balance: tx.type === 'DEPOSIT' ? u.balance + tx.amount : u.balance - tx.amount, 
                   history: (u.history || []).map(h => h.id === tx.id ? { ...h, status: 'APPROVED' as const } : h) 
                 }; 
+                
                 await databaseService.updateUser(updatedUser); 
                 await databaseService.updateTransactionStatus(tx.id, 'APPROVED');
-                setAllUsers(prev => prev.map(usr => usr.phone === updatedUser.phone ? updatedUser : usr)); 
+                
+                // Update local states
+                setAllUsers(prev => prev.map(usr => databaseService.normalizePhone(usr.phone) === databaseService.normalizePhone(updatedUser.phone) ? updatedUser : usr)); 
                 setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 
+                
                 soundManager.play('win');
-                alert(`${tx.userName} এর লেনদেন অ্যাপ্রুভ হয়েছে।`);
-              } else { alert("ইউজার পাওয়া যায়নি।"); }
-            } catch (err) { alert("ত্রুটি হয়েছে!"); }
+                alert(`${tx.userName} এর ${tx.type} অ্যাপ্রুভ হয়েছে।`);
+              } else {
+                alert(`সিস্টেমে ইউজারকে খুঁজে পাওয়া যায়নি। একাউন্ট নম্বর: ${tx.accountPhone || tx.phone}`);
+              }
+            } catch (err) {
+              console.error("Approval error:", err);
+              alert("অ্যাপ্রুভ করার সময় সার্ভারে ত্রুটি হয়েছে।");
+            }
           }} 
           onRejectTransaction={async (txId) => { 
             try { await databaseService.updateTransactionStatus(txId, 'REJECTED'); setPendingTransactions(prev => prev.filter(p => p.id !== txId)); soundManager.play('kill'); alert("রিজেক্ট হয়েছে।"); } catch (err) { alert("ত্রুটি হয়েছে!"); }

@@ -10,6 +10,13 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const STORAGE_KEY_SETTINGS = "LUDO_SETTINGS_BACKUP";
 const STORAGE_KEY_TRANSACTIONS = "LUDO_GLOBAL_TRANSACTIONS";
 
+// Helper to normalize phone numbers for comparison (e.g., "017..." and "+88017..." become "17...")
+const normalizePhone = (p: string | undefined): string => {
+  if (!p) return "";
+  const cleaned = p.replace(/\D/g, ''); // keep only digits
+  return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
+};
+
 const toSnakeCase = (obj: any): any => {
   if (Array.isArray(obj)) return obj.map(toSnakeCase);
   if (obj !== null && typeof obj === 'object') {
@@ -36,6 +43,7 @@ const toCamelCase = (obj: any): any => {
 
 export const databaseService = {
   isOnline: () => !!supabase,
+  normalizePhone,
 
   async getUsers(): Promise<UserProfile[]> {
     try {
@@ -49,29 +57,38 @@ export const databaseService = {
 
   async getUserByPhone(phone: string): Promise<UserProfile | null> {
     try {
-      const { data, error } = await supabase.from('users').select('*').eq('phone', phone).single();
-      if (error) throw error;
+      // First try exact match
+      let { data, error } = await supabase.from('users').select('*').eq('phone', phone).maybeSingle();
+      
+      // If no exact match, try partial match for normalized phone
+      if (!data) {
+        const { data: all } = await supabase.from('users').select('*');
+        const normalizedTarget = normalizePhone(phone);
+        data = all?.find(u => normalizePhone(u.phone) === normalizedTarget) || null;
+      }
+      
+      if (!data) return null;
       return toCamelCase(data);
     } catch (e) {
       const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
-      return db.find((u: any) => u.phone === phone) || null;
+      const normalizedTarget = normalizePhone(phone);
+      return db.find((u: any) => normalizePhone(u.phone) === normalizedTarget) || null;
     }
   },
 
   async updateUser(user: UserProfile) {
     try {
       const snakeData = toSnakeCase(user);
-      await supabase.from('users').upsert(snakeData);
+      const { error } = await supabase.from('users').upsert(snakeData);
+      if (error) throw error;
     } catch (error: any) {
-      console.error("Local save fallback", error);
       const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
-      const idx = db.findIndex((u: any) => u.phone === user.phone);
+      const idx = db.findIndex((u: any) => normalizePhone(u.phone) === normalizePhone(user.phone));
       if (idx !== -1) db[idx] = user; else db.push(user);
       localStorage.setItem("LUDO_USERS_DATABASE", JSON.stringify(db));
     }
   },
 
-  // --- Real-time Matchmaking ---
   async findOrCreateMatch(stake: number, playerCount: number, user: UserProfile): Promise<string> {
     try {
       const { data: existing } = await supabase
