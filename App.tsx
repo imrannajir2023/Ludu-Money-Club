@@ -151,7 +151,12 @@ const App: React.FC = () => {
         if (saved) {
           const parsed = JSON.parse(saved);
           const fresh = users.find(u => u.phone === parsed.phone);
-          setUser(fresh || parsed);
+          if (fresh?.isBlocked) {
+              localStorage.removeItem('LUDO_SESSION');
+              setUser(null);
+          } else {
+              setUser(fresh || parsed);
+          }
         }
       } catch(e) { console.error(e); }
     };
@@ -180,20 +185,36 @@ const App: React.FC = () => {
     setAuthError('');
     if (!phone || !password) return setAuthError('Please fill all fields');
     if (isSignUp && !name) return setAuthError('Please enter name');
+    
+    // Refresh user list to get latest block status
+    const users = await databaseService.getUsers();
+    setAllUsers(users);
+
     if (isSignUp) {
-      const exists = allUsers.find(u => u.phone === phone);
+      const exists = users.find(u => u.phone === phone);
       if (exists) return setAuthError('User already exists');
       const newUser: UserProfile = {
         name, phone, password, balance: 50, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name + Math.random()}`,
-        stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: [], country: 'Bangladesh'
+        stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: [], country: 'Bangladesh', isBlocked: false
       };
       await databaseService.updateUser(newUser);
       setUser(newUser);
       localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser));
       setView('LOBBY');
     } else {
-      const found = allUsers.find(u => u.phone === phone && u.password === password);
-      if (found) { setUser(found); localStorage.setItem('LUDO_SESSION', JSON.stringify(found)); setView('LOBBY'); } else { setAuthError('Invalid credentials'); }
+      const found = users.find(u => u.phone === phone && u.password === password);
+      if (found) { 
+          if (found.isBlocked) {
+              setAuthError('Your account has been suspended by Admin.');
+              soundManager.play('kill');
+              return;
+          }
+          setUser(found); 
+          localStorage.setItem('LUDO_SESSION', JSON.stringify(found)); 
+          setView('LOBBY'); 
+      } else { 
+          setAuthError('Invalid credentials'); 
+      }
     }
   };
 
@@ -507,7 +528,7 @@ const App: React.FC = () => {
         <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18] relative">
            <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 py-12 rounded-[50px] w-full max-w-[420px] border border-white/10 flex flex-col items-center shadow-2xl animate-in zoom-in-95 z-10">
               <h2 className="ludo-money-logo text-6xl mb-12 italic font-black uppercase">{view === 'ADMIN_AUTH' ? 'ADMIN' : (isSignUp ? 'SIGNUP' : 'LOGIN')}</h2>
-              {authError && <div className="text-red-500 mb-6 text-[10px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">{authError}</div>}
+              {authError && <div className="text-red-500 mb-6 text-[10px] font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20 text-center max-w-[80%]">{authError}</div>}
               <div className="w-full space-y-5 mb-10">
                  {view === 'LOGIN' && isSignUp && <input type="text" placeholder="Display Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none focus:border-yellow-500 transition-all" />}
                  
@@ -623,7 +644,8 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-
+      
+      {/* ... Rest of the component remains same ... */}
       {view === 'FINDING' && (
         <div className="h-full flex flex-col items-center justify-center p-8 bg-[#020617] animate-in fade-in overflow-hidden">
            <div className="relative w-64 h-64 mb-12 flex items-center justify-center">

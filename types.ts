@@ -62,6 +62,7 @@ export interface UserProfile {
   avatar: string;
   country?: string;
   flag?: string;
+  isBlocked?: boolean;
   stats: {
     totalGames: number;
     wins: number;

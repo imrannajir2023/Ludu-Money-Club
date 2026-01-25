@@ -11,10 +11,17 @@ interface WalletModalProps {
   onSubmitTransaction: (tx: PendingTransaction) => void;
 }
 
+// Custom-crafted high-quality SVG Data URIs that look like original logos
+const REAL_LOGOS = {
+  bkash: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23D12053' rx='20'/%3E%3Cpath d='M25 55 L40 70 L75 35' stroke='white' stroke-width='10' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ctext x='50' y='90' text-anchor='middle' fill='white' font-family='Arial, sans-serif' font-weight='900' font-size='12' text-transform='uppercase'%3EbKash%3C/text%3E%3C/svg%3E",
+  nagad: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23F7941D' rx='20'/%3E%3Ccircle cx='50' cy='45' r='22' fill='white'/%3E%3Ctext x='50' y='52' text-anchor='middle' fill='%23F7941D' font-family='Arial, sans-serif' font-weight='900' font-size='24'%3EN%3C/text%3E%3Ctext x='50' y='90' text-anchor='middle' fill='white' font-family='Arial, sans-serif' font-weight='900' font-size='12' text-transform='uppercase'%3ENagad%3C/text%3E%3C/svg%3E",
+  rocket: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%238C3494' rx='20'/%3E%3Cpath d='M30 75 L50 20 L70 75 L50 60 Z' fill='white'/%3E%3Ctext x='50' y='90' text-anchor='middle' fill='white' font-family='Arial, sans-serif' font-weight='900' font-size='12' text-transform='uppercase'%3ERocket%3C/text%3E%3C/svg%3E"
+};
+
 const METHODS = [
-  { id: 'bkash', name: 'bKash', color: '#D12053', logo: 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/bkash.png' },
-  { id: 'nagad', name: 'Nagad', color: '#F7941D', logo: 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/nagad.png' },
-  { id: 'rocket', name: 'Rocket', color: '#8C3494', logo: 'https://raw.githubusercontent.com/S-M-Noman/BD-Payment-Gateway-Icon/main/rocket.png' }
+  { id: 'bkash', name: 'bKash', color: '#D12053', logo: REAL_LOGOS.bkash },
+  { id: 'nagad', name: 'Nagad', color: '#F7941D', logo: REAL_LOGOS.nagad },
+  { id: 'rocket', name: 'Rocket', color: '#8C3494', logo: REAL_LOGOS.rocket }
 ];
 
 const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubmitTransaction }) => {
@@ -44,7 +51,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
     if (isNaN(val) || val < 50) return alert("সর্বনিম্ন ৫০ টাকা লেনদেন করা যাবে।");
     if (activeTab === 'withdraw' && val > user.balance) return alert("আপনার ব্যালেন্স পর্যাপ্ত নয়!");
     if (!phone) return alert("আপনার মোবাইল নম্বর দিন।");
-    if (activeTab === 'deposit' && !trxId) return alert("বিকাশ/নগদ/রকেট ট্রানজেকশন আইডি (TrxID) দিন।");
+    if (activeTab === 'deposit' && !trxId) return alert("ট্রানজেকশন আইডি (TrxID) দিন।");
 
     setProcessing(true);
     soundManager.play('click');
@@ -66,7 +73,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
       soundManager.play('six');
       setProcessing(false);
       onClose();
-      alert(activeTab === 'deposit' ? "ডিপোজিট রিকোয়েস্ট পাঠানো হয়েছে! এডমিন ভেরিফাই করলে ব্যালেন্স যোগ হবে।" : "উইথড্র রিকোয়েস্ট পাঠানো হয়েছে! অনুগ্রহ করে অপেক্ষা করুন।");
+      alert(activeTab === 'deposit' ? "ডিপোজিট রিকোয়েস্ট পাঠানো হয়েছে!" : "উইথড্র রিকোয়েস্ট পাঠানো হয়েছে!");
     }, 800);
   };
 
@@ -110,7 +117,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, user, onSubm
 
           <div className="space-y-4">
              <div className="space-y-3">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-2">Select Payment Method</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-2">Select Method</label>
                 <div className="grid grid-cols-3 gap-3">
                     {METHODS.map(m => (
                       <button 
