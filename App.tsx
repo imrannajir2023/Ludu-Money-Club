@@ -61,7 +61,7 @@ const PlayerProfileOverlay: React.FC<{ player: Player, isActive: boolean, positi
 };
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'LOBBY' | 'FINDING' | 'GAME' | 'ADMIN'>('SPLASH');
+  const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'ADMIN_AUTH' | 'LOBBY' | 'FINDING' | 'GAME' | 'ADMIN'>('SPLASH');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
@@ -72,6 +72,7 @@ const App: React.FC = () => {
   const [selectedStake, setSelectedStake] = useState(50);
   const [isWalletOpen, setWalletOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [isChangePassOpen, setChangePassOpen] = useState(false);
   
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isRolling, setIsRolling] = useState(false);
@@ -84,9 +85,15 @@ const App: React.FC = () => {
   // Auth States
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [name, setName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [authError, setAuthError] = useState('');
+
+  // Admin Login States
+  const [adminTapCount, setAdminTapCount] = useState(0);
+  const [adminId, setAdminId] = useState('');
+  const [adminPass, setAdminPass] = useState('');
 
   useEffect(() => {
     const handleFirstInteraction = () => {
@@ -121,6 +128,33 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const handleHiddenAdminTap = () => {
+    setAdminTapCount(prev => {
+      const next = prev + 1;
+      if (next >= 7) {
+        setView('ADMIN_AUTH');
+        soundManager.play('click');
+        return 0;
+      }
+      return next;
+    });
+  };
+
+  const handleAdminAuth = () => {
+    setAuthError('');
+    if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') {
+      const adminProfile: UserProfile = { 
+        name: 'System Admin', phone: '0000', balance: 99999, avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin', 
+        stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: [], isBlocked: false 
+      };
+      setUser(adminProfile);
+      setView('ADMIN');
+      soundManager.play('win');
+    } else {
+      setAuthError('Invalid Admin Credentials');
+    }
+  };
+
   const handleAuth = async () => {
     setAuthError('');
     if (!phone || !password || (isSignUp && !name)) return setAuthError('Please fill all fields');
@@ -148,6 +182,17 @@ const App: React.FC = () => {
         setView('LOBBY');
       } else setAuthError('Invalid credentials');
     }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!newPassword || newPassword.length < 4) return alert("Password too short");
+    if (!user) return;
+    const updated = { ...user, password: newPassword };
+    await databaseService.updateUser(updated);
+    setUser(updated);
+    localStorage.setItem('LUDO_SESSION', JSON.stringify(updated));
+    setChangePassOpen(false);
+    alert("Password updated successfully!");
   };
 
   const startFinding = async () => {
@@ -213,7 +258,6 @@ const App: React.FC = () => {
            return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: 0 };
         }
         
-        // Auto-skip if no valid moves
         const player = prev.players[prev.currentPlayerIndex];
         const canMove = player.tokens.some(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
         if (!canMove) {
@@ -246,7 +290,6 @@ const App: React.FC = () => {
       setGameState(p => p ? { ...p, players: [...players] } : null);
       soundManager.play('move');
     } else {
-      // Slow motion movement
       for (let i = 1; i <= val; i++) {
         player.tokens[tIdx].distanceTraveled++;
         setGameState(p => p ? { ...p, players: [...players] } : null);
@@ -255,12 +298,10 @@ const App: React.FC = () => {
       }
     }
 
-    // Check for win
     if (player.tokens[tIdx].distanceTraveled === 56) {
       player.tokens[tIdx].state = TokenState.WIN;
       soundManager.play('win');
     } else {
-      // Check for killing
       const targetPos = (player.tokens[tIdx].distanceTraveled + START_POSITIONS[player.color]) % 52;
       const isSafe = SAFE_SPOTS.includes(targetPos);
       
@@ -271,7 +312,6 @@ const App: React.FC = () => {
             if (otherT.state === TokenState.PATH) {
               const otherAbsPos = (otherT.distanceTraveled + START_POSITIONS[otherT.color]) % 52;
               if (otherAbsPos === targetPos) {
-                // Killed!
                 otherP.tokens[otherTIdx].state = TokenState.HOME;
                 otherP.tokens[otherTIdx].distanceTraveled = 0;
                 soundManager.play('kill');
@@ -282,7 +322,6 @@ const App: React.FC = () => {
       }
     }
 
-    // Final state check
     if (player.tokens.every(t => t.state === TokenState.WIN)) {
       setGameState(p => p ? { ...p, winner: player.color } : null);
       if (player.id === 'user') {
@@ -297,7 +336,6 @@ const App: React.FC = () => {
     setIsMoving(false);
   };
 
-  // Bot Turn Logic
   useEffect(() => {
     if (gameState && gameState.players[gameState.currentPlayerIndex].isBot && !gameState.winner && !isRolling && !isMoving) {
       if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
@@ -310,7 +348,6 @@ const App: React.FC = () => {
           const validTokens = player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
           
           if (validTokens.length > 0) {
-            // Priority: 1. Kill someone, 2. Enter home, 3. Advance furthest
             moveToken(validTokens[0]);
           } else {
             nextTurn();
@@ -332,8 +369,23 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {view === 'LOGIN' && (
+      {view === 'ADMIN_AUTH' && (
         <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18]">
+          <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 rounded-[50px] w-full max-w-[420px] border border-sky-500/30 shadow-2xl">
+            <h2 className="ludo-money-logo text-6xl mb-10 italic uppercase text-sky-400">ADMIN</h2>
+            {authError && <div className="text-red-500 mb-6 text-xs font-bold text-center">{authError}</div>}
+            <div className="space-y-4 mb-8">
+              <input type="text" placeholder="Admin ID" value={adminId} onChange={e => setAdminId(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl outline-none" />
+              <input type="password" placeholder="Admin Key" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl outline-none" />
+            </div>
+            <button onClick={handleAdminAuth} className="w-full bg-sky-500 text-white py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all">Authorize</button>
+            <button onClick={() => setView('LOGIN')} className="w-full mt-4 text-white/40 text-[10px] uppercase font-bold">Back to Player Login</button>
+          </div>
+        </div>
+      )}
+
+      {view === 'LOGIN' && (
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18] relative">
           <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 rounded-[50px] w-full max-w-[420px] border border-white/10 shadow-2xl">
             <h2 className="ludo-money-logo text-6xl mb-10 italic uppercase">{isSignUp ? 'SIGNUP' : 'LOGIN'}</h2>
             {authError && <div className="text-red-500 mb-6 text-xs font-bold text-center">{authError}</div>}
@@ -345,27 +397,26 @@ const App: React.FC = () => {
             <button onClick={handleAuth} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all">Enter Arena</button>
             <button onClick={() => setIsSignUp(!isSignUp)} className="w-full mt-4 text-white/40 text-[10px] uppercase font-bold">{isSignUp ? 'Login instead' : 'Create Account'}</button>
           </div>
+          <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/5 text-[9px] font-black uppercase tracking-[0.2em]">VER 1.0.6 PRO</button>
         </div>
       )}
 
       {view === 'LOBBY' && user && (
         <div className="h-full flex flex-col animate-in fade-in">
-          {/* Header */}
           <div className="flex justify-between items-center p-6 pb-2">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl border-2 border-yellow-500 bg-slate-800 overflow-hidden shadow-lg"><img src={user.avatar} className="w-full h-full object-cover" /></div>
               <div><h3 className="text-sm font-black uppercase italic leading-none">{user.name}</h3><p className="text-[8px] font-bold text-white/40 uppercase mt-1">Player Rank: Gold</p></div>
             </div>
             <div className="flex items-center gap-2">
-                <button onClick={() => setSettingsOpen(true)} className="bg-slate-900/80 border border-white/10 p-2.5 rounded-full shadow-lg">⚙️</button>
-                <button onClick={() => setWalletOpen(true)} className="bg-slate-900/80 border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+                <button onClick={() => setSettingsOpen(true)} className="bg-slate-900/80 border border-white/10 p-2.5 rounded-full shadow-lg transition-transform active:scale-90">⚙️</button>
+                <button onClick={() => setWalletOpen(true)} className="bg-slate-900/80 border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg transition-transform active:scale-95">
                     <span className="text-xs font-black text-yellow-500">৳{user.balance.toLocaleString()}</span>
                     <span className="w-5 h-5 bg-yellow-500 text-black rounded-full flex items-center justify-center text-[10px] font-bold">+</span>
                 </button>
             </div>
           </div>
 
-          {/* Scrolling Marquee */}
           <div className="bg-yellow-400 h-8 flex items-center overflow-hidden border-y border-yellow-500 mt-2">
             <div className="animate-scroll-text whitespace-nowrap flex gap-12">
               <span className="text-[10px] font-black text-black uppercase italic flex items-center gap-2">🏆 Tournament starting in 5 mins! Join now 📞</span>
@@ -374,7 +425,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Event Cards */}
           <div className="flex gap-4 p-6 pt-6">
              <div className="flex-1 bg-gradient-to-br from-indigo-600 to-blue-700 p-5 rounded-[25px] flex items-center gap-4 shadow-xl border border-white/10">
                 <div className="text-3xl">🎁</div>
@@ -386,34 +436,27 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          {/* Main Arena Card */}
           <div className="flex-1 px-6 pb-6">
              <div className="h-full bg-blue-600 rounded-[40px] border-[10px] border-white/5 shadow-2xl flex flex-col items-center justify-between p-10 relative overflow-hidden">
                 <div className="bg-[#1c2e63] p-1.5 rounded-3xl flex w-full max-w-[240px] z-10">
                   <button onClick={() => setPlayerCount(2)} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40'}`}>2 Player</button>
                   <button onClick={() => setPlayerCount(4)} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40'}`}>4 Player</button>
                 </div>
-
                 <div className="flex flex-col items-center gap-6 z-10">
                    <div className="w-24 h-24 bg-yellow-400 rounded-3xl flex items-center justify-center shadow-2xl border-4 border-yellow-300 transform rotate-12">
-                      <div className="w-16 h-16 bg-white rounded-xl shadow-inner flex items-center justify-center">
-                        <div className="w-4 h-4 bg-red-600 rounded-full"></div>
-                      </div>
+                      <div className="w-16 h-16 bg-white rounded-xl shadow-inner flex items-center justify-center"><div className="w-4 h-4 bg-red-600 rounded-full"></div></div>
                    </div>
                    <h2 className="text-4xl font-black italic uppercase text-white drop-shadow-lg tracking-tighter">Global Arena</h2>
                 </div>
-
                 <div className="w-full flex justify-between gap-2 z-10">
                    {[50, 100, 500, 1000].map(s => (
                      <button key={s} onClick={() => setSelectedStake(s)} className={`flex-1 py-4 rounded-xl font-black text-[10px] transition-all border-2 ${selectedStake === s ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-xl' : 'bg-blue-800 border-white/5 text-white/40'}`}>৳{s}</button>
                    ))}
                 </div>
-
                 <button onClick={startFinding} className="w-full py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[25px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 active:border-b-0 shadow-xl z-10 transition-all">Start Battle</button>
              </div>
           </div>
 
-          {/* Bottom Nav */}
           <div className="h-20 bg-slate-900/90 border-t border-white/5 flex items-center justify-around px-10 pb-2">
              <button onClick={() => setLobbyTab('HOME')} className={`flex flex-col items-center gap-1 ${lobbyTab === 'HOME' ? 'text-yellow-400' : 'text-white/20'}`}><span className="text-2xl">🏠</span><span className="text-[8px] font-black uppercase tracking-widest">Home</span></button>
              <button onClick={() => setLobbyTab('RANK')} className={`flex flex-col items-center gap-1 ${lobbyTab === 'RANK' ? 'text-yellow-400' : 'text-white/20'}`}><span className="text-2xl">🏆</span><span className="text-[8px] font-black uppercase tracking-widest">Rank</span></button>
@@ -439,12 +482,7 @@ const App: React.FC = () => {
           <div className="absolute top-4 left-4 z-[110]"><button onClick={() => setView('LOBBY')} className="bg-red-600 px-5 py-2 rounded-full font-black uppercase italic text-[9px] shadow-lg">Exit</button></div>
           <div className="flex-1 flex items-center justify-center p-2 mt-20">
             <div className="w-full max-w-[600px] aspect-square relative">
-              <LudoBoard 
-                players={gameState.players} 
-                onTokenClick={moveToken} 
-                validTokens={gameState.currentPlayerIndex === 0 && gameState.isDiceRolled && !isMoving ? gameState.players[0].tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56)).map(t => t.id) : []} 
-                currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} 
-              />
+              <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={gameState.currentPlayerIndex === 0 && gameState.isDiceRolled && !isMoving ? gameState.players[0].tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56)).map(t => t.id) : []} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
               {gameState.players.map((p, i) => <PlayerProfileOverlay key={p.id} player={p} isActive={gameState.currentPlayerIndex === i} position={playerCount === 2 ? (i === 0 ? 'TL' : 'BR') : (['TL', 'TR', 'BR', 'BL'] as any)[i]} />)}
             </div>
           </div>
@@ -461,6 +499,35 @@ const App: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {view === 'ADMIN' && user && (
+        <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={(u) => { setAllUsers(prev => prev.map(usr => usr.phone === u.phone ? u : usr)); }} onApproveTransaction={async (tx) => { await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); alert("Approved!"); }} onRejectTransaction={async (id) => { await databaseService.updateTransactionStatus(id, 'REJECTED'); alert("Rejected!"); }} onExit={() => setView('LOBBY')} />
+      )}
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-6 animate-in zoom-in-95">
+          <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-10"><h3 className="text-2xl font-black uppercase italic tracking-tighter">Settings</h3><button onClick={() => setSettingsOpen(false)} className="text-white/40 text-2xl">✕</button></div>
+            <div className="space-y-4">
+              <button onClick={() => { soundManager.toggleMute(); setSettingsOpen(false); setSettingsOpen(true); }} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl flex justify-between items-center font-black uppercase text-xs"><span>Game Sound</span><span className={soundManager.isMuted() ? 'text-red-500' : 'text-green-500'}>{soundManager.isMuted() ? 'MUTED' : 'ENABLED'}</span></button>
+              <button onClick={() => { setChangePassOpen(true); setSettingsOpen(false); }} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-left font-black uppercase text-xs">Change Password</button>
+              <button onClick={() => { localStorage.removeItem('LUDO_SESSION'); window.location.reload(); }} className="w-full bg-red-600/10 border border-red-500/20 p-5 rounded-3xl text-red-500 font-black uppercase text-xs text-center">Log Out</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {isChangePassOpen && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-in zoom-in-95">
+          <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black uppercase italic">New Password</h3><button onClick={() => setChangePassOpen(false)} className="text-white/40">✕</button></div>
+            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minimum 4 characters" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none mb-6" />
+            <button onClick={handleUpdatePassword} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black uppercase text-sm shadow-xl transition-transform active:scale-95">Update Now</button>
+          </div>
         </div>
       )}
 
