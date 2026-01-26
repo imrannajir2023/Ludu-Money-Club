@@ -128,6 +128,23 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch admin data when entering admin view
+  useEffect(() => {
+    if (view === 'ADMIN') {
+      const fetchAdminData = async () => {
+        try {
+          const users = await databaseService.getUsers();
+          const txs = await databaseService.getPendingTransactions();
+          setAllUsers(users);
+          setPendingTransactions(txs);
+        } catch (err) {
+          console.error("Failed to fetch admin data", err);
+        }
+      };
+      fetchAdminData();
+    }
+  }, [view]);
+
   const handleHiddenAdminTap = () => {
     setAdminTapCount(prev => {
       const next = prev + 1;
@@ -503,7 +520,17 @@ const App: React.FC = () => {
       )}
 
       {view === 'ADMIN' && user && (
-        <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={(u) => { setAllUsers(prev => prev.map(usr => usr.phone === u.phone ? u : usr)); }} onApproveTransaction={async (tx) => { await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); alert("Approved!"); }} onRejectTransaction={async (id) => { await databaseService.updateTransactionStatus(id, 'REJECTED'); alert("Rejected!"); }} onExit={() => setView('LOBBY')} />
+        <AdminPortal 
+          user={user} 
+          allUsers={allUsers} 
+          onUpdateUsersDB={setAllUsers} 
+          pendingTransactions={pendingTransactions} 
+          liveMatches={[]} 
+          onUpdateUser={(u) => { setAllUsers(prev => prev.map(usr => usr.phone === u.phone ? u : usr)); }} 
+          onApproveTransaction={async (tx) => { await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); alert("Approved!"); }} 
+          onRejectTransaction={async (id) => { await databaseService.updateTransactionStatus(id, 'REJECTED'); alert("Rejected!"); }} 
+          onExit={() => setView('LOBBY')} 
+        />
       )}
 
       {/* Settings Modal */}
