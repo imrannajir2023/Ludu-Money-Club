@@ -70,25 +70,39 @@ export const databaseService = {
 
   async updateUser(user: UserProfile): Promise<{success: boolean, message?: string}> {
     try {
-      const dbReadyData = {
-        phone: normalizePhone(user.phone),
+      const normalizedPhone = normalizePhone(user.phone);
+      
+      // বডি অবজেক্ট যা ডাটাবেসে পাঠানো হবে
+      const dbReadyData: any = {
+        phone: normalizedPhone,
         name: user.name,
         password: user.password,
         balance: user.balance,
         avatar: user.avatar,
-        country: user.country || 'BD',
-        flag: user.flag || '🇧🇩',
-        is_blocked: !!user.isBlocked,
-        total_games: user.stats?.totalGames || 0,
-        wins: user.stats?.wins || 0,
-        total_winnings: user.stats?.totalWinnings || 0,
-        history: JSON.stringify(user.history || []),
         last_login: new Date().toISOString()
       };
 
+      // শুধুমাত্র যদি ভ্যালু থাকে তবেই কলামগুলো যোগ করা হবে
+      if (user.country) dbReadyData.country = user.country;
+      if (user.flag) dbReadyData.flag = user.flag;
+      if (user.isBlocked !== undefined) dbReadyData.is_blocked = user.isBlocked;
+      
+      if (user.stats) {
+        dbReadyData.total_games = user.stats.totalGames || 0;
+        dbReadyData.wins = user.stats.wins || 0;
+        dbReadyData.total_winnings = user.stats.totalWinnings || 0;
+      }
+
       const { error } = await supabase.from('users').upsert(dbReadyData, { onConflict: 'phone' });
+      
       if (error) {
-        console.error("Supabase Error:", error);
+        console.error("Supabase Save Error:", error);
+        if (error.message.includes("column")) {
+          return { 
+            success: false, 
+            message: "আপনার ডাটাবেসে কলাম মিসিং আছে। অনুগ্রহ করে SQL Editor এ গিয়ে ALTER TABLE কমান্ডটি রান করুন।" 
+          };
+        }
         return { success: false, message: error.message };
       }
       return { success: true };
@@ -108,7 +122,6 @@ export const databaseService = {
     }
   },
 
-  // Added createTransaction method to fix the missing property error in App.tsx
   async createTransaction(tx: PendingTransaction): Promise<boolean> {
     try {
       const dbTx = {
