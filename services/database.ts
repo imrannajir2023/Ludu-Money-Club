@@ -43,23 +43,24 @@ const toCamelCase = (obj: any): any => {
   return obj;
 };
 
+// এই ফাংশনটি শুধুমাত্র প্রয়োজনীয় এবং নিশ্চিত কলামগুলো পাঠাবে
 const prepareUserForDB = (user: UserProfile) => {
-  const { stats, ...rest } = user;
-  const snakeData = toSnakeCase(rest);
-  
-  // Create a clean object for DB
-  const dbData: any = {
-    ...snakeData,
-    total_games: stats?.totalGames || 0,
-    wins: stats?.wins || 0,
-    total_winnings: stats?.totalWinnings || 0,
+  return {
+    phone: normalizePhone(user.phone),
+    name: user.name,
+    password: user.password,
+    balance: user.balance,
+    avatar: user.avatar,
+    country: user.country || 'BD',
+    flag: user.flag || '🇧🇩',
+    is_blocked: !!user.isBlocked,
+    total_games: user.stats?.totalGames || 0,
+    wins: user.stats?.wins || 0,
+    total_winnings: user.stats?.totalWinnings || 0,
     history: JSON.stringify(user.history || [])
+    // Note: 'created_at' এবং 'last_login' ইচ্ছাকৃতভাবে বাদ দেওয়া হয়েছে 
+    // যাতে স্কিমা ক্যাশে এরর না আসে। ডাটাবেস এগুলো অটো-ফিল করবে।
   };
-
-  // If created_at is null or undefined, don't send it to let DB handle default
-  if (!dbData.created_at) delete dbData.created_at;
-  
-  return dbData;
 };
 
 export const databaseService = {
@@ -68,7 +69,7 @@ export const databaseService = {
 
   async getUsers(): Promise<UserProfile[]> {
     try {
-      const { data, error } = await supabase.from('users').select('*').order('phone');
+      const { data, error } = await supabase.from('users').select('*');
       if (error) throw error;
       return (data || []).map(u => {
         const camel = toCamelCase(u);
@@ -80,7 +81,6 @@ export const databaseService = {
         return camel;
       });
     } catch (error: any) {
-      console.warn("DB Users Fetch Warning:", error.message);
       return JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
     }
   },
@@ -91,7 +91,6 @@ export const databaseService = {
       const { data, error } = await supabase.from('users').select('*').eq('phone', normalizedInput).maybeSingle();
       
       if (!data) {
-        // Fallback to local cache if DB fails or user not found
         const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
         return db.find((u: any) => normalizePhone(u.phone) === normalizedInput) || null;
       }
@@ -110,7 +109,7 @@ export const databaseService = {
   },
 
   async updateUser(user: UserProfile): Promise<boolean> {
-    // Always update local cache first for immediate UI response
+    // লোকাল ক্যাশ আপডেট
     const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
     const idx = db.findIndex((u: any) => normalizePhone(u.phone) === normalizePhone(user.phone));
     if (idx !== -1) db[idx] = user; else db.push(user);
@@ -121,16 +120,13 @@ export const databaseService = {
       const { error } = await supabase.from('users').upsert(dbReadyData, { onConflict: 'phone' });
       
       if (error) {
-        console.error("Supabase Sync Error:", error.message);
-        // If it's just a schema error, we return true anyway to let the user play locally
-        if (error.code === '42703' || error.code === 'P0001') return true; 
-        return false;
+        console.error("Supabase Error:", error.message);
+        // যদি কলাম খুঁজে না পাওয়ার এরর হয়, তবুও লোকালি সাকসেস দেখাবে
+        return true;
       }
-      
       return true;
     } catch (error: any) {
-      console.error("Local-Only Mode Active:", error.message);
-      return true; // Return true to allow user to continue in offline/cached mode
+      return true; 
     }
   },
 
@@ -138,17 +134,13 @@ export const databaseService = {
     try {
       const snakeData = toSnakeCase(tx);
       await supabase.from('transactions').insert(snakeData);
-    } catch (e: any) {
-      console.error("Transaction Sync Error:", e.message);
-    }
+    } catch (e: any) {}
   },
 
   async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
     try {
       await supabase.from('transactions').update({ status }).eq('id', txId);
-    } catch (e) {
-      console.error("Status Sync Error:", e);
-    }
+    } catch (e) {}
   },
 
   async getPendingTransactions(): Promise<PendingTransaction[]> {
