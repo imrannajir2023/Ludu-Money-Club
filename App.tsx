@@ -392,6 +392,34 @@ const App: React.FC = () => {
     setIsMoving(false);
   };
 
+  const handleTransactionRequest = async (tx: PendingTransaction) => {
+    // If it's a withdrawal, deduct balance immediately from user local state and DB
+    if (tx.type === 'WITHDRAW' && user) {
+        if (user.balance < tx.amount) {
+            alert("Insufficient balance for withdrawal!");
+            return;
+        }
+        const updatedUser = { ...user, balance: user.balance - tx.amount };
+        setUser(updatedUser);
+        await databaseService.updateUser(updatedUser);
+        localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
+    }
+
+    const result = await databaseService.createTransaction(tx); 
+    if (result.success) {
+        alert(tx.type === 'DEPOSIT' ? "ডিপোজিট অনুরোধ পাঠানো হয়েছে!" : "উইথড্র রিকোয়েস্ট পাঠানো হয়েছে!");
+        refreshAdminData(); 
+    } else {
+        // If withdrawal failed to save, refund the balance locally
+        if (tx.type === 'WITHDRAW' && user) {
+            const refundedUser = { ...user, balance: user.balance + tx.amount };
+            setUser(refundedUser);
+            await databaseService.updateUser(refundedUser);
+        }
+        alert("এরর: " + (result.message || "ট্রানজ্যাকশন ব্যর্থ হয়েছে।"));
+    }
+  };
+
   return (
     <div className="h-screen w-full bg-[#020617] text-white font-['Fredoka'] dotted-bg overflow-hidden flex flex-col relative">
       {view === 'SPLASH' && (
@@ -504,7 +532,7 @@ const App: React.FC = () => {
                  </div>
               </div>
 
-              <h2 className="text-3xl font-black italic uppercase text-white drop-shadow-lg tracking-tighter mb-6 shrink-0">Global Arena</h2>
+              <h2 className="text-3xl font-black italic uppercase text-white drop-shadow-lg tracking-tighter mb-6 shrink-0 text-center">Global Arena</h2>
 
               {/* Stake Selection */}
               <div className="w-full flex flex-wrap justify-between gap-2 mb-8 shrink-0">
@@ -579,36 +607,45 @@ const App: React.FC = () => {
           onApproveTransaction={async (tx) => { 
             const ok = await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
             if (ok) {
-                // Ensure the phone is normalized when fetching target user
-                const normalizedTargetPhone = databaseService.normalizePhone(tx.userPhone);
-                const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
-                
-                if (targetUser) {
-                    const amount = Number(tx.amount);
-                    const newBalance = tx.type === 'DEPOSIT' 
-                        ? targetUser.balance + amount 
-                        : targetUser.balance - amount;
-
-                    const updateResult = await databaseService.updateUser({
-                        ...targetUser,
-                        balance: Math.max(0, newBalance)
-                    });
-
-                    if (updateResult.success) {
-                        alert("এপ্রুভ করা হয়েছে এবং ব্যালেন্স আপডেট হয়েছে!");
-                    } else {
-                        alert("ব্যালেন্স আপডেট করতে সমস্যা হয়েছে।");
+                // For DEPOSIT: Add balance on approval
+                if (tx.type === 'DEPOSIT') {
+                    const normalizedTargetPhone = databaseService.normalizePhone(tx.userPhone);
+                    const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
+                    if (targetUser) {
+                        const amount = Number(tx.amount);
+                        const updateResult = await databaseService.updateUser({
+                            ...targetUser,
+                            balance: targetUser.balance + amount
+                        });
+                        if (updateResult.success) alert("ডিপোজিট এপ্রুভ এবং ব্যালেন্স যোগ হয়েছে!");
                     }
                 } else {
-                    alert("ইউজার ডাটাবেসে পাওয়া যায়নি। ফোন নম্বর চেক করুন: " + tx.userPhone);
+                    // For WITHDRAW: Nothing to do (already deducted during request)
+                    alert("উইথড্র এপ্রুভ হয়েছে!");
                 }
                 refreshAdminData();
             }
           }} 
           onRejectTransaction={async (id) => { 
+            // Find the transaction in local state to know its type/amount
+            const tx = pendingTransactions.find(t => t.id === id);
             const ok = await databaseService.updateTransactionStatus(id, 'REJECTED'); 
             if (ok) {
-                alert("Rejected successfully!");
+                // For WITHDRAW: Refund balance on rejection
+                if (tx && tx.type === 'WITHDRAW') {
+                    const normalizedTargetPhone = databaseService.normalizePhone(tx.userPhone);
+                    const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
+                    if (targetUser) {
+                        const amount = Number(tx.amount);
+                        await databaseService.updateUser({
+                            ...targetUser,
+                            balance: targetUser.balance + amount
+                        });
+                        alert("উইথড্র রিজেক্ট এবং ব্যালেন্স রিফান্ড হয়েছে!");
+                    }
+                } else {
+                    alert("ডিপোজিট রিজেক্ট হয়েছে!");
+                }
                 refreshAdminData();
             }
           }} 
@@ -620,7 +657,7 @@ const App: React.FC = () => {
       {isSettingsOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-6 animate-in zoom-in-95">
           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 p-8 shadow-2xl">
-            <div className="flex justify-between items-center mb-10"><h3 className="text-2xl font-black uppercase italic tracking-tighter">Settings</h3><button onClick={() => setSettingsOpen(false)} className="text-white/40 text-2xl">✕</button></div>
+            <div className="flex justify-between items-center mb-10"><h3 className="text-2xl font-black uppercase italic tracking-tighter text-white">Settings</h3><button onClick={() => setSettingsOpen(false)} className="text-white/40 text-2xl">✕</button></div>
             <div className="space-y-4">
               <button onClick={() => { soundManager.toggleMute(); setSettingsOpen(false); setSettingsOpen(true); }} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl flex justify-between items-center font-black uppercase text-xs"><span>Game Sound</span><span className={soundManager.isMuted() ? 'text-red-500' : 'text-green-500'}>{soundManager.isMuted() ? 'MUTED' : 'ENABLED'}</span></button>
               <button onClick={() => { setChangePassOpen(true); setSettingsOpen(false); }} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-left font-black uppercase text-xs">Change Password</button>
@@ -633,7 +670,7 @@ const App: React.FC = () => {
       {isChangePassOpen && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-in zoom-in-95">
           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 p-8 shadow-2xl">
-            <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black uppercase italic">New Password</h3><button onClick={() => setChangePassOpen(false)} className="text-white/40">✕</button></div>
+            <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black uppercase italic text-white">New Password</h3><button onClick={() => setChangePassOpen(false)} className="text-white/40">✕</button></div>
             <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minimum 4 characters" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none mb-6" />
             <button onClick={handleUpdatePassword} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black uppercase text-sm shadow-xl transition-transform active:scale-95">Update Now</button>
           </div>
@@ -645,15 +682,7 @@ const App: React.FC = () => {
           isOpen={isWalletOpen} 
           onClose={() => setWalletOpen(false)} 
           user={user} 
-          onSubmitTransaction={async tx => { 
-            const result = await databaseService.createTransaction(tx); 
-            if (result.success) {
-                alert("অনুরোধ পাঠানো হয়েছে! এডমিন শীঘ্রই যাচাই করবে।");
-                refreshAdminData(); 
-            } else {
-                alert("এরর: " + (result.message || "ট্রানজ্যাকশন ব্যর্থ হয়েছে।"));
-            }
-          }} 
+          onSubmitTransaction={handleTransactionRequest} 
         />
       )}
     </div>
