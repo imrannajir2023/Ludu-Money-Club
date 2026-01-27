@@ -12,7 +12,7 @@ import { SAFE_SPOTS, START_POSITIONS } from './constants';
 
 const Dice3D: React.FC<{ value: number | null, isRolling: boolean, onClick?: () => void, disabled?: boolean }> = ({ value, isRolling, onClick, disabled }) => {
   return (
-    <div className={`dice-scene ${isRolling ? 'dice-jump' : ''} ${disabled ? 'opacity-50 grayscale' : 'cursor-pointer'}`} onClick={!disabled && !isRolling ? onClick : undefined}>
+    <div className={`dice-scene ${isRolling ? 'dice-jump' : ''} ${disabled ? 'opacity-50 grayscale' : 'cursor-pointer active:scale-90 transition-transform'}`} onClick={!disabled && !isRolling ? onClick : undefined}>
       <div className={`cube ${isRolling ? 'rolling' : `show-${value || 1}`}`}>
         <div className="cube-face face-1"><div className="dot row-start-2 col-start-2"></div></div>
         <div className="cube-face face-2"><div className="dot row-start-1 col-start-1"></div><div className="dot row-start-3 col-start-3"></div></div>
@@ -81,11 +81,13 @@ const App: React.FC = () => {
   const [findingTimer, setFindingTimer] = useState(30);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [commentary, setCommentary] = useState<string>("Welcome to the arena! Best of luck. 🎲");
+  const [turnTimer, setTurnTimer] = useState(10);
 
   const findingInterval = useRef<any>(null);
   const adminSyncInterval = useRef<any>(null);
   const balanceSyncInterval = useRef<any>(null);
   const botTurnTimeout = useRef<any>(null);
+  const turnTimerInterval = useRef<any>(null);
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -98,13 +100,25 @@ const App: React.FC = () => {
   const [adminId, setAdminId] = useState('');
   const [adminPass, setAdminPass] = useState('');
 
+  // Enhanced Sound Unlocking
   useEffect(() => {
-    const handleFirstInteraction = () => {
+    const unlock = () => {
       soundManager.unlock();
-      window.removeEventListener('click', handleFirstInteraction);
+      // Remove all listeners once unlocked
+      ['click', 'touchstart', 'mousedown'].forEach(evt => {
+        window.removeEventListener(evt, unlock);
+      });
     };
-    window.addEventListener('click', handleFirstInteraction);
-    return () => window.removeEventListener('click', handleFirstInteraction);
+    
+    ['click', 'touchstart', 'mousedown'].forEach(evt => {
+      window.addEventListener(evt, unlock);
+    });
+    
+    return () => {
+      ['click', 'touchstart', 'mousedown'].forEach(evt => {
+        window.removeEventListener(evt, unlock);
+      });
+    };
   }, []);
 
   useEffect(() => {
@@ -133,12 +147,52 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // 10 Second Turn Timer Logic
+  useEffect(() => {
+    if (view === 'GAME' && gameState && !gameState.winner && !isMoving) {
+        setTurnTimer(10);
+        if (turnTimerInterval.current) clearInterval(turnTimerInterval.current);
+        
+        turnTimerInterval.current = setInterval(() => {
+            setTurnTimer(prev => {
+                if (prev <= 1) {
+                    handleAutoTurn();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    } else {
+        if (turnTimerInterval.current) clearInterval(turnTimerInterval.current);
+    }
+    return () => {
+        if (turnTimerInterval.current) clearInterval(turnTimerInterval.current);
+    };
+  }, [view, gameState?.currentPlayerIndex, gameState?.isDiceRolled, isMoving]);
+
+  const handleAutoTurn = () => {
+    if (!gameState || isMoving || isRolling || gameState.winner) return;
+    if (!gameState.isDiceRolled) {
+        rollDice();
+    } else {
+        const player = gameState.players[gameState.currentPlayerIndex];
+        const val = gameState.diceValue!;
+        const validTokens = player.tokens.filter(t => 
+            t.state !== TokenState.WIN && 
+            (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)
+        );
+        if (validTokens.length > 0) {
+            const best = validTokens.reduce((prev, curr) => prev.distanceTraveled > curr.distanceTraveled ? prev : curr);
+            moveToken(best);
+        }
+    }
+  };
+
   const addCommentary = async (event: string, pName: string) => {
     const text = await generateGameCommentary(event, pName);
     setCommentary(text);
   };
 
-  // Bot Auto-turn Logic
   useEffect(() => {
     if (view === 'GAME' && gameState && !gameState.winner && !isMoving && !isRolling) {
       const currentPlayer = gameState.players[gameState.currentPlayerIndex];
@@ -146,11 +200,12 @@ const App: React.FC = () => {
         if (!gameState.isDiceRolled) {
           botTurnTimeout.current = setTimeout(() => rollDice(), 1500);
         } else {
-          const validTokens = currentPlayer.tokens.filter(t => 
+          const player = gameState.players[gameState.currentPlayerIndex];
+          const val = gameState.diceValue!;
+          const validTokens = player.tokens.filter(t => 
             t.state !== TokenState.WIN && 
-            (t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56)
+            (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)
           );
-          
           if (validTokens.length > 0) {
             let bestToken = validTokens[0];
             bestToken = validTokens.reduce((prev, curr) => prev.distanceTraveled > curr.distanceTraveled ? prev : curr);
@@ -333,9 +388,10 @@ const App: React.FC = () => {
       { id: 'user', name: user!.name, country: user!.country || 'BD', flag: user!.flag || '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user!.avatar, tokens: [] }
     ];
     
+    const colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
     for (let i = 1; i < playerCount; i++) {
       const botIdentity = getRandomBotIdentity();
-      const color = playerCount === 2 ? PlayerColor.YELLOW : [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE][i];
+      const color = playerCount === 2 ? PlayerColor.YELLOW : colors[i];
       players.push({
         id: `bot-${i}`, name: botIdentity.name, country: botIdentity.country, flag: botIdentity.flag,
         isBot: true, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIdentity.name}`,
@@ -394,7 +450,8 @@ const App: React.FC = () => {
     if (!gameState || !gameState.isDiceRolled || isMoving || gameState.winner) return;
     setIsMoving(true);
     const players = [...gameState.players];
-    const player = players[gameState.currentPlayerIndex];
+    const playerIdx = gameState.currentPlayerIndex;
+    const player = players[playerIdx];
     const tIdx = player.tokens.findIndex(t => t.id === tokenData.id);
     const val = gameState.diceValue!;
 
@@ -423,7 +480,7 @@ const App: React.FC = () => {
       const isSafe = SAFE_SPOTS.includes(targetPos);
       if (!isSafe) {
         players.forEach((otherP, otherPIdx) => {
-          if (otherPIdx === gameState.currentPlayerIndex) return;
+          if (otherPIdx === playerIdx) return;
           otherP.tokens.forEach((otherT, otherTIdx) => {
             if (otherT.state === TokenState.PATH) {
               const otherAbsPos = (otherT.distanceTraveled + START_POSITIONS[otherT.color]) % 52;
@@ -619,15 +676,37 @@ const App: React.FC = () => {
               {gameState.players.map((p, i) => <PlayerProfileOverlay key={p.id} player={p} isActive={gameState.currentPlayerIndex === i} position={playerCount === 2 ? (i === 0 ? 'TL' : 'BR') : (['TL', 'TR', 'BR', 'BL'] as any)[i]} />)}
             </div>
           </div>
-          <div className="mt-4 bg-slate-900/80 backdrop-blur-md border border-white/10 p-4 rounded-3xl mx-auto w-full max-w-[500px] h-16 flex items-center gap-3 shadow-xl overflow-hidden">
+          <div className="mt-4 bg-slate-900/80 backdrop-blur-md border border-white/10 p-4 rounded-3xl mx-auto w-full max-w-[500px] h-16 flex items-center gap-3 shadow-xl overflow-hidden shrink-0">
              <div className="bg-sky-500 w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0">🎙️</div>
              <p className="text-xs font-bold text-white/80 italic animate-in slide-in-from-right-full duration-1000 leading-snug">{commentary}</p>
           </div>
-          <div className="h-32 flex flex-col items-center justify-center bg-slate-900/90 rounded-t-[50px] border-t border-white/10 mt-4 shadow-2xl shrink-0">
-             <Dice3D value={gameState.diceValue} isRolling={isRolling} onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || !!gameState.winner} />
+
+          <div className="h-44 flex flex-col items-center justify-center bg-slate-900/40 rounded-t-[50px] border-t border-white/10 mt-4 shadow-2xl shrink-0 relative">
+             <div className="absolute top-0 left-0 right-0 h-1.5 bg-white/5 flex overflow-hidden">
+                <div 
+                    className={`h-full transition-all duration-1000 ease-linear ${turnTimer <= 3 ? 'bg-red-500' : 'bg-yellow-400'}`}
+                    style={{ width: `${(turnTimer / 10) * 100}%` }}
+                ></div>
+             </div>
+
+             <div className="relative w-28 h-28 bg-gradient-to-b from-yellow-300 to-amber-600 rounded-full p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] border-b-[6px] border-amber-800 mt-2">
+                <div className="w-full h-full bg-white rounded-full flex items-center justify-center shadow-inner relative overflow-hidden">
+                   <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/40 to-white/10 pointer-events-none"></div>
+                   <Dice3D 
+                      value={gameState.diceValue} 
+                      isRolling={isRolling} 
+                      onClick={rollDice} 
+                      disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || !!gameState.winner} 
+                   />
+                </div>
+             </div>
+             {gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled && (
+               <div className="flex flex-col items-center mt-2">
+                 <p className="text-[10px] font-black uppercase text-yellow-500 animate-pulse">Your Turn! {turnTimer}s</p>
+               </div>
+             )}
           </div>
 
-          {/* Exit Warning Notification */}
           {showExitWarning && (
             <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/90 backdrop-blur-xl p-6 animate-in zoom-in-95">
                <div className="bg-slate-900 border-2 border-red-500 rounded-[40px] p-8 max-w-xs w-full text-center shadow-[0_0_50px_rgba(239,68,68,0.3)]">

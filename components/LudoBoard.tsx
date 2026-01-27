@@ -29,10 +29,10 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players = [], onTokenClick, valid
     ];
 
     const homeLanes = {
-      [PlayerColor.RED]: [[7,1], [7,2], [7,3], [7,4], [7,5], [7,6]], 
-      [PlayerColor.GREEN]: [[1,7], [2,7], [3,7], [4,7], [5,7], [6,7]],
-      [PlayerColor.YELLOW]: [[7,13], [7,12], [7,11], [7,10], [7,9], [7,8]],
-      [PlayerColor.BLUE]: [[13,7], [12,7], [11,7], [10,7], [9,7], [8,7]]
+      [PlayerColor.RED]: [[7,1], [7,2], [7,3], [7,4], [7,5]], 
+      [PlayerColor.GREEN]: [[1,7], [2,7], [3,7], [4,7], [5,7]],
+      [PlayerColor.YELLOW]: [[7,13], [7,12], [7,11], [7,10], [7,9]],
+      [PlayerColor.BLUE]: [[13,7], [12,7], [11,7], [10,7], [9,7]]
     };
 
     if (token.state === TokenState.HOME) {
@@ -48,6 +48,7 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players = [], onTokenClick, valid
 
     if (token.distanceTraveled >= 51) {
       const laneIdx = token.distanceTraveled - 51;
+      if (laneIdx >= 5) return [7,7]; // Middle finish point
       return (homeLanes[token.color][laneIdx] as [number, number]) || [7,7];
     }
 
@@ -128,7 +129,7 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players = [], onTokenClick, valid
           </div>
       </div>
 
-      {/* ULTRA PREMIUM TOKENS */}
+      {/* PREMIUM TOKENS */}
       {Object.entries(tokensAtPos).flatMap(([posKey, stack]) => {
           const [r, c] = posKey.split('-').map(Number);
           const isAtHomeBase = stack.some(s => s.token.state === TokenState.HOME);
@@ -139,10 +140,11 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players = [], onTokenClick, valid
               let sizeClass = "w-[110%] h-[110%]";
               let offsetStyle: React.CSSProperties = {};
               
+              // Handle stacking offsets if multiple tokens are in one cell
               if (stack.length > 1 && !isAtHomeBase) {
-                  sizeClass = "w-[75%] h-[75%]";
+                  sizeClass = "w-[80%] h-[80%]";
                   const angle = (index * (360 / stack.length)) * (Math.PI / 180);
-                  const radius = 18;
+                  const radius = 25;
                   offsetStyle = { 
                     transform: `translate(${Math.cos(angle) * radius}%, ${Math.sin(angle) * radius}%)`,
                     zIndex: 20 + index 
@@ -160,35 +162,18 @@ const LudoBoard: React.FC<LudoBoardProps> = ({ players = [], onTokenClick, valid
                         style={offsetStyle}
                         onClick={(e) => { e.stopPropagation(); if (isClickable) onTokenClick(token); }}
                       >
-                        {/* ULTRA PREMIUM TOKEN CONTAINER */}
                         <div className={`
                           relative w-[90%] h-[90%] rounded-full 
-                          shadow-[0_6px_15px_rgba(0,0,0,0.7),inset_0_-2px_4px_rgba(0,0,0,0.5)] 
-                          border-[2.5px] border-yellow-500/80
+                          shadow-[0_4px_10px_rgba(0,0,0,0.6),inset_0_-2px_4px_rgba(0,0,0,0.5)] 
+                          border-[2px] border-yellow-500/80
                           flex items-center justify-center 
                           ${COLORS[token.color].base} 
-                          ${isClickable ? 'animate-bounce z-50 ring-[4px] ring-white/40 ring-offset-2 ring-offset-yellow-500 shadow-[0_0_20px_rgba(251,191,36,0.6)]' : ''}
+                          ${isClickable ? 'animate-bounce z-50 ring-[4px] ring-white/40 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : ''}
                         `}>
-                            {/* Inner Metallic Gradient Ring */}
                             <div className="absolute inset-[10%] rounded-full border border-white/20 bg-gradient-to-br from-white/40 via-transparent to-black/20 shadow-inner"></div>
-                            
-                            {/* Specular High-Light (Glassy Reflection) */}
-                            <div className="absolute top-[10%] left-[20%] w-[45%] h-[25%] bg-gradient-to-b from-white/70 to-transparent rounded-full blur-[0.5px] rotate-[-25deg]"></div>
-                            
-                            {/* Lower Secondary Shine */}
-                            <div className="absolute bottom-[15%] right-[20%] w-[25%] h-[15%] bg-white/20 rounded-full blur-[1px]"></div>
-
-                            {/* Center Diamond Jewel */}
-                            <div className="w-[30%] h-[30%] bg-white/40 rounded-sm rotate-45 shadow-[0_0_10px_rgba(255,255,255,0.8)] border border-white/60 flex items-center justify-center">
-                               <div className="w-[40%] h-[40%] bg-white rounded-full"></div>
-                            </div>
-
-                            {/* Base Shadow for Depth */}
-                            <div className="absolute -bottom-1 w-[80%] h-1.5 bg-black/40 blur-sm rounded-full -z-10"></div>
-                            
-                            {/* Interactive Pulse Glow */}
+                            <div className="w-[30%] h-[30%] bg-white/40 rounded-sm rotate-45 border border-white/60"></div>
                             {isClickable && (
-                              <div className="absolute inset-0 rounded-full animate-pulse bg-white/30 border-[4px] border-yellow-300/50 scale-125 -z-20"></div>
+                              <div className="absolute inset-0 rounded-full animate-pulse bg-white/20 border-[3px] border-yellow-300/50 scale-125 -z-20"></div>
                             )}
                         </div>
                       </div>
