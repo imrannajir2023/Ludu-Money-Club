@@ -80,11 +80,9 @@ const App: React.FC = () => {
   const [findingTimer, setFindingTimer] = useState(30);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
-  const botActionTimeout = useRef<any>(null);
   const findingInterval = useRef<any>(null);
   const adminSyncInterval = useRef<any>(null);
 
-  // Auth States
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -92,7 +90,6 @@ const App: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Admin Login States
   const [adminTapCount, setAdminTapCount] = useState(0);
   const [adminId, setAdminId] = useState('');
   const [adminPass, setAdminPass] = useState('');
@@ -138,16 +135,15 @@ const App: React.FC = () => {
       const txs = await databaseService.getPendingTransactions();
       setAllUsers(users);
       setPendingTransactions(txs);
-      console.log("Admin Data Synced:", { users: users.length, txs: txs.length });
     } catch (err) {
-      console.error("Admin Refresh Error:", err);
+      console.error("Refresh Logic Failed:", err);
     }
   }, []);
 
   useEffect(() => {
     if (view === 'ADMIN') {
       refreshAdminData();
-      adminSyncInterval.current = setInterval(refreshAdminData, 5000);
+      adminSyncInterval.current = setInterval(refreshAdminData, 7000);
     } else {
       if (adminSyncInterval.current) clearInterval(adminSyncInterval.current);
     }
@@ -190,7 +186,6 @@ const App: React.FC = () => {
     setIsAuthLoading(true);
     try {
       if (isSignUp) {
-        // Robust existence check using normalized phone
         const exists = await databaseService.getUserByPhone(phone);
         if (exists) {
           setAuthError('Phone already registered');
@@ -200,7 +195,7 @@ const App: React.FC = () => {
 
         const newUser: UserProfile = { 
           name, 
-          phone: databaseService.normalizePhone(phone), // Store normalized phone
+          phone: databaseService.normalizePhone(phone),
           password, 
           balance: 50, 
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`, 
@@ -213,7 +208,7 @@ const App: React.FC = () => {
 
         const success = await databaseService.updateUser(newUser);
         if (!success) {
-          setAuthError('Server Error: Failed to create account. Try again.');
+          setAuthError('Account creation failed.');
           setIsAuthLoading(false);
           return;
         }
@@ -223,31 +218,20 @@ const App: React.FC = () => {
         setView('LOBBY');
         soundManager.play('win');
       } else {
-        // Use robust database fetch with normalization
         const found = await databaseService.getUserByPhone(phone);
-        
-        if (found) {
-          if (found.password === password) {
-            if (found.isBlocked) {
-              setAuthError('Account suspended');
-            } else {
-              const updatedUser = { ...found, lastLogin: new Date().toISOString() };
-              await databaseService.updateUser(updatedUser);
-              setUser(updatedUser);
-              localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
-              setView('LOBBY');
-              soundManager.play('click');
-            }
-          } else {
-            setAuthError('Invalid credentials (password mismatch)');
-          }
+        if (found && found.password === password) {
+            if (found.isBlocked) return setAuthError('Account suspended');
+            const updatedUser = { ...found, lastLogin: new Date().toISOString() };
+            await databaseService.updateUser(updatedUser);
+            setUser(updatedUser);
+            localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
+            setView('LOBBY');
         } else {
-          setAuthError('Invalid credentials (user not found)');
+          setAuthError('Invalid phone or password');
         }
       }
     } catch (err) {
-      console.error("Auth Exception:", err);
-      setAuthError('Connection error. Check your internet.');
+      setAuthError('Connection problem');
     } finally {
       setIsAuthLoading(false);
     }
@@ -257,11 +241,13 @@ const App: React.FC = () => {
     if (!newPassword || newPassword.length < 4) return alert("Password too short");
     if (!user) return;
     const updated = { ...user, password: newPassword };
-    await databaseService.updateUser(updated);
-    setUser(updated);
-    localStorage.setItem('LUDO_SESSION', JSON.stringify(updated));
-    setChangePassOpen(false);
-    alert("Password updated successfully!");
+    const ok = await databaseService.updateUser(updated);
+    if (ok) {
+        setUser(updated);
+        localStorage.setItem('LUDO_SESSION', JSON.stringify(updated));
+        setChangePassOpen(false);
+        alert("Password updated!");
+    }
   };
 
   const startFinding = async () => {
@@ -466,35 +452,13 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-yellow-400 h-8 flex items-center overflow-hidden border-y border-yellow-500 mt-2">
-            <div className="animate-scroll-text whitespace-nowrap flex gap-12">
-              <span className="text-[10px] font-black text-black uppercase italic flex items-center gap-2">🏆 Tournament starting in 5 mins! Join now 📞</span>
-              <span className="text-[10px] font-black text-black uppercase italic flex items-center gap-2">💰 Oliver just withdrew ৳500 to bKash 🚀</span>
-              <span className="text-[10px] font-black text-black uppercase italic flex items-center gap-2">🏆 Tournament starting in 5 mins! Join now 📞</span>
-            </div>
-          </div>
-
-          <div className="flex gap-4 p-6 pt-6">
-             <div className="flex-1 bg-gradient-to-br from-indigo-600 to-blue-700 p-5 rounded-[25px] flex items-center gap-4 shadow-xl border border-white/10">
-                <div className="text-3xl">🎁</div>
-                <div><p className="text-[8px] font-black text-white/40 uppercase">Daily Reward</p><p className="text-xs font-black uppercase italic">Claim ৳৫০</p></div>
-             </div>
-             <div className="flex-1 bg-gradient-to-br from-orange-500 to-red-600 p-5 rounded-[25px] flex items-center gap-4 shadow-xl border border-white/10">
-                <div className="text-3xl">🔥</div>
-                <div><p className="text-[8px] font-black text-white/40 uppercase">Hot Event</p><p className="text-xs font-black uppercase italic">2X Points</p></div>
-             </div>
-          </div>
-
-          <div className="flex-1 px-6 pb-6">
+          <div className="flex-1 px-6 pb-6 mt-10">
              <div className="h-full bg-blue-600 rounded-[40px] border-[10px] border-white/5 shadow-2xl flex flex-col items-center justify-between p-10 relative overflow-hidden">
                 <div className="bg-[#1c2e63] p-1.5 rounded-3xl flex w-full max-w-[240px] z-10">
                   <button onClick={() => setPlayerCount(2)} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40'}`}>2 Player</button>
                   <button onClick={() => setPlayerCount(4)} className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg scale-105' : 'text-white/40'}`}>4 Player</button>
                 </div>
                 <div className="flex flex-col items-center gap-6 z-10">
-                   <div className="w-24 h-24 bg-yellow-400 rounded-3xl flex items-center justify-center shadow-2xl border-4 border-yellow-300 transform rotate-12">
-                      <div className="w-16 h-16 bg-white rounded-xl shadow-inner flex items-center justify-center"><div className="w-4 h-4 bg-red-600 rounded-full"></div></div>
-                   </div>
                    <h2 className="text-4xl font-black italic uppercase text-white drop-shadow-lg tracking-tighter">Global Arena</h2>
                 </div>
                 <div className="w-full flex justify-between gap-2 z-10">
@@ -504,12 +468,6 @@ const App: React.FC = () => {
                 </div>
                 <button onClick={startFinding} className="w-full py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[25px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 active:border-b-0 shadow-xl z-10 transition-all">Start Battle</button>
              </div>
-          </div>
-
-          <div className="h-20 bg-slate-900/90 border-t border-white/5 flex items-center justify-around px-10 pb-2">
-             <button onClick={() => setLobbyTab('HOME')} className={`flex flex-col items-center gap-1 ${lobbyTab === 'HOME' ? 'text-yellow-400' : 'text-white/20'}`}><span className="text-2xl">🏠</span><span className="text-[8px] font-black uppercase tracking-widest">Home</span></button>
-             <button onClick={() => setLobbyTab('RANK')} className={`flex flex-col items-center gap-1 ${lobbyTab === 'RANK' ? 'text-yellow-400' : 'text-white/20'}`}><span className="text-2xl">🏆</span><span className="text-[8px] font-black uppercase tracking-widest">Rank</span></button>
-             <button onClick={() => setLobbyTab('SHOP')} className={`flex flex-col items-center gap-1 ${lobbyTab === 'SHOP' ? 'text-yellow-400' : 'text-white/20'}`}><span className="text-2xl">🛡️</span><span className="text-[8px] font-black uppercase tracking-widest">Shop</span></button>
           </div>
         </div>
       )}
@@ -522,7 +480,6 @@ const App: React.FC = () => {
               <div className="flex flex-col items-center justify-center z-10"><span className="text-7xl font-black text-yellow-500 italic">{findingTimer}</span></div>
            </div>
            <h2 className="text-4xl font-black italic uppercase text-white mb-2 tracking-tighter">Finding Players</h2>
-           <p className="text-sky-400 font-bold uppercase text-[10px] tracking-widest">Arena Loading...</p>
         </div>
       )}
 
@@ -560,21 +517,24 @@ const App: React.FC = () => {
           liveMatches={[]} 
           onUpdateUser={(u) => { setAllUsers(prev => prev.map(usr => usr.phone === u.phone ? u : usr)); }} 
           onApproveTransaction={async (tx) => { 
-            await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
-            alert("Approved!");
-            refreshAdminData();
+            const ok = await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
+            if (ok) {
+                alert("Approved successfully!");
+                refreshAdminData();
+            }
           }} 
           onRejectTransaction={async (id) => { 
-            await databaseService.updateTransactionStatus(id, 'REJECTED'); 
-            alert("Rejected!");
-            refreshAdminData();
+            const ok = await databaseService.updateTransactionStatus(id, 'REJECTED'); 
+            if (ok) {
+                alert("Rejected successfully!");
+                refreshAdminData();
+            }
           }} 
           onExit={() => setView('LOBBY')}
           onRefreshData={refreshAdminData}
         />
       )}
 
-      {/* Settings Modal */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-6 animate-in zoom-in-95">
           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 p-8 shadow-2xl">
@@ -588,7 +548,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Change Password Modal */}
       {isChangePassOpen && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-in zoom-in-95">
           <div className="bg-[#1e293b] rounded-[40px] w-full max-w-sm border border-white/10 p-8 shadow-2xl">
@@ -599,7 +558,20 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={async tx => { await databaseService.createTransaction(tx); alert("Request sent!"); refreshAdminData(); }} />}
+      {isWalletOpen && user && (
+        <WalletModal 
+          isOpen={isWalletOpen} 
+          onClose={() => setWalletOpen(false)} 
+          user={user} 
+          onSubmitTransaction={async tx => { 
+            const ok = await databaseService.createTransaction(tx); 
+            if (ok) {
+                alert("অনুরোধ পাঠানো হয়েছে! এডমিন শীঘ্রই যাচাই করবে।");
+                refreshAdminData(); 
+            }
+          }} 
+        />
+      )}
     </div>
   );
 };

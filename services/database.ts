@@ -17,19 +17,6 @@ const normalizePhone = (p: string | undefined): string => {
   return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
 };
 
-const toSnakeCase = (obj: any): any => {
-  if (Array.isArray(obj)) return obj.map(toSnakeCase);
-  if (obj !== null && typeof obj === 'object') {
-    const n: any = {};
-    Object.keys(obj).forEach(k => {
-      const key = k.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
-      n[key] = obj[k];
-    });
-    return n;
-  }
-  return obj;
-};
-
 const toCamelCase = (obj: any): any => {
   if (Array.isArray(obj)) return obj.map(toCamelCase);
   if (obj !== null && typeof obj === 'object') {
@@ -43,7 +30,6 @@ const toCamelCase = (obj: any): any => {
   return obj;
 };
 
-// এই ফাংশনটি শুধুমাত্র প্রয়োজনীয় এবং নিশ্চিত কলামগুলো পাঠাবে
 const prepareUserForDB = (user: UserProfile) => {
   return {
     phone: normalizePhone(user.phone),
@@ -58,8 +44,6 @@ const prepareUserForDB = (user: UserProfile) => {
     wins: user.stats?.wins || 0,
     total_winnings: user.stats?.totalWinnings || 0,
     history: JSON.stringify(user.history || [])
-    // Note: 'created_at' এবং 'last_login' ইচ্ছাকৃতভাবে বাদ দেওয়া হয়েছে 
-    // যাতে স্কিমা ক্যাশে এরর না আসে। ডাটাবেস এগুলো অটো-ফিল করবে।
   };
 };
 
@@ -81,6 +65,7 @@ export const databaseService = {
         return camel;
       });
     } catch (error: any) {
+      console.error("Fetch Users Error:", error.message);
       return JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
     }
   },
@@ -89,12 +74,7 @@ export const databaseService = {
     try {
       const normalizedInput = normalizePhone(phone);
       const { data, error } = await supabase.from('users').select('*').eq('phone', normalizedInput).maybeSingle();
-      
-      if (!data) {
-        const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
-        return db.find((u: any) => normalizePhone(u.phone) === normalizedInput) || null;
-      }
-      
+      if (!data) return null;
       const camel = toCamelCase(data);
       camel.stats = {
         totalGames: data.total_games || 0,
@@ -103,60 +83,78 @@ export const databaseService = {
       };
       return camel;
     } catch (e) {
-      const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
-      return db.find((u: any) => normalizePhone(u.phone) === normalizePhone(phone)) || null;
+      return null;
     }
   },
 
   async updateUser(user: UserProfile): Promise<boolean> {
-    // লোকাল ক্যাশ আপডেট
-    const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
-    const idx = db.findIndex((u: any) => normalizePhone(u.phone) === normalizePhone(user.phone));
-    if (idx !== -1) db[idx] = user; else db.push(user);
-    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(db));
-
     try {
       const dbReadyData = prepareUserForDB(user);
       const { error } = await supabase.from('users').upsert(dbReadyData, { onConflict: 'phone' });
-      
-      if (error) {
-        console.error("Supabase Error:", error.message);
-        // যদি কলাম খুঁজে না পাওয়ার এরর হয়, তবুও লোকালি সাকসেস দেখাবে
-        return true;
-      }
+      if (error) throw error;
       return true;
     } catch (error: any) {
-      return true; 
+      console.error("Update User Error:", error.message);
+      return false;
     }
   },
 
-  async createTransaction(tx: PendingTransaction) {
+  async createTransaction(tx: PendingTransaction): Promise<boolean> {
     try {
-      const snakeData = toSnakeCase(tx);
-      await supabase.from('transactions').insert(snakeData);
-    } catch (e: any) {}
+      const dbData = {
+        id: tx.id,
+        user_name: tx.userName,
+        account_phone: normalizePhone(tx.accountPhone),
+        type: tx.type,
+        method: tx.method,
+        amount: tx.amount,
+        phone: tx.phone,
+        trx_id: tx.trxId,
+        status: tx.status,
+        timestamp: tx.timestamp
+      };
+      
+      const { error } = await supabase.from('transactions').insert(dbData);
+      if (error) throw error;
+      console.log("Transaction saved to Supabase");
+      return true;
+    } catch (e: any) {
+      console.error("Create Transaction Error:", e.message);
+      // Fallback to local
+      const localTxs = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
+      localTxs.push(tx);
+      localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(localTxs));
+      return false;
+    }
   },
 
   async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
     try {
-      await supabase.from('transactions').update({ status }).eq('id', txId);
-    } catch (e) {}
+      const { error } = await supabase.from('transactions').update({ status }).eq('id', txId);
+      if (error) throw error;
+      return true;
+    } catch (e: any) {
+      console.error("Update Status Error:", e.message);
+      return false;
+    }
   },
 
   async getPendingTransactions(): Promise<PendingTransaction[]> {
     try {
-      const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING');
+      const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING').order('timestamp', { ascending: false });
       if (error) throw error;
       return (data || []).map(t => toCamelCase(t));
     } catch (error: any) {
+      console.error("Get Pending Transactions Error:", error.message);
       return [];
     }
   },
 
   async getSettings(): Promise<any> {
     try {
-      const { data } = await supabase.from('settings').select('*');
-      const settingsMap: any = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}');
+      const { data, error } = await supabase.from('settings').select('*');
+      if (error) throw error;
+      const settingsMap: any = {};
       data?.forEach(s => { settingsMap[s.key] = s.value; });
       return settingsMap;
     } catch (error: any) { 
@@ -165,11 +163,12 @@ export const databaseService = {
   },
 
   async updateSetting(key: string, value: string) {
-    const local = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}');
-    local[key] = value;
-    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(local));
     try {
-      await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
-    } catch (error: any) {}
+      const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
+      if (error) throw error;
+      return true;
+    } catch (error: any) {
+      return false;
+    }
   }
 };
