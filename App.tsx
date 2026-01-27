@@ -78,6 +78,7 @@ const App: React.FC = () => {
   const [isRolling, setIsRolling] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [findingTimer, setFindingTimer] = useState(30);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
 
   const botActionTimeout = useRef<any>(null);
   const findingInterval = useRef<any>(null);
@@ -146,7 +147,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (view === 'ADMIN') {
       refreshAdminData();
-      // Polling for live data every 5 seconds while in admin view
       adminSyncInterval.current = setInterval(refreshAdminData, 5000);
     } else {
       if (adminSyncInterval.current) clearInterval(adminSyncInterval.current);
@@ -187,32 +187,69 @@ const App: React.FC = () => {
     setAuthError('');
     if (!phone || !password || (isSignUp && !name)) return setAuthError('Please fill all fields');
     
-    if (isSignUp) {
-      const exists = await databaseService.getUserByPhone(phone);
-      if (exists) return setAuthError('Phone already registered');
-      const newUser: UserProfile = { 
-        name, phone, password, balance: 50, 
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`, 
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, 
-        history: [], isBlocked: false 
-      };
-      await databaseService.updateUser(newUser);
-      setUser(newUser);
-      localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser));
-      setView('LOBBY');
-    } else {
-      const users = await databaseService.getUsers();
-      const found = users.find(u => u.phone === phone && u.password === password);
-      if (found) {
-        if (found.isBlocked) return setAuthError('Account suspended');
-        const updatedUser = { ...found, lastLogin: new Date().toISOString() };
-        await databaseService.updateUser(updatedUser);
-        setUser(updatedUser);
-        localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
+    setIsAuthLoading(true);
+    try {
+      if (isSignUp) {
+        // Robust existence check using normalized phone
+        const exists = await databaseService.getUserByPhone(phone);
+        if (exists) {
+          setAuthError('Phone already registered');
+          setIsAuthLoading(false);
+          return;
+        }
+
+        const newUser: UserProfile = { 
+          name, 
+          phone: databaseService.normalizePhone(phone), // Store normalized phone
+          password, 
+          balance: 50, 
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`, 
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString(),
+          stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, 
+          history: [], 
+          isBlocked: false 
+        };
+
+        const success = await databaseService.updateUser(newUser);
+        if (!success) {
+          setAuthError('Server Error: Failed to create account. Try again.');
+          setIsAuthLoading(false);
+          return;
+        }
+
+        setUser(newUser);
+        localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser));
         setView('LOBBY');
-      } else setAuthError('Invalid credentials');
+        soundManager.play('win');
+      } else {
+        // Use robust database fetch with normalization
+        const found = await databaseService.getUserByPhone(phone);
+        
+        if (found) {
+          if (found.password === password) {
+            if (found.isBlocked) {
+              setAuthError('Account suspended');
+            } else {
+              const updatedUser = { ...found, lastLogin: new Date().toISOString() };
+              await databaseService.updateUser(updatedUser);
+              setUser(updatedUser);
+              localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
+              setView('LOBBY');
+              soundManager.play('click');
+            }
+          } else {
+            setAuthError('Invalid credentials (password mismatch)');
+          }
+        } else {
+          setAuthError('Invalid credentials (user not found)');
+        }
+      }
+    } catch (err) {
+      console.error("Auth Exception:", err);
+      setAuthError('Connection error. Check your internet.');
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
@@ -398,14 +435,16 @@ const App: React.FC = () => {
         <div className="h-full flex flex-col items-center justify-center p-6 bg-[#050a18] relative">
           <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 rounded-[50px] w-full max-w-[420px] border border-white/10 shadow-2xl">
             <h2 className="ludo-money-logo text-6xl mb-10 italic uppercase">{isSignUp ? 'SIGNUP' : 'LOGIN'}</h2>
-            {authError && <div className="text-red-500 mb-6 text-xs font-bold text-center">{authError}</div>}
+            {authError && <div className="text-red-500 mb-6 text-xs font-bold text-center bg-red-500/10 p-2 rounded-xl border border-red-500/20">{authError}</div>}
             <div className="space-y-4 mb-8">
               {isSignUp && <input type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl outline-none" />}
               <input type="tel" placeholder="Phone Number" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl outline-none" />
               <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl outline-none" />
             </div>
-            <button onClick={handleAuth} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all">Enter Arena</button>
-            <button onClick={() => setIsSignUp(!isSignUp)} className="w-full mt-4 text-white/40 text-[10px] uppercase font-bold">{isSignUp ? 'Login instead' : 'Create Account'}</button>
+            <button onClick={handleAuth} disabled={isAuthLoading} className="w-full bg-yellow-500 text-black py-5 rounded-3xl font-black text-lg uppercase shadow-xl active:scale-95 transition-all disabled:opacity-50">
+               {isAuthLoading ? 'Please wait...' : 'Enter Arena'}
+            </button>
+            <button onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }} className="w-full mt-4 text-white/40 text-[10px] uppercase font-bold">{isSignUp ? 'Login instead' : 'Create Account'}</button>
           </div>
           <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/5 text-[9px] font-black uppercase tracking-[0.2em]">VER 1.0.6 PRO</button>
         </div>

@@ -60,32 +60,47 @@ export const databaseService = {
 
   async getUserByPhone(phone: string): Promise<UserProfile | null> {
     try {
-      let { data, error } = await supabase.from('users').select('*').eq('phone', phone).maybeSingle();
+      const normalizedInput = normalizePhone(phone);
+      // Try direct match first
+      let { data, error } = await supabase.from('users').select('*').eq('phone', normalizedInput).maybeSingle();
+      
       if (!data) {
+        // Broad search and manual normalization match
         const { data: all } = await supabase.from('users').select('*');
-        const normalizedTarget = normalizePhone(phone);
-        data = all?.find(u => normalizePhone(u.phone) === normalizedTarget) || null;
+        data = all?.find(u => normalizePhone(u.phone) === normalizedInput) || null;
       }
+      
       if (!data) return null;
       return toCamelCase(data);
     } catch (e) {
+      console.warn("getUserByPhone Fallback triggered:", e);
       const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
       const normalizedTarget = normalizePhone(phone);
       return db.find((u: any) => normalizePhone(u.phone) === normalizedTarget) || null;
     }
   },
 
-  async updateUser(user: UserProfile) {
+  async updateUser(user: UserProfile): Promise<boolean> {
     try {
       const snakeData = toSnakeCase(user);
       const { error } = await supabase.from('users').upsert(snakeData);
       if (error) throw error;
-    } catch (error: any) {
-      console.error("Update User Error:", error);
+      
+      // Update local cache on success
       const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
       const idx = db.findIndex((u: any) => normalizePhone(u.phone) === normalizePhone(user.phone));
       if (idx !== -1) db[idx] = user; else db.push(user);
       localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(db));
+      
+      return true;
+    } catch (error: any) {
+      console.error("Update User DB Error:", error);
+      // Still update local storage so game continues
+      const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
+      const idx = db.findIndex((u: any) => normalizePhone(u.phone) === normalizePhone(user.phone));
+      if (idx !== -1) db[idx] = user; else db.push(user);
+      localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(db));
+      return false;
     }
   },
 
