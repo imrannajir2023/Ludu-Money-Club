@@ -6,7 +6,7 @@ import WalletModal from './components/WalletModal';
 import AdminPortal from './components/AdminPortal';
 import { soundManager } from './services/soundService';
 import { databaseService } from './services/database';
-import { getRandomBotIdentity } from './services/botService';
+import { getRandomBotIdentity, calculateBestBotMove } from './services/botService';
 import { generateGameCommentary } from './services/geminiService';
 import { SAFE_SPOTS, START_POSITIONS } from './constants';
 
@@ -78,7 +78,8 @@ const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
-  const [findingTimer, setFindingTimer] = useState(30);
+  const [findingTimer, setFindingTimer] = useState(15);
+  const [foundPlayers, setFoundPlayers] = useState<any[]>([]);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [commentary, setCommentary] = useState<string>("Welcome to the arena! Best of luck. 🎲");
   const [turnTimer, setTurnTimer] = useState(10);
@@ -104,16 +105,13 @@ const App: React.FC = () => {
   useEffect(() => {
     const unlock = () => {
       soundManager.unlock();
-      // Remove all listeners once unlocked
       ['click', 'touchstart', 'mousedown'].forEach(evt => {
         window.removeEventListener(evt, unlock);
       });
     };
-    
     ['click', 'touchstart', 'mousedown'].forEach(evt => {
       window.addEventListener(evt, unlock);
     });
-    
     return () => {
       ['click', 'touchstart', 'mousedown'].forEach(evt => {
         window.removeEventListener(evt, unlock);
@@ -182,8 +180,11 @@ const App: React.FC = () => {
             (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)
         );
         if (validTokens.length > 0) {
-            const best = validTokens.reduce((prev, curr) => prev.distanceTraveled > curr.distanceTraveled ? prev : curr);
+            // Pick a smart token even for auto-turn
+            const best = calculateBestBotMove(validTokens, val, gameState.players, gameState.currentPlayerIndex);
             moveToken(best);
+        } else {
+           nextTurn();
         }
     }
   };
@@ -193,6 +194,7 @@ const App: React.FC = () => {
     setCommentary(text);
   };
 
+  // BOT TURN LOGIC (Intelligent)
   useEffect(() => {
     if (view === 'GAME' && gameState && !gameState.winner && !isMoving && !isRolling) {
       const currentPlayer = gameState.players[gameState.currentPlayerIndex];
@@ -200,15 +202,14 @@ const App: React.FC = () => {
         if (!gameState.isDiceRolled) {
           botTurnTimeout.current = setTimeout(() => rollDice(), 1500);
         } else {
-          const player = gameState.players[gameState.currentPlayerIndex];
           const val = gameState.diceValue!;
-          const validTokens = player.tokens.filter(t => 
+          const validTokens = currentPlayer.tokens.filter(t => 
             t.state !== TokenState.WIN && 
             (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56)
           );
           if (validTokens.length > 0) {
-            let bestToken = validTokens[0];
-            bestToken = validTokens.reduce((prev, curr) => prev.distanceTraveled > curr.distanceTraveled ? prev : curr);
+            // USE INTELLIGENT BOT LOGIC FROM SERVICE
+            const bestToken = calculateBestBotMove(validTokens, val, gameState.players, gameState.currentPlayerIndex);
             botTurnTimeout.current = setTimeout(() => moveToken(bestToken), 1000);
           }
         }
@@ -216,6 +217,68 @@ const App: React.FC = () => {
     }
     return () => clearTimeout(botTurnTimeout.current);
   }, [view, gameState?.currentPlayerIndex, gameState?.isDiceRolled, isMoving, isRolling]);
+
+  const startFinding = async () => {
+    if (!user || user.balance < selectedStake) return alert("Insufficient balance");
+    soundManager.play('click');
+    const updatedUser = { ...user, balance: user.balance - selectedStake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
+    setUser(updatedUser);
+    await databaseService.updateUser(updatedUser);
+    
+    setView('FINDING');
+    setFindingTimer(15);
+    setFoundPlayers([{ name: user.name, avatar: user.avatar, flag: user.flag || '🇧🇩', isSelf: true }]);
+    
+    // Simulated Matchmaking
+    let currentFoundCount = 1;
+    const matchInterval = setInterval(() => {
+      if (currentFoundCount < playerCount) {
+        const bot = getRandomBotIdentity();
+        setFoundPlayers(prev => [...prev, { name: bot.name, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bot.name}`, flag: bot.flag, isSelf: false }]);
+        currentFoundCount++;
+        soundManager.play('click');
+      }
+    }, 2500);
+
+    findingInterval.current = setInterval(() => {
+      setFindingTimer(t => {
+        if (t <= 1) {
+          clearInterval(matchInterval);
+          clearInterval(findingInterval.current);
+          prepareGame();
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+  };
+
+  const prepareGame = () => {
+    const players: Player[] = [
+      { id: 'user', name: user!.name, country: user!.country || 'BD', flag: user!.flag || '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user!.avatar, tokens: [] }
+    ];
+    
+    const colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+    for (let i = 1; i < playerCount; i++) {
+      const botIdentity = getRandomBotIdentity();
+      const color = playerCount === 2 ? PlayerColor.YELLOW : colors[i];
+      players.push({
+        id: `bot-${i}`, name: botIdentity.name, country: botIdentity.country, flag: botIdentity.flag,
+        isBot: true, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIdentity.name}`,
+        color, tokens: []
+      } as Player);
+    }
+
+    const finalPlayers = players.map((p, i) => ({
+      ...p,
+      tokens: [0, 1, 2, 3].map(tid => ({ id: (i * 4) + tid, color: p.color, state: TokenState.HOME, position: 0, distanceTraveled: 0 }))
+    }));
+
+    setGameState({ players: finalPlayers, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: 'Started', consecutiveSixes: 0 });
+    setView('GAME');
+    soundManager.play('six');
+    setCommentary("Match started! High stakes arena. 🔥");
+  };
 
   const refreshAdminData = useCallback(async () => {
     try {
@@ -296,7 +359,6 @@ const App: React.FC = () => {
   const handleAuth = async () => {
     setAuthError('');
     if (!phone || !password || (isSignUp && !name)) return setAuthError('Please fill all fields');
-    
     setIsAuthLoading(true);
     try {
       if (isSignUp) {
@@ -307,25 +369,17 @@ const App: React.FC = () => {
           setIsAuthLoading(false);
           return;
         }
-
         const newUser: UserProfile = { 
-          name, 
-          phone: normalizedPhone,
-          password, 
-          balance: 50, 
+          name, phone: normalizedPhone, password, balance: 50, 
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`, 
-          stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, 
-          history: [], 
-          isBlocked: false 
+          stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: [], isBlocked: false 
         };
-
         const result = await databaseService.updateUser(newUser);
         if (!result.success) {
           setAuthError('Failed: ' + (result.message || 'Check database setup'));
           setIsAuthLoading(false);
           return;
         }
-
         setUser(newUser);
         localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser));
         setView('LOBBY');
@@ -361,55 +415,6 @@ const App: React.FC = () => {
     }
   };
 
-  const startFinding = async () => {
-    if (!user || user.balance < selectedStake) return alert("Insufficient balance");
-    soundManager.play('click');
-    const updatedUser = { ...user, balance: user.balance - selectedStake, stats: { ...user.stats, totalGames: user.stats.totalGames + 1 } };
-    setUser(updatedUser);
-    await databaseService.updateUser(updatedUser);
-    
-    setView('FINDING');
-    setFindingTimer(15);
-    
-    findingInterval.current = setInterval(() => {
-      setFindingTimer(t => {
-        if (t <= 1) {
-          clearInterval(findingInterval.current);
-          fillWithBots();
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-  };
-
-  const fillWithBots = () => {
-    const players: Player[] = [
-      { id: 'user', name: user!.name, country: user!.country || 'BD', flag: user!.flag || '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user!.avatar, tokens: [] }
-    ];
-    
-    const colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
-    for (let i = 1; i < playerCount; i++) {
-      const botIdentity = getRandomBotIdentity();
-      const color = playerCount === 2 ? PlayerColor.YELLOW : colors[i];
-      players.push({
-        id: `bot-${i}`, name: botIdentity.name, country: botIdentity.country, flag: botIdentity.flag,
-        isBot: true, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${botIdentity.name}`,
-        color, tokens: []
-      } as Player);
-    }
-
-    const finalPlayers = players.map((p, i) => ({
-      ...p,
-      tokens: [0, 1, 2, 3].map(tid => ({ id: (i * 4) + tid, color: p.color, state: TokenState.HOME, position: 0, distanceTraveled: 0 }))
-    }));
-
-    setGameState({ players: finalPlayers, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: 'Started', consecutiveSixes: 0 });
-    setView('GAME');
-    soundManager.play('six');
-    setCommentary("Match started! High stakes arena. 🔥");
-  };
-
   const rollDice = () => {
     if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
     setIsRolling(true);
@@ -418,12 +423,10 @@ const App: React.FC = () => {
       const val = Math.floor(Math.random() * 6) + 1;
       setIsRolling(false);
       soundManager.play('dice_stop');
-      
       if (val === 6) {
         soundManager.play('six');
         addCommentary("Rolled a lucky SIX!", gameState.players[gameState.currentPlayerIndex].name);
       }
-
       setGameState(prev => {
         if (!prev) return null;
         if (val === 6 && prev.consecutiveSixes >= 2) {
@@ -643,27 +646,42 @@ const App: React.FC = () => {
               <button onClick={startFinding} className="w-full py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[25px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 active:border-b-0 shadow-xl transition-all">Start Battle</button>
             </div>
           </div>
-          <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-white/10 flex justify-around p-4 z-50">
-             <button className="flex flex-col items-center gap-1 group">
-                <div className="p-2 bg-yellow-400 rounded-xl transition-transform"><span className="text-lg">🏠</span></div>
-                <span className="text-[8px] font-black uppercase text-yellow-400">Home</span>
-             </button>
-             <button className="flex flex-col items-center gap-1 group opacity-40">
-                <div className="p-2 bg-slate-800 rounded-xl transition-transform"><span className="text-lg">🏆</span></div>
-                <span className="text-[8px] font-black uppercase text-white/40">Rank</span>
-             </button>
-          </div>
         </div>
       )}
 
       {view === 'FINDING' && (
-        <div className="h-full flex flex-col items-center justify-center p-8 bg-[#020617] animate-in fade-in">
-           <div className="relative w-64 h-64 mb-12 flex items-center justify-center">
-              <div className="absolute inset-0 rounded-full border-[8px] border-white/5 shadow-inner"></div>
-              <div className="absolute inset-0 rounded-full border-[8px] border-sky-500 border-t-transparent animate-spin"></div>
-              <div className="flex flex-col items-center justify-center z-10"><span className="text-7xl font-black text-yellow-500 italic">{findingTimer}</span></div>
+        <div className="h-full flex flex-col items-center justify-center p-8 bg-[#020617] animate-in fade-in relative">
+           <div className="absolute top-10 flex flex-col items-center">
+              <h2 className="text-4xl font-black italic uppercase text-yellow-500 tracking-tighter animate-pulse">Searching Players...</h2>
+              <p className="text-white/40 text-xs font-bold mt-2">Connecting to Global Ludo Server</p>
            </div>
-           <h2 className="text-4xl font-black italic uppercase text-white mb-2 tracking-tighter">Finding Players</h2>
+           
+           <div className="grid grid-cols-2 gap-10 mt-10">
+              {Array.from({ length: playerCount }).map((_, i) => (
+                <div key={i} className={`flex flex-col items-center gap-3 transition-all duration-700 ${foundPlayers[i] ? 'scale-110' : 'opacity-20 scale-90'}`}>
+                   <div className={`w-24 h-24 rounded-3xl border-4 ${foundPlayers[i] ? 'border-green-500' : 'border-white/20'} bg-slate-800 overflow-hidden flex items-center justify-center relative`}>
+                      {foundPlayers[i] ? (
+                        <img src={foundPlayers[i].avatar} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-3xl animate-bounce">?</span>
+                      )}
+                      {foundPlayers[i] && (
+                        <div className="absolute bottom-1 right-1 bg-black/60 px-2 py-0.5 rounded-full border border-white/20">
+                          <span className="text-[10px]">{foundPlayers[i].flag}</span>
+                        </div>
+                      )}
+                   </div>
+                   <p className="text-[10px] font-black uppercase text-white truncate max-w-[100px]">{foundPlayers[i] ? foundPlayers[i].name : 'Waiting...'}</p>
+                </div>
+              ))}
+           </div>
+
+           <div className="mt-20 flex flex-col items-center">
+              <div className="text-7xl font-black text-white italic">{findingTimer}s</div>
+              <div className="w-48 h-1 bg-white/10 rounded-full mt-4 overflow-hidden">
+                <div className="h-full bg-yellow-500 transition-all duration-1000" style={{ width: `${(findingTimer / 15) * 100}%` }}></div>
+              </div>
+           </div>
         </div>
       )}
 
