@@ -46,18 +46,14 @@ export const databaseService = {
   normalizePhone,
 
   async getUsers(): Promise<UserProfile[]> {
-    console.log("Fetching users from DB...");
     try {
-      const { data, error } = await supabase.from('users').select('*');
-      if (error) {
-        console.error("Supabase getUsers Error:", error);
-        throw error;
-      }
+      const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
       const users = (data || []).map(u => toCamelCase(u));
       localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
       return users;
     } catch (error: any) {
-      console.warn("Using localStorage fallback for users");
+      console.warn("DB Users Error, using cache:", error.message);
       return JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
     }
   },
@@ -85,6 +81,7 @@ export const databaseService = {
       const { error } = await supabase.from('users').upsert(snakeData);
       if (error) throw error;
     } catch (error: any) {
+      console.error("Update User Error:", error);
       const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
       const idx = db.findIndex((u: any) => normalizePhone(u.phone) === normalizePhone(user.phone));
       if (idx !== -1) db[idx] = user; else db.push(user);
@@ -92,132 +89,17 @@ export const databaseService = {
     }
   },
 
-  async findOrCreateMatch(stake: number, playerCount: number, user: UserProfile): Promise<string> {
-    try {
-      const { data: existing } = await supabase
-        .from('matches')
-        .select('id')
-        .eq('status', 'WAITING')
-        .contains('players', [{ phone: user.phone }])
-        .limit(1);
-      
-      if (existing && existing.length > 0) return existing[0].id;
-
-      const { data: matches, error } = await supabase
-        .from('matches')
-        .select('*')
-        .eq('status', 'WAITING')
-        .eq('stake', stake)
-        .eq('player_count', playerCount)
-        .order('created_at', { ascending: true })
-        .limit(1);
-
-      if (error) throw error;
-
-      if (matches && matches.length > 0) {
-        const match = matches[0];
-        const players = match.players || [];
-        players.push({
-          name: user.name,
-          phone: user.phone,
-          avatar: user.avatar,
-          country: user.country || 'Global',
-          flag: user.flag || '🚩',
-          isBot: false
-        });
-        await supabase.from('matches').update({ players }).eq('id', match.id);
-        return match.id;
-      } else {
-        const newId = Math.random().toString(36).substr(2, 9);
-        const { error: createError } = await supabase.from('matches').insert({
-          id: newId,
-          stake,
-          player_count: playerCount,
-          status: 'WAITING',
-          players: [{
-            name: user.name,
-            phone: user.phone,
-            avatar: user.avatar,
-            country: user.country || 'Global',
-            flag: user.flag || '🚩',
-            isBot: false
-          }],
-          created_at: new Date().toISOString()
-        });
-        if (createError) throw createError;
-        return newId;
-      }
-    } catch (e) {
-      return "local-" + Math.random().toString(36).substr(2, 5);
-    }
-  },
-
-  listenToMatch(matchId: string, onUpdate: (match: any) => void) {
-    if (matchId.startsWith('local-')) return () => {};
-    const subscription = supabase
-      .channel(`match-${matchId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
-        onUpdate(payload.new);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(subscription); };
-  },
-
-  async updateMatchStatus(matchId: string, status: 'ACTIVE' | 'TERMINATED' | 'FINISHED', finalGameState?: any) {
-    if (!matchId || matchId.startsWith('local-')) return;
-    try {
-      await supabase.from('matches').update({ 
-        status, 
-        game_state: finalGameState ? toSnakeCase(finalGameState) : undefined 
-      }).eq('id', matchId);
-    } catch (e) {}
-  },
-
-  async leaveMatch(matchId: string, phone: string) {
-    if (!matchId || matchId.startsWith('local-')) return;
-    try {
-      const { data: match } = await supabase.from('matches').select('players, status').eq('id', matchId).single();
-      if (match) {
-        if (match.status === 'WAITING') {
-          const newPlayers = match.players.filter((p: any) => p.phone !== phone);
-          if (newPlayers.length === 0) {
-            await supabase.from('matches').delete().eq('id', matchId);
-          } else {
-            await supabase.from('matches').update({ players: newPlayers }).eq('id', matchId);
-          }
-        } else if (match.status === 'ACTIVE') {
-          await supabase.from('matches').update({ status: 'TERMINATED' }).eq('id', matchId);
-        }
-      }
-    } catch (e) {}
-  },
-
-  async syncGameState(matchId: string, gameState: GameState) {
-     if (!matchId || matchId.startsWith('local-')) return;
-     try {
-       await supabase.from('matches').update({ 
-         game_state: toSnakeCase(gameState),
-         last_updated: new Date().toISOString()
-       }).eq('id', matchId);
-     } catch (e) {}
-  },
-
   async createTransaction(tx: PendingTransaction) {
-    console.log("Attempting to create transaction in DB:", tx);
     try {
       const snakeData = toSnakeCase(tx);
       const { error } = await supabase.from('transactions').insert(snakeData);
-      if (error) {
-        console.error("Supabase createTransaction Error Details:", error);
-        throw error;
-      }
-      console.log("Supabase Transaction Success");
-      // Add to local history as well for immediate visibility
+      if (error) throw error;
+      
       const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
       allTx.push(tx);
       localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
-    } catch (e) {
-      console.warn("Falling back to localStorage for transaction:", e);
+    } catch (e: any) {
+      console.error("Create Transaction Error:", e.message);
       const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
       allTx.push(tx);
       localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
@@ -226,8 +108,9 @@ export const databaseService = {
 
   async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
     try {
-      await supabase.from('transactions').update({ status }).eq('id', txId);
-      // Update local storage too if present
+      const { error } = await supabase.from('transactions').update({ status }).eq('id', txId);
+      if (error) throw error;
+      
       const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
       const idx = allTx.findIndex((t: any) => t.id === txId);
       if (idx !== -1) {
@@ -235,21 +118,17 @@ export const databaseService = {
         localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
       }
     } catch (e) {
-      console.error("Failed to update status", e);
+      console.error("Update Transaction Status Error:", e);
     }
   },
 
   async getPendingTransactions(): Promise<PendingTransaction[]> {
-    console.log("Fetching pending transactions from DB...");
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING');
-      if (error) {
-        console.error("Supabase getPendingTransactions Error:", error);
-        throw error;
-      }
+      if (error) throw error;
       return (data || []).map(t => toCamelCase(t));
     } catch (error: any) {
-      console.warn("Using localStorage fallback for transactions");
+      console.warn("DB Transactions Error, using cache:", error.message);
       const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
       return allTx.filter((t: any) => t.status === 'PENDING');
     }

@@ -81,6 +81,7 @@ const App: React.FC = () => {
 
   const botActionTimeout = useRef<any>(null);
   const findingInterval = useRef<any>(null);
+  const adminSyncInterval = useRef<any>(null);
 
   // Auth States
   const [phone, setPhone] = useState('');
@@ -111,7 +112,6 @@ const App: React.FC = () => {
         const parsed = JSON.parse(saved);
         const fresh = await databaseService.getUserByPhone(parsed.phone);
         if (fresh && !fresh.isBlocked) {
-          // Update last login
           const updated = { ...fresh, lastLogin: new Date().toISOString() };
           setUser(updated);
           await databaseService.updateUser(updated);
@@ -131,24 +131,29 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Centralized Admin Data Fetcher
   const refreshAdminData = useCallback(async () => {
     try {
       const users = await databaseService.getUsers();
       const txs = await databaseService.getPendingTransactions();
       setAllUsers(users);
       setPendingTransactions(txs);
-      console.log("Admin data refreshed:", { userCount: users.length, txCount: txs.length });
+      console.log("Admin Data Synced:", { users: users.length, txs: txs.length });
     } catch (err) {
-      console.error("Failed to refresh admin data", err);
+      console.error("Admin Refresh Error:", err);
     }
   }, []);
 
-  // Fetch admin data when entering admin view
   useEffect(() => {
     if (view === 'ADMIN') {
       refreshAdminData();
+      // Polling for live data every 5 seconds while in admin view
+      adminSyncInterval.current = setInterval(refreshAdminData, 5000);
+    } else {
+      if (adminSyncInterval.current) clearInterval(adminSyncInterval.current);
     }
+    return () => {
+      if (adminSyncInterval.current) clearInterval(adminSyncInterval.current);
+    };
   }, [view, refreshAdminData]);
 
   const handleHiddenAdminTap = () => {
@@ -363,28 +368,6 @@ const App: React.FC = () => {
     setIsMoving(false);
   };
 
-  useEffect(() => {
-    if (gameState && gameState.players[gameState.currentPlayerIndex].isBot && !gameState.winner && !isRolling && !isMoving) {
-      if (botActionTimeout.current) clearTimeout(botActionTimeout.current);
-      botActionTimeout.current = setTimeout(() => {
-        if (!gameState.isDiceRolled) {
-          rollDice();
-        } else {
-          const player = gameState.players[gameState.currentPlayerIndex];
-          const val = gameState.diceValue!;
-          const validTokens = player.tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
-          
-          if (validTokens.length > 0) {
-            moveToken(validTokens[0]);
-          } else {
-            nextTurn();
-          }
-        }
-      }, 1500);
-    }
-    return () => clearTimeout(botActionTimeout.current);
-  }, [gameState, isRolling, isMoving]);
-
   return (
     <div className="h-screen w-full bg-[#020617] text-white font-['Fredoka'] dotted-bg overflow-hidden flex flex-col relative">
       {view === 'SPLASH' && (
@@ -540,12 +523,12 @@ const App: React.FC = () => {
           onApproveTransaction={async (tx) => { 
             await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
             alert("Approved!");
-            refreshAdminData(); // Refresh list immediately
+            refreshAdminData();
           }} 
           onRejectTransaction={async (id) => { 
             await databaseService.updateTransactionStatus(id, 'REJECTED'); 
             alert("Rejected!");
-            refreshAdminData(); // Refresh list immediately
+            refreshAdminData();
           }} 
           onExit={() => setView('LOBBY')}
           onRefreshData={refreshAdminData}
