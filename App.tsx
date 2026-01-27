@@ -7,11 +7,12 @@ import AdminPortal from './components/AdminPortal';
 import { soundManager } from './services/soundService';
 import { databaseService } from './services/database';
 import { getRandomBotIdentity } from './services/botService';
+import { generateGameCommentary } from './services/geminiService';
 import { SAFE_SPOTS, START_POSITIONS } from './constants';
 
-const Dice3D: React.FC<{ value: number | null, isRolling: boolean }> = ({ value, isRolling }) => {
+const Dice3D: React.FC<{ value: number | null, isRolling: boolean, onClick?: () => void, disabled?: boolean }> = ({ value, isRolling, onClick, disabled }) => {
   return (
-    <div className={`dice-scene ${isRolling ? 'dice-jump' : ''}`}>
+    <div className={`dice-scene ${isRolling ? 'dice-jump' : ''} ${disabled ? 'opacity-50 grayscale' : 'cursor-pointer'}`} onClick={!disabled && !isRolling ? onClick : undefined}>
       <div className={`cube ${isRolling ? 'rolling' : `show-${value || 1}`}`}>
         <div className="cube-face face-1"><div className="dot row-start-2 col-start-2"></div></div>
         <div className="cube-face face-2"><div className="dot row-start-1 col-start-1"></div><div className="dot row-start-3 col-start-3"></div></div>
@@ -72,16 +73,19 @@ const App: React.FC = () => {
   const [isWalletOpen, setWalletOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isChangePassOpen, setChangePassOpen] = useState(false);
+  const [showExitWarning, setShowExitWarning] = useState(false);
   
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [findingTimer, setFindingTimer] = useState(30);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [commentary, setCommentary] = useState<string>("Welcome to the arena! Best of luck. 🎲");
 
   const findingInterval = useRef<any>(null);
   const adminSyncInterval = useRef<any>(null);
   const balanceSyncInterval = useRef<any>(null);
+  const botTurnTimeout = useRef<any>(null);
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -129,6 +133,35 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const addCommentary = async (event: string, pName: string) => {
+    const text = await generateGameCommentary(event, pName);
+    setCommentary(text);
+  };
+
+  // Bot Auto-turn Logic
+  useEffect(() => {
+    if (view === 'GAME' && gameState && !gameState.winner && !isMoving && !isRolling) {
+      const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+      if (currentPlayer.isBot) {
+        if (!gameState.isDiceRolled) {
+          botTurnTimeout.current = setTimeout(() => rollDice(), 1500);
+        } else {
+          const validTokens = currentPlayer.tokens.filter(t => 
+            t.state !== TokenState.WIN && 
+            (t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56)
+          );
+          
+          if (validTokens.length > 0) {
+            let bestToken = validTokens[0];
+            bestToken = validTokens.reduce((prev, curr) => prev.distanceTraveled > curr.distanceTraveled ? prev : curr);
+            botTurnTimeout.current = setTimeout(() => moveToken(bestToken), 1000);
+          }
+        }
+      }
+    }
+    return () => clearTimeout(botTurnTimeout.current);
+  }, [view, gameState?.currentPlayerIndex, gameState?.isDiceRolled, isMoving, isRolling]);
+
   const refreshAdminData = useCallback(async () => {
     try {
       const users = await databaseService.getUsers();
@@ -150,7 +183,6 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  // Player balance poller - fast sync (5s)
   useEffect(() => {
     if (user && view !== 'GAME' && view !== 'SPLASH') {
         const checkBalance = async () => {
@@ -319,30 +351,33 @@ const App: React.FC = () => {
     setGameState({ players: finalPlayers, currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: 'Started', consecutiveSixes: 0 });
     setView('GAME');
     soundManager.play('six');
+    setCommentary("Match started! High stakes arena. 🔥");
   };
 
   const rollDice = () => {
     if (!gameState || isRolling || gameState.isDiceRolled || gameState.winner) return;
     setIsRolling(true);
     soundManager.play('dice');
-    setTimeout(() => {
+    setTimeout(async () => {
       const val = Math.floor(Math.random() * 6) + 1;
       setIsRolling(false);
       soundManager.play('dice_stop');
       
+      if (val === 6) {
+        soundManager.play('six');
+        addCommentary("Rolled a lucky SIX!", gameState.players[gameState.currentPlayerIndex].name);
+      }
+
       setGameState(prev => {
         if (!prev) return null;
         if (val === 6 && prev.consecutiveSixes >= 2) {
+           addCommentary("Three consecutive sixes! Turn skipped.", prev.players[prev.currentPlayerIndex].name);
            setTimeout(() => nextTurn(), 800);
            return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: 0 };
         }
-        
         const player = prev.players[prev.currentPlayerIndex];
         const canMove = player.tokens.some(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
-        if (!canMove) {
-          setTimeout(() => nextTurn(), 1000);
-        }
-
+        if (!canMove) setTimeout(() => nextTurn(), 1000);
         return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: val === 6 ? prev.consecutiveSixes + 1 : 0 };
       });
     }, 600);
@@ -377,13 +412,15 @@ const App: React.FC = () => {
       }
     }
 
+    let extraTurn = val === 6;
     if (player.tokens[tIdx].distanceTraveled === 56) {
       player.tokens[tIdx].state = TokenState.WIN;
       soundManager.play('win');
+      extraTurn = true;
+      addCommentary("Reached home! A point for the team.", player.name);
     } else {
       const targetPos = (player.tokens[tIdx].distanceTraveled + START_POSITIONS[player.color]) % 52;
       const isSafe = SAFE_SPOTS.includes(targetPos);
-      
       if (!isSafe) {
         players.forEach((otherP, otherPIdx) => {
           if (otherPIdx === gameState.currentPlayerIndex) return;
@@ -394,6 +431,8 @@ const App: React.FC = () => {
                 otherP.tokens[otherTIdx].state = TokenState.HOME;
                 otherP.tokens[otherTIdx].distanceTraveled = 0;
                 soundManager.play('kill');
+                extraTurn = true;
+                addCommentary(`BRUTAL KILL! Eliminated ${otherP.name}'s token.`, player.name);
               }
             }
           });
@@ -403,6 +442,7 @@ const App: React.FC = () => {
 
     if (player.tokens.every(t => t.state === TokenState.WIN)) {
       setGameState(p => p ? { ...p, winner: player.color } : null);
+      addCommentary("VICTORY! The champion has emerged.", player.name);
       if (player.id === 'user') {
         const reward = selectedStake * playerCount;
         const updated = { ...user!, balance: user!.balance + reward, stats: { ...user!.stats, wins: user!.stats.wins + 1, totalWinnings: user!.stats.totalWinnings + reward } };
@@ -410,23 +450,19 @@ const App: React.FC = () => {
         await databaseService.updateUser(updated);
       }
     } else {
-      setGameState(p => p ? { ...p, isDiceRolled: false, diceValue: null, currentPlayerIndex: val === 6 ? p.currentPlayerIndex : (p.currentPlayerIndex + 1) % p.players.length } : null);
+      setGameState(p => p ? { ...p, isDiceRolled: false, diceValue: null, currentPlayerIndex: extraTurn ? p.currentPlayerIndex : (p.currentPlayerIndex + 1) % p.players.length, consecutiveSixes: extraTurn && val !== 6 ? 0 : p.consecutiveSixes } : null);
     }
     setIsMoving(false);
   };
 
   const handleTransactionRequest = async (tx: PendingTransaction) => {
     if (tx.type === 'WITHDRAW' && user) {
-        if (user.balance < tx.amount) {
-            alert("Insufficient balance for withdrawal!");
-            return;
-        }
+        if (user.balance < tx.amount) return alert("Insufficient balance for withdrawal!");
         const updatedUser = { ...user, balance: user.balance - Number(tx.amount) };
         setUser(updatedUser);
         await databaseService.updateUser(updatedUser);
         localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
     }
-
     const result = await databaseService.createTransaction(tx); 
     if (result.success) {
         alert(tx.type === 'DEPOSIT' ? "ডিপোজিট অনুরোধ পাঠানো হয়েছে!" : "উইথড্র রিকোয়েস্ট পাঠানো হয়েছে!");
@@ -488,7 +524,6 @@ const App: React.FC = () => {
 
       {view === 'LOBBY' && user && (
         <div className="h-full flex flex-col animate-in fade-in overflow-y-auto no-scrollbar pb-32">
-          {/* Header */}
           <div className="flex justify-between items-center p-6 shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl border-2 border-yellow-500 bg-slate-800 overflow-hidden shadow-lg">
@@ -507,7 +542,6 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
-
           <div className="bg-yellow-500 py-1 flex items-center gap-2 overflow-hidden shrink-0">
              <span className="pl-6 shrink-0">📢</span>
              <div className="animate-scroll-text whitespace-nowrap flex items-center gap-8">
@@ -516,7 +550,6 @@ const App: React.FC = () => {
                <span className="text-[10px] font-black text-black uppercase">Tournament starting in 5 mins! Join now!</span>
              </div>
           </div>
-
           <div className="grid grid-cols-2 gap-4 px-6 mt-4 shrink-0">
              <div className="bg-indigo-600 rounded-3xl p-4 flex items-center gap-3 shadow-xl border border-white/10">
                 <span className="text-2xl">🎁</span>
@@ -533,32 +566,26 @@ const App: React.FC = () => {
                 </div>
              </div>
           </div>
-
           <div className="px-6 mt-6 mb-8">
             <div className="bg-blue-600 rounded-[40px] border-[10px] border-white/5 shadow-2xl flex flex-col items-center p-6 relative overflow-hidden min-h-[400px]">
               <div className="bg-black/20 p-1.5 rounded-3xl flex w-full max-w-[200px] mb-6">
                 <button onClick={() => setPlayerCount(2)} className={`flex-1 py-2 rounded-2xl text-[9px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black' : 'text-white/40'}`}>2 Player</button>
                 <button onClick={() => setPlayerCount(4)} className={`flex-1 py-2 rounded-2xl text-[9px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black' : 'text-white/40'}`}>4 Player</button>
               </div>
-
               <div className="w-24 h-24 bg-yellow-500 rounded-[25px] flex items-center justify-center shadow-xl border-4 border-amber-600 mb-4 transform rotate-12 shrink-0">
                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-inner">
                     <div className="w-4 h-4 bg-red-600 rounded-full"></div>
                  </div>
               </div>
-
               <h2 className="text-3xl font-black italic uppercase text-white drop-shadow-lg tracking-tighter mb-6 shrink-0 text-center">Global Arena</h2>
-
               <div className="w-full flex flex-wrap justify-between gap-2 mb-8 shrink-0">
                 {[50, 100, 500, 1000].map(s => (
                   <button key={s} onClick={() => setSelectedStake(s)} className={`flex-1 min-w-[70px] py-3 rounded-xl font-black text-[10px] transition-all border-2 ${selectedStake === s ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-xl' : 'bg-blue-800 border-white/5 text-white/40'}`}>৳{s}</button>
                 ))}
               </div>
-
               <button onClick={startFinding} className="w-full py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[25px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 active:border-b-0 shadow-xl transition-all">Start Battle</button>
             </div>
           </div>
-
           <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-white/10 flex justify-around p-4 z-50">
              <button className="flex flex-col items-center gap-1 group">
                 <div className="p-2 bg-yellow-400 rounded-xl transition-transform"><span className="text-lg">🏠</span></div>
@@ -585,22 +612,43 @@ const App: React.FC = () => {
 
       {view === 'GAME' && gameState && (
         <div className="flex-1 flex flex-col p-4 relative animate-in fade-in">
-          <div className="absolute top-4 left-4 z-[110]"><button onClick={() => setView('LOBBY')} className="bg-red-600 px-5 py-2 rounded-full font-black uppercase italic text-[9px] shadow-lg">Exit</button></div>
+          <div className="absolute top-4 left-4 z-[110]"><button onClick={() => setShowExitWarning(true)} className="bg-red-600 px-5 py-2 rounded-full font-black uppercase italic text-[9px] shadow-lg">Exit</button></div>
           <div className="flex-1 flex items-center justify-center p-2 mt-20">
             <div className="w-full max-w-[600px] aspect-square relative">
               <LudoBoard players={gameState.players} onTokenClick={moveToken} validTokens={gameState.currentPlayerIndex === 0 && gameState.isDiceRolled && !isMoving ? gameState.players[0].tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56)).map(t => t.id) : []} currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} />
               {gameState.players.map((p, i) => <PlayerProfileOverlay key={p.id} player={p} isActive={gameState.currentPlayerIndex === i} position={playerCount === 2 ? (i === 0 ? 'TL' : 'BR') : (['TL', 'TR', 'BR', 'BL'] as any)[i]} />)}
             </div>
           </div>
-          <div className="h-32 flex flex-col items-center justify-center bg-slate-900/90 rounded-t-[50px] border-t border-white/10 mt-4 shadow-2xl">
-            <button onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling} className={`transition-all ${gameState.currentPlayerIndex === 0 && !gameState.isDiceRolled ? 'scale-110' : 'opacity-40 grayscale pointer-events-none'}`}>
-               <Dice3D value={gameState.diceValue} isRolling={isRolling} />
-            </button>
+          <div className="mt-4 bg-slate-900/80 backdrop-blur-md border border-white/10 p-4 rounded-3xl mx-auto w-full max-w-[500px] h-16 flex items-center gap-3 shadow-xl overflow-hidden">
+             <div className="bg-sky-500 w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0">🎙️</div>
+             <p className="text-xs font-bold text-white/80 italic animate-in slide-in-from-right-full duration-1000 leading-snug">{commentary}</p>
           </div>
+          <div className="h-32 flex flex-col items-center justify-center bg-slate-900/90 rounded-t-[50px] border-t border-white/10 mt-4 shadow-2xl shrink-0">
+             <Dice3D value={gameState.diceValue} isRolling={isRolling} onClick={rollDice} disabled={gameState.currentPlayerIndex !== 0 || gameState.isDiceRolled || isRolling || !!gameState.winner} />
+          </div>
+
+          {/* Exit Warning Notification */}
+          {showExitWarning && (
+            <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/90 backdrop-blur-xl p-6 animate-in zoom-in-95">
+               <div className="bg-slate-900 border-2 border-red-500 rounded-[40px] p-8 max-w-xs w-full text-center shadow-[0_0_50px_rgba(239,68,68,0.3)]">
+                  <div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-3xl mx-auto mb-6">⚠️</div>
+                  <h3 className="text-xl font-black uppercase text-white mb-4">Are you sure?</h3>
+                  <p className="text-sm text-white/60 mb-8 font-bold leading-relaxed uppercase">
+                     আপনি যদি এখন গেম থেকে বের হন, তবে আপনার ব্যাটিং ব্যালেন্স <span className="text-red-500">৳{selectedStake}</span> লস হবে।
+                  </p>
+                  <div className="flex flex-col gap-3">
+                     <button onClick={() => setShowExitWarning(false)} className="w-full bg-green-500 text-black py-4 rounded-2xl font-black uppercase text-xs shadow-lg transition-transform active:scale-95">Stay & Play</button>
+                     <button onClick={() => { setShowExitWarning(false); setView('LOBBY'); }} className="w-full bg-white/5 border border-white/10 text-white/40 py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-red-600 hover:text-white transition-all">Exit Anyway</button>
+                  </div>
+               </div>
+            </div>
+          )}
+
           {gameState.winner && (
             <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 backdrop-blur-xl p-6">
               <div className="bg-indigo-900 p-12 rounded-[60px] border-4 border-yellow-500 shadow-2xl text-center w-full max-w-sm">
                 <h2 className="text-4xl font-black italic uppercase text-yellow-400 mb-8">VICTORY!</h2>
+                <p className="text-white/60 mb-8 text-sm uppercase font-black">Rewarded: ৳{(selectedStake * playerCount).toLocaleString()}</p>
                 <button onClick={() => setView('LOBBY')} className="w-full bg-white text-black py-5 rounded-[25px] font-black uppercase text-sm shadow-xl">Back to Lobby</button>
               </div>
             </div>
@@ -624,21 +672,10 @@ const App: React.FC = () => {
                     const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
                     if (targetUser) {
                         const amount = Number(tx.amount) || 0;
-                        const updateResult = await databaseService.updateUser({
-                            ...targetUser,
-                            balance: Number(targetUser.balance) + amount
-                        });
-                        if (updateResult.success) {
-                            alert(`ডিপোজিট এপ্রুভ এবং ৳${amount} যোগ হয়েছে!`);
-                        } else {
-                            alert("ব্যালেন্স আপডেট করতে সমস্যা হয়েছে: " + updateResult.message);
-                        }
-                    } else {
-                        alert("সতর্কতা: ইউজার (" + tx.userPhone + ") খুঁজে পাওয়া যায়নি! ব্যালেন্স যোগ করা যায়নি।");
+                        const updateResult = await databaseService.updateUser({ ...targetUser, balance: Number(targetUser.balance) + amount });
+                        if (updateResult.success) alert(`ডিপোজিট এপ্রুভ এবং ৳${amount} যোগ হয়েছে!`);
                     }
-                } else {
-                    alert("উইথড্র এপ্রুভ হয়েছে!");
-                }
+                } else alert("উইথড্র এপ্রুভ হয়েছে!");
                 refreshAdminData();
             }
           }} 
@@ -651,15 +688,10 @@ const App: React.FC = () => {
                     const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
                     if (targetUser) {
                         const amount = Number(tx.amount) || 0;
-                        await databaseService.updateUser({
-                            ...targetUser,
-                            balance: Number(targetUser.balance) + amount
-                        });
+                        await databaseService.updateUser({ ...targetUser, balance: Number(targetUser.balance) + amount });
                         alert(`উইথড্র রিজেক্ট এবং ৳${amount} রিফান্ড হয়েছে!`);
                     }
-                } else {
-                    alert("ডিপোজিট রিজেক্ট হয়েছে!");
-                }
+                } else alert("ডিপোজিট রিজেক্ট হয়েছে!");
                 refreshAdminData();
             }
           }} 
@@ -692,12 +724,7 @@ const App: React.FC = () => {
       )}
 
       {isWalletOpen && user && (
-        <WalletModal 
-          isOpen={isWalletOpen} 
-          onClose={() => setWalletOpen(false)} 
-          user={user} 
-          onSubmitTransaction={handleTransactionRequest} 
-        />
+        <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={handleTransactionRequest} />
       )}
     </div>
   );
