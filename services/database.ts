@@ -1,15 +1,11 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { UserProfile, PendingTransaction, LiveMatch, PlayerColor, GameState } from '../types';
+import { UserProfile, PendingTransaction } from '../types';
 
 const supabaseUrl = 'https://ipvfupwcckkigyxeqazg.supabase.co';
 const supabaseKey = 'sb_publishable_IymvinlNRCFKhicLAUXqFw_cc_xiOm6';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
-
-const STORAGE_KEY_SETTINGS = "LUDO_SETTINGS_BACKUP";
-const STORAGE_KEY_TRANSACTIONS = "LUDO_GLOBAL_TRANSACTIONS";
-const STORAGE_KEY_USERS = "LUDO_USERS_DATABASE";
 
 const normalizePhone = (p: string | undefined): string => {
   if (!p) return "";
@@ -30,30 +26,13 @@ const toCamelCase = (obj: any): any => {
   return obj;
 };
 
-const prepareUserForDB = (user: UserProfile) => {
-  return {
-    phone: normalizePhone(user.phone),
-    name: user.name,
-    password: user.password,
-    balance: user.balance,
-    avatar: user.avatar,
-    country: user.country || 'BD',
-    flag: user.flag || '🇧🇩',
-    is_blocked: !!user.isBlocked,
-    total_games: user.stats?.totalGames || 0,
-    wins: user.stats?.wins || 0,
-    total_winnings: user.stats?.totalWinnings || 0,
-    history: JSON.stringify(user.history || [])
-  };
-};
-
 export const databaseService = {
   isOnline: () => !!supabase,
   normalizePhone,
 
   async getUsers(): Promise<UserProfile[]> {
     try {
-      const { data, error } = await supabase.from('users').select('*');
+      const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []).map(u => {
         const camel = toCamelCase(u);
@@ -66,7 +45,7 @@ export const databaseService = {
       });
     } catch (error: any) {
       console.error("Fetch Users Error:", error.message);
-      return JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
+      return [];
     }
   },
 
@@ -74,7 +53,9 @@ export const databaseService = {
     try {
       const normalizedInput = normalizePhone(phone);
       const { data, error } = await supabase.from('users').select('*').eq('phone', normalizedInput).maybeSingle();
+      if (error) throw error;
       if (!data) return null;
+      
       const camel = toCamelCase(data);
       camel.stats = {
         totalGames: data.total_games || 0,
@@ -87,55 +68,33 @@ export const databaseService = {
     }
   },
 
-  async updateUser(user: UserProfile): Promise<boolean> {
+  async updateUser(user: UserProfile): Promise<{success: boolean, message?: string}> {
     try {
-      const dbReadyData = prepareUserForDB(user);
-      const { error } = await supabase.from('users').upsert(dbReadyData, { onConflict: 'phone' });
-      if (error) throw error;
-      return true;
-    } catch (error: any) {
-      console.error("Update User Error:", error.message);
-      return false;
-    }
-  },
-
-  async createTransaction(tx: PendingTransaction): Promise<boolean> {
-    try {
-      const dbData = {
-        id: tx.id,
-        user_name: tx.userName,
-        account_phone: normalizePhone(tx.accountPhone),
-        type: tx.type,
-        method: tx.method,
-        amount: tx.amount,
-        phone: tx.phone,
-        trx_id: tx.trxId,
-        status: tx.status,
-        timestamp: tx.timestamp
+      const dbReadyData = {
+        phone: normalizePhone(user.phone),
+        name: user.name,
+        password: user.password,
+        balance: user.balance,
+        avatar: user.avatar,
+        country: user.country || 'BD',
+        flag: user.flag || '🇧🇩',
+        is_blocked: !!user.isBlocked,
+        total_games: user.stats?.totalGames || 0,
+        wins: user.stats?.wins || 0,
+        total_winnings: user.stats?.totalWinnings || 0,
+        history: JSON.stringify(user.history || []),
+        last_login: new Date().toISOString()
       };
-      
-      const { error } = await supabase.from('transactions').insert(dbData);
-      if (error) throw error;
-      console.log("Transaction saved to Supabase");
-      return true;
-    } catch (e: any) {
-      console.error("Create Transaction Error:", e.message);
-      // Fallback to local
-      const localTxs = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
-      localTxs.push(tx);
-      localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(localTxs));
-      return false;
-    }
-  },
 
-  async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
-    try {
-      const { error } = await supabase.from('transactions').update({ status }).eq('id', txId);
-      if (error) throw error;
-      return true;
-    } catch (e: any) {
-      console.error("Update Status Error:", e.message);
-      return false;
+      const { error } = await supabase.from('users').upsert(dbReadyData, { onConflict: 'phone' });
+      if (error) {
+        console.error("Supabase Error:", error);
+        return { success: false, message: error.message };
+      }
+      return { success: true };
+    } catch (error: any) {
+      console.error("Update User Exception:", error);
+      return { success: false, message: error.message };
     }
   },
 
@@ -145,8 +104,41 @@ export const databaseService = {
       if (error) throw error;
       return (data || []).map(t => toCamelCase(t));
     } catch (error: any) {
-      console.error("Get Pending Transactions Error:", error.message);
       return [];
+    }
+  },
+
+  // Added createTransaction method to fix the missing property error in App.tsx
+  async createTransaction(tx: PendingTransaction): Promise<boolean> {
+    try {
+      const dbTx = {
+        id: tx.id,
+        user_name: tx.userName,
+        account_phone: tx.accountPhone,
+        type: tx.type,
+        method: tx.method,
+        amount: tx.amount,
+        phone: tx.phone,
+        trx_id: tx.trxId,
+        status: tx.status,
+        timestamp: tx.timestamp
+      };
+      const { error } = await supabase.from('transactions').insert(dbTx);
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error("Create Transaction Error:", error);
+      return false;
+    }
+  },
+
+  async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
+    try {
+      const { error } = await supabase.from('transactions').update({ status }).eq('id', txId);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      return false;
     }
   },
 
@@ -158,7 +150,7 @@ export const databaseService = {
       data?.forEach(s => { settingsMap[s.key] = s.value; });
       return settingsMap;
     } catch (error: any) { 
-      return JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}'); 
+      return {}; 
     }
   },
 

@@ -67,7 +67,6 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
   
-  const [lobbyTab, setLobbyTab] = useState<'HOME' | 'RANK' | 'SHOP'>('HOME');
   const [playerCount, setPlayerCount] = useState<2 | 4>(2);
   const [selectedStake, setSelectedStake] = useState(50);
   const [isWalletOpen, setWalletOpen] = useState(false);
@@ -112,11 +111,11 @@ const App: React.FC = () => {
         if (fresh && !fresh.isBlocked) {
           const updated = { ...fresh, lastLogin: new Date().toISOString() };
           setUser(updated);
-          await databaseService.updateUser(updated);
-          setTimeout(() => setView('LOBBY'), 2000);
+          databaseService.updateUser(updated);
+          setTimeout(() => setView('LOBBY'), 1000);
         } else {
           localStorage.removeItem('LUDO_SESSION');
-          setTimeout(() => setView('LOGIN'), 2000);
+          setTimeout(() => setView('LOGIN'), 1000);
         }
       } else {
         setTimeout(() => setView('LOGIN'), 2500);
@@ -125,7 +124,7 @@ const App: React.FC = () => {
     init();
     const interval = setInterval(() => {
       setLoadingProgress(p => (p < 100 ? p + 5 : 100));
-    }, 50);
+    }, 40);
     return () => clearInterval(interval);
   }, []);
 
@@ -143,7 +142,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (view === 'ADMIN') {
       refreshAdminData();
-      adminSyncInterval.current = setInterval(refreshAdminData, 7000);
+      adminSyncInterval.current = setInterval(refreshAdminData, 5000);
     } else {
       if (adminSyncInterval.current) clearInterval(adminSyncInterval.current);
     }
@@ -186,7 +185,8 @@ const App: React.FC = () => {
     setIsAuthLoading(true);
     try {
       if (isSignUp) {
-        const exists = await databaseService.getUserByPhone(phone);
+        const normalizedPhone = databaseService.normalizePhone(phone);
+        const exists = await databaseService.getUserByPhone(normalizedPhone);
         if (exists) {
           setAuthError('Phone already registered');
           setIsAuthLoading(false);
@@ -195,20 +195,18 @@ const App: React.FC = () => {
 
         const newUser: UserProfile = { 
           name, 
-          phone: databaseService.normalizePhone(phone),
+          phone: normalizedPhone,
           password, 
           balance: 50, 
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`, 
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
           stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, 
           history: [], 
           isBlocked: false 
         };
 
-        const success = await databaseService.updateUser(newUser);
-        if (!success) {
-          setAuthError('Account creation failed.');
+        const result = await databaseService.updateUser(newUser);
+        if (!result.success) {
+          setAuthError('Failed: ' + (result.message || 'Check database setup'));
           setIsAuthLoading(false);
           return;
         }
@@ -221,17 +219,15 @@ const App: React.FC = () => {
         const found = await databaseService.getUserByPhone(phone);
         if (found && found.password === password) {
             if (found.isBlocked) return setAuthError('Account suspended');
-            const updatedUser = { ...found, lastLogin: new Date().toISOString() };
-            await databaseService.updateUser(updatedUser);
-            setUser(updatedUser);
-            localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
+            setUser(found);
+            localStorage.setItem('LUDO_SESSION', JSON.stringify(found));
             setView('LOBBY');
         } else {
           setAuthError('Invalid phone or password');
         }
       }
-    } catch (err) {
-      setAuthError('Connection problem');
+    } catch (err: any) {
+      setAuthError('Connection problem: ' + err.message);
     } finally {
       setIsAuthLoading(false);
     }
@@ -241,8 +237,8 @@ const App: React.FC = () => {
     if (!newPassword || newPassword.length < 4) return alert("Password too short");
     if (!user) return;
     const updated = { ...user, password: newPassword };
-    const ok = await databaseService.updateUser(updated);
-    if (ok) {
+    const result = await databaseService.updateUser(updated);
+    if (result.success) {
         setUser(updated);
         localStorage.setItem('LUDO_SESSION', JSON.stringify(updated));
         setChangePassOpen(false);
@@ -258,7 +254,7 @@ const App: React.FC = () => {
     await databaseService.updateUser(updatedUser);
     
     setView('FINDING');
-    setFindingTimer(30);
+    setFindingTimer(15);
     
     findingInterval.current = setInterval(() => {
       setFindingTimer(t => {
@@ -309,19 +305,19 @@ const App: React.FC = () => {
       setGameState(prev => {
         if (!prev) return null;
         if (val === 6 && prev.consecutiveSixes >= 2) {
-           setTimeout(() => nextTurn(), 1000);
+           setTimeout(() => nextTurn(), 800);
            return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: 0 };
         }
         
         const player = prev.players[prev.currentPlayerIndex];
         const canMove = player.tokens.some(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? val === 6 : t.distanceTraveled + val <= 56));
         if (!canMove) {
-          setTimeout(() => nextTurn(), 1200);
+          setTimeout(() => nextTurn(), 1000);
         }
 
         return { ...prev, diceValue: val, isDiceRolled: true, consecutiveSixes: val === 6 ? prev.consecutiveSixes + 1 : 0 };
       });
-    }, 800);
+    }, 600);
   };
 
   const nextTurn = useCallback(() => {
@@ -349,7 +345,7 @@ const App: React.FC = () => {
         player.tokens[tIdx].distanceTraveled++;
         setGameState(p => p ? { ...p, players: [...players] } : null);
         soundManager.play('move');
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 150));
       }
     }
 
@@ -432,7 +428,7 @@ const App: React.FC = () => {
             </button>
             <button onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }} className="w-full mt-4 text-white/40 text-[10px] uppercase font-bold">{isSignUp ? 'Login instead' : 'Create Account'}</button>
           </div>
-          <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/5 text-[9px] font-black uppercase tracking-[0.2em]">VER 1.0.6 PRO</button>
+          <button onClick={handleHiddenAdminTap} className="absolute bottom-10 text-white/5 text-[9px] font-black uppercase tracking-[0.2em]">VER 1.0.8 PRO</button>
         </div>
       )}
 
