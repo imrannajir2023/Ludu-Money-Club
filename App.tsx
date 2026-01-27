@@ -482,7 +482,7 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          {/* Main Battle Arena Card */}
+          {/* Main Battle Arena Card (Global Arena Style) */}
           <div className="flex-1 px-6 mt-6">
             <div className="bg-blue-600 rounded-[40px] border-[10px] border-white/5 shadow-2xl flex flex-col items-center p-8 relative overflow-hidden h-[450px]">
               
@@ -508,19 +508,19 @@ const App: React.FC = () => {
                 ))}
               </div>
 
-              {/* Start Button at bottom of card */}
-              <button onClick={startFinding} className="w-full py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[25px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 active:border-b-0 shadow-xl mt-auto">Start Battle</button>
+              {/* Start Button */}
+              <button onClick={startFinding} className="w-full py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[25px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 active:border-b-0 shadow-xl mt-auto transition-all">Start Battle</button>
             </div>
           </div>
 
           {/* Bottom Navigation */}
-          <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-white/10 flex justify-around p-4">
+          <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-white/10 flex justify-around p-4 z-50">
              <button className="flex flex-col items-center gap-1 group">
-                <div className="p-2 bg-yellow-400 rounded-xl group-active:scale-90 transition-transform"><span className="text-lg">🏠</span></div>
+                <div className="p-2 bg-yellow-400 rounded-xl transition-transform"><span className="text-lg">🏠</span></div>
                 <span className="text-[8px] font-black uppercase text-yellow-400">Home</span>
              </button>
-             <button className="flex flex-col items-center gap-1 group">
-                <div className="p-2 bg-slate-800 rounded-xl group-active:scale-90 transition-transform opacity-40"><span className="text-lg">🏆</span></div>
+             <button className="flex flex-col items-center gap-1 group opacity-40">
+                <div className="p-2 bg-slate-800 rounded-xl transition-transform"><span className="text-lg">🏆</span></div>
                 <span className="text-[8px] font-black uppercase text-white/40">Rank</span>
              </button>
           </div>
@@ -619,10 +619,12 @@ const App: React.FC = () => {
           onClose={() => setWalletOpen(false)} 
           user={user} 
           onSubmitTransaction={async tx => { 
-            const ok = await databaseService.createTransaction(tx); 
-            if (ok) {
+            const result = await databaseService.createTransaction(tx); 
+            if (result.success) {
                 alert("অনুরোধ পাঠানো হয়েছে! এডমিন শীঘ্রই যাচাই করবে।");
                 refreshAdminData(); 
+            } else {
+                alert("এরর: " + (result.message || "ট্রানজ্যাকশন ব্যর্থ হয়েছে।"));
             }
           }} 
         />

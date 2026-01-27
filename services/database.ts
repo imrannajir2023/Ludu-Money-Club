@@ -71,8 +71,6 @@ export const databaseService = {
   async updateUser(user: UserProfile): Promise<{success: boolean, message?: string}> {
     try {
       const normalizedPhone = normalizePhone(user.phone);
-      
-      // বডি অবজেক্ট যা ডাটাবেসে পাঠানো হবে
       const dbReadyData: any = {
         phone: normalizedPhone,
         name: user.name,
@@ -82,7 +80,6 @@ export const databaseService = {
         last_login: new Date().toISOString()
       };
 
-      // শুধুমাত্র যদি ভ্যালু থাকে তবেই কলামগুলো যোগ করা হবে
       if (user.country) dbReadyData.country = user.country;
       if (user.flag) dbReadyData.flag = user.flag;
       if (user.isBlocked !== undefined) dbReadyData.is_blocked = user.isBlocked;
@@ -94,20 +91,9 @@ export const databaseService = {
       }
 
       const { error } = await supabase.from('users').upsert(dbReadyData, { onConflict: 'phone' });
-      
-      if (error) {
-        console.error("Supabase Save Error:", error);
-        if (error.message.includes("column")) {
-          return { 
-            success: false, 
-            message: "আপনার ডাটাবেসে কলাম মিসিং আছে। অনুগ্রহ করে SQL Editor এ গিয়ে ALTER TABLE কমান্ডটি রান করুন।" 
-          };
-        }
-        return { success: false, message: error.message };
-      }
+      if (error) throw error;
       return { success: true };
     } catch (error: any) {
-      console.error("Update User Exception:", error);
       return { success: false, message: error.message };
     }
   },
@@ -122,7 +108,7 @@ export const databaseService = {
     }
   },
 
-  async createTransaction(tx: PendingTransaction): Promise<boolean> {
+  async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
     try {
       const dbTx = {
         id: tx.id,
@@ -137,11 +123,16 @@ export const databaseService = {
         timestamp: tx.timestamp
       };
       const { error } = await supabase.from('transactions').insert(dbTx);
-      if (error) throw error;
-      return true;
-    } catch (error) {
+      if (error) {
+        if (error.code === '42P01') {
+            return { success: false, message: "আপনার ডাটাবেসে 'transactions' টেবিলটি নেই। অনুগ্রহ করে SQL Editor এ টেবিলটি তৈরি করুন।" };
+        }
+        throw error;
+      }
+      return { success: true };
+    } catch (error: any) {
       console.error("Create Transaction Error:", error);
-      return false;
+      return { success: false, message: error.message };
     }
   },
 
