@@ -46,24 +46,31 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
     setProcessing(true);
     soundManager.play('click');
     
+    // Improved transaction object to be more DB-friendly
     const newTx: PendingTransaction = {
       id: Math.random().toString(36).substr(2, 9),
       userName: user.name,
-      accountPhone: user.phone || '', // Use the registered phone for linking
+      accountPhone: user.phone || '', 
       type: activeTab === 'deposit' ? 'DEPOSIT' : 'WITHDRAW',
-      method,
+      method: method.toUpperCase(),
       amount: val,
-      phone, // Payment sender/receiver number
-      trxId: activeTab === 'deposit' ? trxId : undefined,
+      phone, 
+      trxId: activeTab === 'deposit' ? trxId : null, // Explicit null for withdraw
       status: 'PENDING',
-      timestamp: new Date().toLocaleString()
+      timestamp: new Date().toISOString() // Use ISO string for reliable DB storage
     };
 
-    setTimeout(() => {
-      onSubmitTransaction(newTx);
-      soundManager.play('six');
-      setProcessing(false);
-      onClose();
+    setTimeout(async () => {
+      try {
+        await onSubmitTransaction(newTx);
+        soundManager.play('six');
+        onClose();
+      } catch (err) {
+        console.error("Wallet Modal Submit Error:", err);
+        alert("লেনদেন সফল হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।");
+      } finally {
+        setProcessing(false);
+      }
     }, 800);
   };
 
@@ -108,7 +115,7 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
             </div>
           )}
           <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (৳)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-xl font-black text-yellow-400 outline-none" />
-          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Your Mobile Number" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none" />
+          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={activeTab === 'deposit' ? "Sender Number" : "Recipient Number"} className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none" />
           {activeTab === 'deposit' && <input type="text" value={trxId} onChange={(e) => setTrxId(e.target.value)} placeholder="Transaction ID (TrxID)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-white outline-none uppercase" />}
           <button onClick={handleTransaction} disabled={processing} className="w-full py-5 rounded-[30px] font-black text-xl bg-gradient-to-r from-yellow-400 to-amber-600 text-black shadow-xl active:translate-y-1 transition-all">
               {processing ? 'Processing...' : (activeTab === 'deposit' ? 'Confirm Deposit' : 'Confirm Withdrawal')}

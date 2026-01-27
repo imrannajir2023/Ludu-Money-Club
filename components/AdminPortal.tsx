@@ -14,6 +14,7 @@ interface AdminPortalProps {
   onApproveTransaction: (tx: PendingTransaction) => void;
   onRejectTransaction: (txId: string) => void;
   onExit: () => void;
+  onRefreshData?: () => void;
 }
 
 // Ultra-reliable embedded SVG Data URIs
@@ -31,7 +32,8 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   liveMatches,
   onApproveTransaction, 
   onRejectTransaction, 
-  onExit 
+  onExit,
+  onRefreshData
 }) => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'transactions' | 'arena' | 'settings'>('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,6 +46,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const [rocketNum, setRocketNum] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isInitialLoaded, setIsInitialLoaded] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'CONNECTING' | 'ONLINE' | 'OFFLINE'>('ONLINE');
 
   const pendingCount = pendingTransactions.length;
   const arenaCount = liveMatches.length;
@@ -84,11 +87,15 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
     const newBalance = adjustType === 'add' ? selectedUser.balance + amount : selectedUser.balance - amount;
     const updatedUser = { ...selectedUser, balance: Math.max(0, newBalance) };
 
-    await databaseService.updateUser(updatedUser);
-    onUpdateUsersDB(allUsers.map(u => u.phone === updatedUser.phone ? updatedUser : u));
-    setSelectedUser(updatedUser);
-    setAdjustAmount('');
-    alert("Updated!");
+    try {
+        await databaseService.updateUser(updatedUser);
+        onUpdateUsersDB(allUsers.map(u => u.phone === updatedUser.phone ? updatedUser : u));
+        setSelectedUser(updatedUser);
+        setAdjustAmount('');
+        alert("Updated!");
+    } catch (e) {
+        alert("Failed to update user.");
+    }
   };
 
   const handleToggleBlock = async () => {
@@ -96,11 +103,15 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
     const blockState = !selectedUser.isBlocked;
     const updatedUser = { ...selectedUser, isBlocked: blockState };
     
-    await databaseService.updateUser(updatedUser);
-    onUpdateUsersDB(allUsers.map(u => u.phone === updatedUser.phone ? updatedUser : u));
-    setSelectedUser(updatedUser);
-    soundManager.play(blockState ? 'kill' : 'win');
-    alert(blockState ? "ইউজার ব্লক করা হয়েছে!" : "ইউজার আনব্লক করা হয়েছে!");
+    try {
+        await databaseService.updateUser(updatedUser);
+        onUpdateUsersDB(allUsers.map(u => u.phone === updatedUser.phone ? updatedUser : u));
+        setSelectedUser(updatedUser);
+        soundManager.play(blockState ? 'kill' : 'win');
+        alert(blockState ? "ইউজার ব্লক করা হয়েছে!" : "ইউজার আনব্লক করা হয়েছে!");
+    } catch (e) {
+        alert("Failed to update status.");
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -118,17 +129,33 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
       }
   };
 
+  const handleManualRefresh = () => {
+    setDbStatus('CONNECTING');
+    soundManager.play('click');
+    onRefreshData?.();
+    setTimeout(() => setDbStatus('ONLINE'), 1000);
+  };
+
   return (
     <div className="h-screen w-full bg-[#020617] flex flex-col text-white overflow-hidden">
       <div className="p-6 bg-slate-900 border-b border-white/5 flex justify-between items-center z-10 shadow-2xl">
         <div className="flex items-center gap-4">
-          <div className="bg-sky-500/20 p-3 rounded-2xl border border-sky-500/30">🛡️</div>
+          <div className="bg-sky-500/20 p-3 rounded-2xl border border-sky-500/30 shadow-[0_0_15px_rgba(14,165,233,0.2)]">🛡️</div>
           <div>
             <h1 className="text-xl font-black uppercase tracking-tighter italic text-sky-400">Admin Portal</h1>
-            <p className="text-[10px] font-black text-white/20 uppercase">System Ready</p>
+            <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${dbStatus === 'ONLINE' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></span>
+                <p className="text-[10px] font-black text-white/20 uppercase">{dbStatus === 'ONLINE' ? 'Live Connection' : 'Syncing...'}</p>
+            </div>
           </div>
         </div>
-        <button onClick={onExit} className="bg-red-600/20 text-red-500 px-6 py-2 rounded-xl font-black uppercase text-xs border border-red-500/30">Exit</button>
+        <div className="flex items-center gap-4">
+          <button onClick={handleManualRefresh} className="bg-white/5 hover:bg-white/10 p-2.5 rounded-xl border border-white/10 transition-all flex items-center gap-2">
+              <span className="text-xs">🔄</span>
+              <span className="text-[10px] font-bold uppercase hidden md:inline">Sync DB</span>
+          </button>
+          <button onClick={onExit} className="bg-red-600/20 text-red-500 px-6 py-2 rounded-xl font-black uppercase text-xs border border-red-500/30">Exit</button>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -179,7 +206,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                                         <div className="flex items-center gap-4 mt-1 text-white/40 font-bold text-xs uppercase tracking-tight">
                                             <span>📞 {tx.phone}</span>
                                             {tx.trxId && <span>🆔 Trx: <span className="text-sky-400">{tx.trxId}</span></span>}
-                                            <span>⏰ {tx.timestamp}</span>
+                                            <span className="opacity-50">⏰ {new Date(tx.timestamp).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true })}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -220,11 +247,13 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                               <tr><th className="p-6">Player</th><th className="p-6">Status</th><th className="p-6">Balance</th></tr>
                            </thead>
                            <tbody className="divide-y divide-white/5">
-                              {filteredUsers.map((u) => (
+                              {filteredUsers.length === 0 ? (
+                                  <tr><td colSpan={3} className="p-20 text-center opacity-30 font-bold uppercase italic">No Users Found</td></tr>
+                              ) : filteredUsers.map((u) => (
                                  <tr key={u.phone} onClick={() => setSelectedUser(u)} className={`cursor-pointer transition-all ${selectedUser?.phone === u.phone ? 'bg-sky-500/10' : 'hover:bg-white/5'}`}>
                                     <td className="p-6">
                                        <div className="flex items-center gap-3">
-                                          <img src={u.avatar} className="w-10 h-10 rounded-full border border-white/10" />
+                                          <img src={u.avatar} className="w-10 h-10 rounded-full border border-white/10 bg-slate-700" />
                                           <div>
                                               <span className="font-black text-sm uppercase block">{u.name}</span>
                                               <span className="text-[9px] text-white/40">{u.phone}</span>
@@ -247,7 +276,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                         {selectedUser ? (
                            <div className="space-y-8 animate-in zoom-in-95">
                               <div className="text-center">
-                                 <img src={selectedUser.avatar} className="w-24 h-24 rounded-full border-4 border-sky-500 mx-auto mb-4" />
+                                 <img src={selectedUser.avatar} className="w-24 h-24 rounded-full border-4 border-sky-500 mx-auto mb-4 bg-slate-700" />
                                  <h4 className="text-2xl font-black uppercase italic text-white leading-none">{selectedUser.name}</h4>
                                  <p className="text-sky-400 font-bold mt-2">{selectedUser.phone}</p>
                               </div>

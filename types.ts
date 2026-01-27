@@ -50,7 +50,7 @@ export interface PendingTransaction {
   method: string;
   amount: number;
   phone: string;
-  trxId?: string;
+  trxId?: string | null;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   timestamp: string;
 }

@@ -128,22 +128,25 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Centralized Admin Data Fetcher
+  const refreshAdminData = useCallback(async () => {
+    try {
+      const users = await databaseService.getUsers();
+      const txs = await databaseService.getPendingTransactions();
+      setAllUsers(users);
+      setPendingTransactions(txs);
+      console.log("Admin data refreshed:", { userCount: users.length, txCount: txs.length });
+    } catch (err) {
+      console.error("Failed to refresh admin data", err);
+    }
+  }, []);
+
   // Fetch admin data when entering admin view
   useEffect(() => {
     if (view === 'ADMIN') {
-      const fetchAdminData = async () => {
-        try {
-          const users = await databaseService.getUsers();
-          const txs = await databaseService.getPendingTransactions();
-          setAllUsers(users);
-          setPendingTransactions(txs);
-        } catch (err) {
-          console.error("Failed to fetch admin data", err);
-        }
-      };
-      fetchAdminData();
+      refreshAdminData();
     }
-  }, [view]);
+  }, [view, refreshAdminData]);
 
   const handleHiddenAdminTap = () => {
     setAdminTapCount(prev => {
@@ -527,9 +530,18 @@ const App: React.FC = () => {
           pendingTransactions={pendingTransactions} 
           liveMatches={[]} 
           onUpdateUser={(u) => { setAllUsers(prev => prev.map(usr => usr.phone === u.phone ? u : usr)); }} 
-          onApproveTransaction={async (tx) => { await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); alert("Approved!"); }} 
-          onRejectTransaction={async (id) => { await databaseService.updateTransactionStatus(id, 'REJECTED'); alert("Rejected!"); }} 
-          onExit={() => setView('LOBBY')} 
+          onApproveTransaction={async (tx) => { 
+            await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
+            alert("Approved!");
+            refreshAdminData(); // Refresh list immediately
+          }} 
+          onRejectTransaction={async (id) => { 
+            await databaseService.updateTransactionStatus(id, 'REJECTED'); 
+            alert("Rejected!");
+            refreshAdminData(); // Refresh list immediately
+          }} 
+          onExit={() => setView('LOBBY')}
+          onRefreshData={refreshAdminData}
         />
       )}
 
@@ -558,7 +570,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={async tx => { await databaseService.createTransaction(tx); alert("Request sent!"); }} />}
+      {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={async tx => { await databaseService.createTransaction(tx); alert("Request sent!"); refreshAdminData(); }} />}
     </div>
   );
 };

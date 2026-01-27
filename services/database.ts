@@ -9,11 +9,11 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const STORAGE_KEY_SETTINGS = "LUDO_SETTINGS_BACKUP";
 const STORAGE_KEY_TRANSACTIONS = "LUDO_GLOBAL_TRANSACTIONS";
+const STORAGE_KEY_USERS = "LUDO_USERS_DATABASE";
 
-// Helper to normalize phone numbers for comparison (e.g., "017..." and "+88017..." become "17...")
 const normalizePhone = (p: string | undefined): string => {
   if (!p) return "";
-  const cleaned = p.replace(/\D/g, ''); // keep only digits
+  const cleaned = p.replace(/\D/g, ''); 
   return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
 };
 
@@ -46,31 +46,34 @@ export const databaseService = {
   normalizePhone,
 
   async getUsers(): Promise<UserProfile[]> {
+    console.log("Fetching users from DB...");
     try {
       const { data, error } = await supabase.from('users').select('*');
-      if (error) throw error;
-      return (data || []).map(u => toCamelCase(u));
+      if (error) {
+        console.error("Supabase getUsers Error:", error);
+        throw error;
+      }
+      const users = (data || []).map(u => toCamelCase(u));
+      localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+      return users;
     } catch (error: any) {
-      return JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
+      console.warn("Using localStorage fallback for users");
+      return JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
     }
   },
 
   async getUserByPhone(phone: string): Promise<UserProfile | null> {
     try {
-      // First try exact match
       let { data, error } = await supabase.from('users').select('*').eq('phone', phone).maybeSingle();
-      
-      // If no exact match, try partial match for normalized phone
       if (!data) {
         const { data: all } = await supabase.from('users').select('*');
         const normalizedTarget = normalizePhone(phone);
         data = all?.find(u => normalizePhone(u.phone) === normalizedTarget) || null;
       }
-      
       if (!data) return null;
       return toCamelCase(data);
     } catch (e) {
-      const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
+      const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
       const normalizedTarget = normalizePhone(phone);
       return db.find((u: any) => normalizePhone(u.phone) === normalizedTarget) || null;
     }
@@ -82,10 +85,10 @@ export const databaseService = {
       const { error } = await supabase.from('users').upsert(snakeData);
       if (error) throw error;
     } catch (error: any) {
-      const db = JSON.parse(localStorage.getItem("LUDO_USERS_DATABASE") || '[]');
+      const db = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
       const idx = db.findIndex((u: any) => normalizePhone(u.phone) === normalizePhone(user.phone));
       if (idx !== -1) db[idx] = user; else db.push(user);
-      localStorage.setItem("LUDO_USERS_DATABASE", JSON.stringify(db));
+      localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(db));
     }
   },
 
@@ -200,9 +203,21 @@ export const databaseService = {
   },
 
   async createTransaction(tx: PendingTransaction) {
+    console.log("Attempting to create transaction in DB:", tx);
     try {
-      await supabase.from('transactions').insert(toSnakeCase(tx));
+      const snakeData = toSnakeCase(tx);
+      const { error } = await supabase.from('transactions').insert(snakeData);
+      if (error) {
+        console.error("Supabase createTransaction Error Details:", error);
+        throw error;
+      }
+      console.log("Supabase Transaction Success");
+      // Add to local history as well for immediate visibility
+      const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
+      allTx.push(tx);
+      localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
     } catch (e) {
+      console.warn("Falling back to localStorage for transaction:", e);
       const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
       allTx.push(tx);
       localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
@@ -212,15 +227,29 @@ export const databaseService = {
   async updateTransactionStatus(txId: string, status: 'APPROVED' | 'REJECTED') {
     try {
       await supabase.from('transactions').update({ status }).eq('id', txId);
-    } catch (e) {}
+      // Update local storage too if present
+      const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
+      const idx = allTx.findIndex((t: any) => t.id === txId);
+      if (idx !== -1) {
+        allTx[idx].status = status;
+        localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(allTx));
+      }
+    } catch (e) {
+      console.error("Failed to update status", e);
+    }
   },
 
   async getPendingTransactions(): Promise<PendingTransaction[]> {
+    console.log("Fetching pending transactions from DB...");
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING');
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase getPendingTransactions Error:", error);
+        throw error;
+      }
       return (data || []).map(t => toCamelCase(t));
     } catch (error: any) {
+      console.warn("Using localStorage fallback for transactions");
       const allTx = JSON.parse(localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]');
       return allTx.filter((t: any) => t.status === 'PENDING');
     }
