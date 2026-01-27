@@ -81,6 +81,7 @@ const App: React.FC = () => {
 
   const findingInterval = useRef<any>(null);
   const adminSyncInterval = useRef<any>(null);
+  const balanceSyncInterval = useRef<any>(null);
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -137,12 +138,33 @@ const App: React.FC = () => {
       
       if (user) {
           const freshMe = users.find(u => u.phone === databaseService.normalizePhone(user.phone));
-          if (freshMe) setUser(freshMe);
+          if (freshMe) {
+            // Only update if balance actually changed to avoid UI flickers
+            if (freshMe.balance !== user.balance) {
+                setUser(freshMe);
+            }
+          }
       }
     } catch (err) {
       console.error("Refresh Logic Failed:", err);
     }
   }, [user]);
+
+  // Regular balance check for the player even in Lobby
+  useEffect(() => {
+    if (user && view !== 'GAME' && view !== 'SPLASH') {
+        balanceSyncInterval.current = setInterval(async () => {
+            const fresh = await databaseService.getUserByPhone(user.phone);
+            if (fresh && fresh.balance !== user.balance) {
+                setUser(fresh);
+                localStorage.setItem('LUDO_SESSION', JSON.stringify(fresh));
+            }
+        }, 10000); // Check every 10 seconds
+    }
+    return () => {
+        if (balanceSyncInterval.current) clearInterval(balanceSyncInterval.current);
+    }
+  }, [user, view]);
 
   useEffect(() => {
     if (view === 'ADMIN' || isWalletOpen) {
@@ -393,7 +415,6 @@ const App: React.FC = () => {
   };
 
   const handleTransactionRequest = async (tx: PendingTransaction) => {
-    // If it's a withdrawal, deduct balance immediately from user local state and DB
     if (tx.type === 'WITHDRAW' && user) {
         if (user.balance < tx.amount) {
             alert("Insufficient balance for withdrawal!");
@@ -410,7 +431,6 @@ const App: React.FC = () => {
         alert(tx.type === 'DEPOSIT' ? "ডিপোজিট অনুরোধ পাঠানো হয়েছে!" : "উইথড্র রিকোয়েস্ট পাঠানো হয়েছে!");
         refreshAdminData(); 
     } else {
-        // If withdrawal failed to save, refund the balance locally
         if (tx.type === 'WITHDRAW' && user) {
             const refundedUser = { ...user, balance: user.balance + tx.amount };
             setUser(refundedUser);
@@ -481,13 +501,12 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2">
               <button onClick={() => setSettingsOpen(true)} className="bg-slate-900/80 border border-white/10 p-2.5 rounded-full shadow-lg">⚙️</button>
               <button onClick={() => setWalletOpen(true)} className="bg-slate-900/80 border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
-                <span className="text-xs font-black text-yellow-500">৳ {user.balance.toLocaleString()}</span>
+                <span className="text-xs font-black text-yellow-500">৳ {Math.floor(user.balance).toLocaleString()}</span>
                 <span className="w-5 h-5 bg-yellow-500 text-black rounded-full flex items-center justify-center text-[10px] font-bold">+</span>
               </button>
             </div>
           </div>
 
-          {/* Yellow Marquee Banner */}
           <div className="bg-yellow-500 py-1 flex items-center gap-2 overflow-hidden shrink-0">
              <span className="pl-6 shrink-0">📢</span>
              <div className="animate-scroll-text whitespace-nowrap flex items-center gap-8">
@@ -497,7 +516,6 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          {/* Quick Reward Cards */}
           <div className="grid grid-cols-2 gap-4 px-6 mt-4 shrink-0">
              <div className="bg-indigo-600 rounded-3xl p-4 flex items-center gap-3 shadow-xl border border-white/10">
                 <span className="text-2xl">🎁</span>
@@ -515,17 +533,13 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          {/* Main Battle Arena Card (Improved Responsiveness) */}
           <div className="px-6 mt-6 mb-8">
             <div className="bg-blue-600 rounded-[40px] border-[10px] border-white/5 shadow-2xl flex flex-col items-center p-6 relative overflow-hidden min-h-[400px]">
-              
-              {/* Player Count Toggle */}
               <div className="bg-black/20 p-1.5 rounded-3xl flex w-full max-w-[200px] mb-6">
                 <button onClick={() => setPlayerCount(2)} className={`flex-1 py-2 rounded-2xl text-[9px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black' : 'text-white/40'}`}>2 Player</button>
                 <button onClick={() => setPlayerCount(4)} className={`flex-1 py-2 rounded-2xl text-[9px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black' : 'text-white/40'}`}>4 Player</button>
               </div>
 
-              {/* Large Dice Logo */}
               <div className="w-24 h-24 bg-yellow-500 rounded-[25px] flex items-center justify-center shadow-xl border-4 border-amber-600 mb-4 transform rotate-12 shrink-0">
                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-inner">
                     <div className="w-4 h-4 bg-red-600 rounded-full"></div>
@@ -534,19 +548,16 @@ const App: React.FC = () => {
 
               <h2 className="text-3xl font-black italic uppercase text-white drop-shadow-lg tracking-tighter mb-6 shrink-0 text-center">Global Arena</h2>
 
-              {/* Stake Selection */}
               <div className="w-full flex flex-wrap justify-between gap-2 mb-8 shrink-0">
                 {[50, 100, 500, 1000].map(s => (
                   <button key={s} onClick={() => setSelectedStake(s)} className={`flex-1 min-w-[70px] py-3 rounded-xl font-black text-[10px] transition-all border-2 ${selectedStake === s ? 'bg-yellow-400 border-yellow-300 text-black scale-105 shadow-xl' : 'bg-blue-800 border-white/5 text-white/40'}`}>৳{s}</button>
                 ))}
               </div>
 
-              {/* Start Button (Always Visible) */}
               <button onClick={startFinding} className="w-full py-5 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[25px] font-black text-xl uppercase italic text-black border-b-8 border-amber-800 active:translate-y-2 active:border-b-0 shadow-xl transition-all">Start Battle</button>
             </div>
           </div>
 
-          {/* Bottom Navigation */}
           <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-white/10 flex justify-around p-4 z-50">
              <button className="flex flex-col items-center gap-1 group">
                 <div className="p-2 bg-yellow-400 rounded-xl transition-transform"><span className="text-lg">🏠</span></div>
@@ -607,7 +618,6 @@ const App: React.FC = () => {
           onApproveTransaction={async (tx) => { 
             const ok = await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
             if (ok) {
-                // For DEPOSIT: Add balance on approval
                 if (tx.type === 'DEPOSIT') {
                     const normalizedTargetPhone = databaseService.normalizePhone(tx.userPhone);
                     const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
@@ -615,23 +625,26 @@ const App: React.FC = () => {
                         const amount = Number(tx.amount);
                         const updateResult = await databaseService.updateUser({
                             ...targetUser,
-                            balance: targetUser.balance + amount
+                            balance: Number(targetUser.balance) + amount
                         });
-                        if (updateResult.success) alert("ডিপোজিট এপ্রুভ এবং ব্যালেন্স যোগ হয়েছে!");
+                        if (updateResult.success) {
+                            alert("ডিপোজিট এপ্রুভ এবং ব্যালেন্স যোগ হয়েছে!");
+                        } else {
+                            alert("ব্যালেন্স আপডেট করতে সমস্যা হয়েছে: " + updateResult.message);
+                        }
+                    } else {
+                        alert("সতর্কতা: ইউজার (" + tx.userPhone + ") খুঁজে পাওয়া যায়নি! ব্যালেন্স যোগ করা যায়নি।");
                     }
                 } else {
-                    // For WITHDRAW: Nothing to do (already deducted during request)
                     alert("উইথড্র এপ্রুভ হয়েছে!");
                 }
                 refreshAdminData();
             }
           }} 
           onRejectTransaction={async (id) => { 
-            // Find the transaction in local state to know its type/amount
             const tx = pendingTransactions.find(t => t.id === id);
             const ok = await databaseService.updateTransactionStatus(id, 'REJECTED'); 
             if (ok) {
-                // For WITHDRAW: Refund balance on rejection
                 if (tx && tx.type === 'WITHDRAW') {
                     const normalizedTargetPhone = databaseService.normalizePhone(tx.userPhone);
                     const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
@@ -639,7 +652,7 @@ const App: React.FC = () => {
                         const amount = Number(tx.amount);
                         await databaseService.updateUser({
                             ...targetUser,
-                            balance: targetUser.balance + amount
+                            balance: Number(targetUser.balance) + amount
                         });
                         alert("উইথড্র রিজেক্ট এবং ব্যালেন্স রিফান্ড হয়েছে!");
                     }
