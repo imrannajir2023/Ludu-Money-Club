@@ -65,6 +65,8 @@ export interface UserProfile {
   address?: string;
   flag?: string;
   isBlocked?: boolean;
+  createdAt?: string;
+  lastLogin?: string;
   stats: {
     totalGames: number;
     wins: number;

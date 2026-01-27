@@ -111,7 +111,10 @@ const App: React.FC = () => {
         const parsed = JSON.parse(saved);
         const fresh = await databaseService.getUserByPhone(parsed.phone);
         if (fresh && !fresh.isBlocked) {
-          setUser(fresh);
+          // Update last login
+          const updated = { ...fresh, lastLogin: new Date().toISOString() };
+          setUser(updated);
+          await databaseService.updateUser(updated);
           setTimeout(() => setView('LOBBY'), 2000);
         } else {
           localStorage.removeItem('LUDO_SESSION');
@@ -185,6 +188,8 @@ const App: React.FC = () => {
       const newUser: UserProfile = { 
         name, phone, password, balance: 50, 
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`, 
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
         stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, 
         history: [], isBlocked: false 
       };
@@ -197,8 +202,10 @@ const App: React.FC = () => {
       const found = users.find(u => u.phone === phone && u.password === password);
       if (found) {
         if (found.isBlocked) return setAuthError('Account suspended');
-        setUser(found);
-        localStorage.setItem('LUDO_SESSION', JSON.stringify(found));
+        const updatedUser = { ...found, lastLogin: new Date().toISOString() };
+        await databaseService.updateUser(updatedUser);
+        setUser(updatedUser);
+        localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
         setView('LOBBY');
       } else setAuthError('Invalid credentials');
     }
