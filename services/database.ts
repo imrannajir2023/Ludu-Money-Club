@@ -36,14 +36,16 @@ export const databaseService = {
       if (error) throw error;
       return (data || []).map(u => {
         const camel = toCamelCase(u);
+        camel.balance = Number(u.balance) || 0;
         camel.stats = {
-           totalGames: u.total_games || 0,
-           wins: u.wins || 0,
-           totalWinnings: u.total_winnings || 0
+           totalGames: Number(u.total_games) || 0,
+           wins: Number(u.wins) || 0,
+           totalWinnings: Number(u.total_winnings) || 0
         };
         return camel;
       });
     } catch (error: any) {
+      console.error("getUsers Error:", error);
       return [];
     }
   },
@@ -56,13 +58,15 @@ export const databaseService = {
       if (!data) return null;
       
       const camel = toCamelCase(data);
+      camel.balance = Number(data.balance) || 0;
       camel.stats = {
-        totalGames: data.total_games || 0,
-        wins: data.wins || 0,
-        totalWinnings: data.total_winnings || 0
+        totalGames: Number(data.total_games) || 0,
+        wins: Number(data.wins) || 0,
+        totalWinnings: Number(data.total_winnings) || 0
       };
       return camel;
     } catch (e) {
+      console.error("getUserByPhone Error:", e);
       return null;
     }
   },
@@ -70,26 +74,30 @@ export const databaseService = {
   async updateUser(user: UserProfile): Promise<{success: boolean, message?: string}> {
     try {
       const normalizedPhone = normalizePhone(user.phone);
+      // Force numeric types
+      const cleanBalance = Number(user.balance) || 0;
+      
       const dbReadyData: any = {
         phone: normalizedPhone,
         name: user.name,
         password: user.password,
-        balance: user.balance,
+        balance: cleanBalance,
         avatar: user.avatar,
         last_login: new Date().toISOString()
       };
       
       if (user.isBlocked !== undefined) dbReadyData.is_blocked = user.isBlocked;
       if (user.stats) {
-        dbReadyData.total_games = user.stats.totalGames || 0;
-        dbReadyData.wins = user.stats.wins || 0;
-        dbReadyData.total_winnings = user.stats.totalWinnings || 0;
+        dbReadyData.total_games = Number(user.stats.totalGames) || 0;
+        dbReadyData.wins = Number(user.stats.wins) || 0;
+        dbReadyData.total_winnings = Number(user.stats.totalWinnings) || 0;
       }
 
       const { error } = await supabase.from('users').upsert(dbReadyData, { onConflict: 'phone' });
       if (error) throw error;
       return { success: true };
     } catch (error: any) {
+      console.error("updateUser Error:", error);
       return { success: false, message: error.message };
     }
   },
@@ -98,7 +106,11 @@ export const databaseService = {
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING').order('timestamp', { ascending: false });
       if (error) throw error;
-      return (data || []).map(t => toCamelCase(t));
+      return (data || []).map(t => {
+        const camel = toCamelCase(t);
+        camel.amount = Number(t.amount) || 0;
+        return camel;
+      });
     } catch (error: any) {
       return [];
     }
@@ -106,29 +118,24 @@ export const databaseService = {
 
   async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
     try {
-      // Mapping from interface (camelCase) to DB (snake_case)
       const dbData = {
         id: tx.id,
         user_name: tx.userName,
-        user_phone: tx.userPhone, // This must match the DB column
+        user_phone: normalizePhone(tx.userPhone),
         type: tx.type,
         method: tx.method,
-        amount: tx.amount,
-        phone: tx.phone,
+        amount: Number(tx.amount) || 0,
+        phone: normalizePhone(tx.phone),
         trx_id: tx.trxId,
         status: tx.status,
         timestamp: tx.timestamp
       };
       
       const { error } = await supabase.from('transactions').insert([dbData]);
-      
-      if (error) {
-        console.error("Supabase Insert Error:", error);
-        return { success: false, message: error.message };
-      }
+      if (error) throw error;
       return { success: true };
     } catch (error: any) {
-      console.error("Transaction Catch Error:", error);
+      console.error("createTransaction Error:", error);
       return { success: false, message: error.message };
     }
   },

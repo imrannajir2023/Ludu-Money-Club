@@ -139,9 +139,9 @@ const App: React.FC = () => {
       if (user) {
           const freshMe = users.find(u => u.phone === databaseService.normalizePhone(user.phone));
           if (freshMe) {
-            // Only update if balance actually changed to avoid UI flickers
-            if (freshMe.balance !== user.balance) {
+            if (Math.floor(freshMe.balance) !== Math.floor(user.balance)) {
                 setUser(freshMe);
+                localStorage.setItem('LUDO_SESSION', JSON.stringify(freshMe));
             }
           }
       }
@@ -150,21 +150,22 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  // Regular balance check for the player even in Lobby
+  // Player balance poller - fast sync (5s)
   useEffect(() => {
     if (user && view !== 'GAME' && view !== 'SPLASH') {
-        balanceSyncInterval.current = setInterval(async () => {
-            const fresh = await databaseService.getUserByPhone(user.phone);
-            if (fresh && fresh.balance !== user.balance) {
-                setUser(fresh);
-                localStorage.setItem('LUDO_SESSION', JSON.stringify(fresh));
-            }
-        }, 10000); // Check every 10 seconds
+        const checkBalance = async () => {
+           const fresh = await databaseService.getUserByPhone(user.phone);
+           if (fresh && Math.floor(fresh.balance) !== Math.floor(user.balance)) {
+               setUser(fresh);
+               localStorage.setItem('LUDO_SESSION', JSON.stringify(fresh));
+           }
+        };
+        balanceSyncInterval.current = setInterval(checkBalance, 5000);
     }
     return () => {
         if (balanceSyncInterval.current) clearInterval(balanceSyncInterval.current);
     }
-  }, [user, view]);
+  }, [user?.phone, user?.balance, view]);
 
   useEffect(() => {
     if (view === 'ADMIN' || isWalletOpen) {
@@ -420,7 +421,7 @@ const App: React.FC = () => {
             alert("Insufficient balance for withdrawal!");
             return;
         }
-        const updatedUser = { ...user, balance: user.balance - tx.amount };
+        const updatedUser = { ...user, balance: user.balance - Number(tx.amount) };
         setUser(updatedUser);
         await databaseService.updateUser(updatedUser);
         localStorage.setItem('LUDO_SESSION', JSON.stringify(updatedUser));
@@ -432,7 +433,7 @@ const App: React.FC = () => {
         refreshAdminData(); 
     } else {
         if (tx.type === 'WITHDRAW' && user) {
-            const refundedUser = { ...user, balance: user.balance + tx.amount };
+            const refundedUser = { ...user, balance: user.balance + Number(tx.amount) };
             setUser(refundedUser);
             await databaseService.updateUser(refundedUser);
         }
@@ -622,13 +623,13 @@ const App: React.FC = () => {
                     const normalizedTargetPhone = databaseService.normalizePhone(tx.userPhone);
                     const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
                     if (targetUser) {
-                        const amount = Number(tx.amount);
+                        const amount = Number(tx.amount) || 0;
                         const updateResult = await databaseService.updateUser({
                             ...targetUser,
                             balance: Number(targetUser.balance) + amount
                         });
                         if (updateResult.success) {
-                            alert("ডিপোজিট এপ্রুভ এবং ব্যালেন্স যোগ হয়েছে!");
+                            alert(`ডিপোজিট এপ্রুভ এবং ৳${amount} যোগ হয়েছে!`);
                         } else {
                             alert("ব্যালেন্স আপডেট করতে সমস্যা হয়েছে: " + updateResult.message);
                         }
@@ -649,12 +650,12 @@ const App: React.FC = () => {
                     const normalizedTargetPhone = databaseService.normalizePhone(tx.userPhone);
                     const targetUser = await databaseService.getUserByPhone(normalizedTargetPhone);
                     if (targetUser) {
-                        const amount = Number(tx.amount);
+                        const amount = Number(tx.amount) || 0;
                         await databaseService.updateUser({
                             ...targetUser,
                             balance: Number(targetUser.balance) + amount
                         });
-                        alert("উইথড্র রিজেক্ট এবং ব্যালেন্স রিফান্ড হয়েছে!");
+                        alert(`উইথড্র রিজেক্ট এবং ৳${amount} রিফান্ড হয়েছে!`);
                     }
                 } else {
                     alert("ডিপোজিট রিজেক্ট হয়েছে!");

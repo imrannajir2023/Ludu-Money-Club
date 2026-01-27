@@ -25,6 +25,7 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
   const [processing, setProcessing] = useState(false);
   const [paymentNumbers, setPaymentNumbers] = useState<any>({});
   const [copied, setCopied] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -62,7 +63,6 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
     setTimeout(async () => {
       try {
         await onSubmitTransaction(newTx);
-        // onSubmitTransaction handles its own alerts and closing
       } catch (err) {
         alert("লেনদেন সফল হয়নি।");
       } finally {
@@ -77,23 +77,34 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleManualSync = async () => {
+    setIsRefreshing(true);
+    soundManager.play('click');
+    // The App.tsx balance poller will naturally pick this up soon, 
+    // but here we just wait a bit to give visual feedback
+    setTimeout(() => setIsRefreshing(false), 1000);
+  };
+
   const adminNumber = paymentNumbers[`${method}_number`] || "Not Set";
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/95 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="bg-[#1e293b] rounded-[40px] w-full max-w-md overflow-hidden shadow-2xl border border-white/10 relative">
-        <div className="p-6 text-center bg-gradient-to-r from-blue-700 to-indigo-900 border-b border-white/10">
+      <div className="bg-[#1e293b] rounded-[40px] w-full max-md:max-h-[90vh] max-w-md overflow-hidden shadow-2xl border border-white/10 relative flex flex-col">
+        <div className="p-6 text-center bg-gradient-to-r from-blue-700 to-indigo-900 border-b border-white/10 shrink-0">
           <h2 className="text-3xl font-black uppercase tracking-tighter italic text-white">Wallet</h2>
           <button onClick={onClose} className="absolute top-4 right-6 text-white/50 text-2xl">✕</button>
         </div>
-        <div className="flex p-4 gap-2 bg-slate-900/50">
+        <div className="flex p-4 gap-2 bg-slate-900/50 shrink-0">
            <button onClick={() => setActiveTab('deposit')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all ${activeTab === 'deposit' ? 'bg-yellow-400 text-black shadow-lg' : 'bg-white/5 text-white/40'}`}>📥 Deposit</button>
            <button onClick={() => setActiveTab('withdraw')} className={`flex-1 py-4 rounded-2xl font-black text-sm uppercase transition-all ${activeTab === 'withdraw' ? 'bg-yellow-400 text-black shadow-lg' : 'bg-white/5 text-white/40'}`}>📤 Withdraw</button>
         </div>
-        <div className="p-8 space-y-6">
-          <div className="bg-slate-900/40 p-6 rounded-[30px] text-center border border-white/5">
+        <div className="p-8 space-y-6 overflow-y-auto no-scrollbar">
+          <div className="bg-slate-900/40 p-6 rounded-[30px] text-center border border-white/5 relative group">
              <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Available Balance</p>
-             <h2 className="text-4xl font-black text-white">৳ {user.balance.toLocaleString()}</h2>
+             <h2 className="text-4xl font-black text-white">৳ {Math.floor(user.balance).toLocaleString()}</h2>
+             <button onClick={handleManualSync} className={`absolute top-2 right-2 p-2 rounded-full hover:bg-white/10 transition-all ${isRefreshing ? 'animate-spin' : ''}`}>
+               <span className="text-xs">🔄</span>
+             </button>
           </div>
           <div className="grid grid-cols-3 gap-3">
               {METHODS.map(m => (
@@ -104,11 +115,11 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
           </div>
           {activeTab === 'deposit' && (
             <div className="bg-slate-800/80 border border-white/5 p-4 rounded-2xl flex justify-between items-center">
-                <div>
+                <div className="overflow-hidden">
                   <p className="text-[9px] font-black text-yellow-500 uppercase">{method} (Personal)</p>
-                  <p className="text-xl font-black text-white">{adminNumber}</p>
+                  <p className="text-xl font-black text-white truncate">{adminNumber}</p>
                 </div>
-                <button onClick={() => copyToClipboard(adminNumber)} className="bg-yellow-400 text-black px-4 py-2 rounded-xl text-[10px] font-black">{copied ? 'Copied' : 'Copy'}</button>
+                <button onClick={() => copyToClipboard(adminNumber)} className="bg-yellow-400 text-black px-4 py-2 rounded-xl text-[10px] font-black shrink-0 ml-2">{copied ? 'Copied' : 'Copy'}</button>
             </div>
           )}
           <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (৳)" className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl text-xl font-black text-yellow-400 outline-none" />
