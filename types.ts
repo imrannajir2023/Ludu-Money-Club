@@ -45,7 +45,7 @@ export interface GameState {
 export interface PendingTransaction {
   id: string;
   userName: string;
-  accountPhone: string;
+  userPhone: string;
   type: 'DEPOSIT' | 'WITHDRAW';
   method: string;
   amount: number;

@@ -44,7 +44,6 @@ export const databaseService = {
         return camel;
       });
     } catch (error: any) {
-      console.error("Fetch Users Error:", error.message);
       return [];
     }
   },
@@ -79,11 +78,8 @@ export const databaseService = {
         avatar: user.avatar,
         last_login: new Date().toISOString()
       };
-
-      if (user.country) dbReadyData.country = user.country;
-      if (user.flag) dbReadyData.flag = user.flag;
-      if (user.isBlocked !== undefined) dbReadyData.is_blocked = user.isBlocked;
       
+      if (user.isBlocked !== undefined) dbReadyData.is_blocked = user.isBlocked;
       if (user.stats) {
         dbReadyData.total_games = user.stats.totalGames || 0;
         dbReadyData.wins = user.stats.wins || 0;
@@ -113,7 +109,7 @@ export const databaseService = {
       const dbTx = {
         id: tx.id,
         user_name: tx.userName,
-        account_phone: tx.accountPhone,
+        user_phone: tx.userPhone, // পরিবর্তিত কলামের নাম
         type: tx.type,
         method: tx.method,
         amount: tx.amount,
@@ -123,15 +119,9 @@ export const databaseService = {
         timestamp: tx.timestamp
       };
       const { error } = await supabase.from('transactions').insert(dbTx);
-      if (error) {
-        if (error.code === '42P01') {
-            return { success: false, message: "আপনার ডাটাবেসে 'transactions' টেবিলটি নেই। অনুগ্রহ করে SQL Editor এ টেবিলটি তৈরি করুন।" };
-        }
-        throw error;
-      }
+      if (error) throw error;
       return { success: true };
     } catch (error: any) {
-      console.error("Create Transaction Error:", error);
       return { success: false, message: error.message };
     }
   },
