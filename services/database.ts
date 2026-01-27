@@ -106,10 +106,11 @@ export const databaseService = {
 
   async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
     try {
-      const dbTx = {
+      // Mapping from interface (camelCase) to DB (snake_case)
+      const dbData = {
         id: tx.id,
         user_name: tx.userName,
-        user_phone: tx.userPhone, // পরিবর্তিত কলামের নাম
+        user_phone: tx.userPhone, // This must match the DB column
         type: tx.type,
         method: tx.method,
         amount: tx.amount,
@@ -118,10 +119,16 @@ export const databaseService = {
         status: tx.status,
         timestamp: tx.timestamp
       };
-      const { error } = await supabase.from('transactions').insert(dbTx);
-      if (error) throw error;
+      
+      const { error } = await supabase.from('transactions').insert([dbData]);
+      
+      if (error) {
+        console.error("Supabase Insert Error:", error);
+        return { success: false, message: error.message };
+      }
       return { success: true };
     } catch (error: any) {
+      console.error("Transaction Catch Error:", error);
       return { success: false, message: error.message };
     }
   },

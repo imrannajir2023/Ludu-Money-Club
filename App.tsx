@@ -140,7 +140,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (view === 'ADMIN') {
+    if (view === 'ADMIN' || isWalletOpen) {
       refreshAdminData();
       adminSyncInterval.current = setInterval(refreshAdminData, 5000);
     } else {
@@ -149,7 +149,7 @@ const App: React.FC = () => {
     return () => {
       if (adminSyncInterval.current) clearInterval(adminSyncInterval.current);
     };
-  }, [view, refreshAdminData]);
+  }, [view, isWalletOpen, refreshAdminData]);
 
   const handleHiddenAdminTap = () => {
     setAdminTapCount(prev => {
