@@ -134,10 +134,16 @@ const App: React.FC = () => {
       const txs = await databaseService.getPendingTransactions();
       setAllUsers(users);
       setPendingTransactions(txs);
+      
+      // If current user is in allUsers, refresh their local state too
+      if (user) {
+          const freshMe = users.find(u => u.phone === user.phone);
+          if (freshMe) setUser(freshMe);
+      }
     } catch (err) {
       console.error("Refresh Logic Failed:", err);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (view === 'ADMIN' || isWalletOpen) {
@@ -574,7 +580,25 @@ const App: React.FC = () => {
           onApproveTransaction={async (tx) => { 
             const ok = await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
             if (ok) {
-                alert("Approved successfully!");
+                // Fetch the target user's latest data to update balance
+                const targetUser = await databaseService.getUserByPhone(tx.userPhone);
+                if (targetUser) {
+                    const amount = Number(tx.amount);
+                    const newBalance = tx.type === 'DEPOSIT' 
+                        ? targetUser.balance + amount 
+                        : targetUser.balance - amount;
+
+                    const updateResult = await databaseService.updateUser({
+                        ...targetUser,
+                        balance: Math.max(0, newBalance)
+                    });
+
+                    if (updateResult.success) {
+                        alert("এপ্রুভ করা হয়েছে এবং ব্যালেন্স আপডেট হয়েছে!");
+                    } else {
+                        alert("ব্যালেন্স আপডেট করতে সমস্যা হয়েছে।");
+                    }
+                }
                 refreshAdminData();
             }
           }} 
