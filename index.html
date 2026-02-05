@@ -13,17 +13,17 @@
       @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700;900&display=swap');
       
       :root {
-        --ludo-blue: #020617;
-        --gold-primary: #fbbf24;
-        --gold-secondary: #d97706;
+        --ludo-bg: #0f172a;
+        --club-blue: #2b64f3;
+        --gold: #fbbf24;
       }
 
       body {
         font-family: 'Fredoka', sans-serif;
-        background-color: var(--ludo-blue);
+        background-color: var(--ludo-bg);
         margin: 0;
         padding: 0;
-        overflow-x: hidden;
+        overflow: hidden;
         user-select: none;
         color: white;
         -webkit-tap-highlight-color: transparent;
@@ -36,97 +36,59 @@
         background: linear-gradient(to bottom, #fff 10%, #fbbf24 40%, #ea580c 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        filter: drop-shadow(0 6px 0 #7c2d12) drop-shadow(0 15px 25px rgba(0,0,0,0.6));
-        letter-spacing: -0.04em;
-        line-height: 0.95;
-      }
-
-      @keyframes scroll-text {
-        0% { transform: translateX(0); }
-        100% { transform: translateX(-50%); }
-      }
-      .animate-scroll-text {
-        animation: scroll-text 30s linear infinite;
-        display: flex;
-        width: fit-content;
-      }
-
-      @keyframes timer {
-        from { width: 100%; }
-        to { width: 0%; }
+        filter: drop-shadow(0 4px 0 #7c2d12);
+        letter-spacing: -0.02em;
       }
 
       .dotted-bg {
         background-color: #050a18;
-        background-image: radial-gradient(rgba(251, 191, 36, 0.04) 1.5px, transparent 1.5px);
-        background-size: 30px 30px;
+        background-image: radial-gradient(rgba(251, 191, 36, 0.05) 1px, transparent 1px);
+        background-size: 20px 20px;
       }
 
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
-      
-      /* IMPROVED 3D DICE STYLES */
-      .dice-scene { 
-        width: 70px; 
-        height: 70px; 
-        perspective: 600px; 
-        margin: 0 auto; 
-      }
+
+      /* DICE ANIMATIONS */
+      .dice-scene { width: 60px; height: 60px; perspective: 600px; }
       .cube { 
-        width: 100%; 
-        height: 100%; 
-        position: relative; 
-        transform-style: preserve-3d; 
-        transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.3, 1.2); 
+        width: 100%; height: 100%; position: relative; transform-style: preserve-3d; 
+        transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
       }
       .cube-face { 
-        position: absolute; 
-        width: 70px; 
-        height: 70px; 
-        background: radial-gradient(circle at 30% 30%, #ff4444, #990000); 
-        border: 2.5px solid rgba(0,0,0,0.3); 
-        border-radius: 14px; 
-        display: grid; 
-        grid-template-columns: repeat(3, 1fr); 
-        grid-template-rows: repeat(3, 1fr); 
-        padding: 10px; 
-        box-sizing: border-box; 
-        box-shadow: inset 0 0 15px rgba(0,0,0,0.6), 0 10px 15px rgba(0,0,0,0.5); 
+        position: absolute; width: 60px; height: 60px; 
+        background: radial-gradient(circle at 30% 30%, #ff5555, #cc0000); 
+        border: 2px solid rgba(0,0,0,0.2); border-radius: 12px;
+        display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+        padding: 8px; box-sizing: border-box; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
       }
-      .dot { 
-        width: 12px; 
-        height: 12px; 
-        background-color: white; 
-        border-radius: 50%; 
-        justify-self: center; 
-        align-self: center; 
-        box-shadow: 0 2px 3px rgba(0,0,0,0.4); 
-      }
-      .face-1 { transform: rotateY(0deg) translateZ(35px); }
-      .face-2 { transform: rotateY(90deg) translateZ(35px); }
-      .face-3 { transform: rotateY(180deg) translateZ(35px); }
-      .face-4 { transform: rotateY(-90deg) translateZ(35px); }
-      .face-5 { transform: rotateX(90deg) translateZ(35px); }
-      .face-6 { transform: rotateX(-90deg) translateZ(35px); }
+      .dot { width: 10px; height: 10px; background: white; border-radius: 50%; justify-self: center; align-self: center; }
       
+      .face-1 { transform: rotateY(0deg) translateZ(30px); }
+      .face-2 { transform: rotateY(90deg) translateZ(30px); }
+      .face-3 { transform: rotateY(180deg) translateZ(30px); }
+      .face-4 { transform: rotateY(-90deg) translateZ(30px); }
+      .face-5 { transform: rotateX(90deg) translateZ(30px); }
+      .face-6 { transform: rotateX(-90deg) translateZ(30px); }
+
       .show-1 { transform: rotateX(0deg) rotateY(0deg); }
       .show-2 { transform: rotateX(0deg) rotateY(-90deg); }
       .show-3 { transform: rotateX(0deg) rotateY(-180deg); }
       .show-4 { transform: rotateX(0deg) rotateY(90deg); }
       .show-5 { transform: rotateX(-90deg) rotateY(0deg); }
       .show-6 { transform: rotateX(90deg) rotateY(0deg); }
-      
-      .rolling { animation: rolling 0.3s linear infinite; }
+
+      .rolling { animation: rolling 0.2s linear infinite; }
       @keyframes rolling { 
-        0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); } 
-        100% { transform: rotateX(720deg) rotateY(360deg) rotateZ(180deg); } 
+        from { transform: rotateX(0) rotateY(0); } 
+        to { transform: rotateX(360deg) rotateY(360deg); } 
       }
-      .dice-jump { animation: jump 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); }
-      @keyframes jump { 
-        0% { transform: translateY(0) scale(1); } 
-        50% { transform: translateY(-60px) scale(1.2); } 
-        100% { transform: translateY(0) scale(1); }
+      
+      .dice-glow { animation: dice-glow 1.5s ease-in-out infinite; }
+      @keyframes dice-glow {
+        0%, 100% { box-shadow: 0 0 10px #fbbf24; transform: scale(1); }
+        50% { box-shadow: 0 0 30px #fbbf24; transform: scale(1.05); }
       }
     </style>
     <script type="importmap">
@@ -137,13 +99,13 @@
     "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
     "@google/genai": "https://esm.sh/@google/genai",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
   </head>
-  <body>
+  <body class="dotted-bg">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
