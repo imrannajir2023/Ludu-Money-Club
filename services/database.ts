@@ -13,7 +13,7 @@ const normalizePhone = (p: string | undefined): string => {
   return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
 };
 
-// Map DB row to Transaction without requiring 'currency' column in DB
+// Map DB row to Transaction including 'currency' column
 const mapDbRowToTransaction = (row: any): PendingTransaction => {
   return {
     id: row.id?.toString() || '',
@@ -22,7 +22,7 @@ const mapDbRowToTransaction = (row: any): PendingTransaction => {
     type: row.type as 'DEPOSIT' | 'WITHDRAW',
     method: row.method || '',
     amount: Number(row.amount) || 0,
-    currency: (row.currency as any) || 'BDT', // Fallback to BDT if column is missing
+    currency: (row.currency as any) || 'BDT', // Now mapping the currency column correctly
     phone: row.phone || '',
     trxId: row.trx_id || null,
     status: row.status as 'PENDING' | 'APPROVED' | 'REJECTED',
@@ -149,13 +149,13 @@ export const databaseService = {
 
   async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
     try {
-      // Omitting 'currency' field to prevent errors with incomplete DB schemas
       const dbData: any = {
         user_name: tx.userName,
         user_phone: normalizePhone(tx.userPhone),
         type: tx.type,
         method: tx.method,
         amount: Number(tx.amount) || 0,
+        currency: tx.currency, // Re-enabled currency column
         phone: normalizePhone(tx.phone),
         trx_id: tx.trxId,
         status: tx.status,
