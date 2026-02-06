@@ -74,7 +74,6 @@ export const databaseService = {
   async updateUser(user: UserProfile): Promise<{success: boolean, message?: string}> {
     try {
       const normalizedPhone = normalizePhone(user.phone);
-      // Force numeric types
       const cleanBalance = Number(user.balance) || 0;
       
       const dbReadyData: any = {
@@ -105,6 +104,20 @@ export const databaseService = {
   async getPendingTransactions(): Promise<PendingTransaction[]> {
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING').order('timestamp', { ascending: false });
+      if (error) throw error;
+      return (data || []).map(t => {
+        const camel = toCamelCase(t);
+        camel.amount = Number(t.amount) || 0;
+        return camel;
+      });
+    } catch (error: any) {
+      return [];
+    }
+  },
+
+  async getAllTransactions(): Promise<PendingTransaction[]> {
+    try {
+      const { data, error } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false });
       if (error) throw error;
       return (data || []).map(t => {
         const camel = toCamelCase(t);

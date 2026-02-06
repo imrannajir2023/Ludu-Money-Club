@@ -54,6 +54,32 @@ const PlayerPanel: React.FC<{ player: Player, isActive: boolean, diceValue: numb
   );
 };
 
+const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, onLogout: () => void }> = ({ isOpen, onClose, onLogout }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 backdrop-blur-md p-6 animate-in fade-in">
+      <div className="bg-[#1e293b] border border-white/10 p-10 rounded-[45px] w-full max-w-xs text-center shadow-2xl">
+        <h2 className="text-2xl font-black uppercase italic text-white mb-10 tracking-tighter">Settings</h2>
+        <div className="space-y-4">
+           <button onClick={() => { soundManager.toggleMute(); onClose(); }} className="w-full py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-3">
+             {soundManager.isMuted() ? '🔇 Unmute Sound' : '🔊 Mute Sound'}
+           </button>
+           <button 
+             onClick={() => {
+               soundManager.play('click');
+               onLogout();
+             }} 
+             className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg shadow-red-600/20 active:scale-95 transition-all"
+           >
+             Logout
+           </button>
+           <button onClick={onClose} className="w-full mt-4 py-2 text-white/20 font-black uppercase text-[10px] tracking-widest">Close Menu</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [view, setView] = useState<'SPLASH' | 'LOGIN' | 'LOBBY' | 'FINDING' | 'LOCAL_SETUP' | 'GAME' | 'ADMIN'>('SPLASH');
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -87,6 +113,19 @@ const App: React.FC = () => {
   const [adminId, setAdminId] = useState('');
   const [adminPass, setAdminPass] = useState('');
 
+  const refreshAdminData = useCallback(async () => {
+    try {
+      const [users, txs] = await Promise.all([
+        databaseService.getUsers(),
+        databaseService.getPendingTransactions()
+      ]);
+      setAllUsers(users);
+      setPendingTransactions(txs);
+    } catch (e) {
+      console.error("Failed to refresh admin data", e);
+    }
+  }, []);
+
   // Initialize data
   useEffect(() => {
     const init = async () => {
@@ -110,6 +149,13 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Handle auto-refresh when entering admin view
+  useEffect(() => {
+    if (view === 'ADMIN') {
+      refreshAdminData();
+    }
+  }, [view, refreshAdminData]);
+
   const nextTurn = useCallback(() => {
     setGameState(prev => {
       if (!prev || prev.winner) return prev;
@@ -123,7 +169,7 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // Bot Logic - Improved to prevent double skipping
+  // Bot Logic
   useEffect(() => {
     if (view === 'GAME' && gameState && !gameState.winner && !isMoving && !isRolling) {
       const currentPlayer = gameState.players[gameState.currentPlayerIndex];
@@ -142,7 +188,6 @@ const App: React.FC = () => {
               const bestToken = calculateBestBotMove(validTokens, val, gameState.players, gameState.currentPlayerIndex);
               moveToken(bestToken);
             } else {
-              // Only call nextTurn if not already processed
               setTimeout(() => nextTurn(), 800);
             }
           }
@@ -166,7 +211,6 @@ const App: React.FC = () => {
         if (!prev) return null;
         const player = prev.players[prev.currentPlayerIndex];
         
-        // Handle consecutive sixes
         if (val === 6 && prev.consecutiveSixes >= 2) {
            addCommentary("Triple Sixes! Turn Skipped.", player.name);
            setTimeout(() => nextTurn(), 1000);
@@ -180,7 +224,6 @@ const App: React.FC = () => {
         
         if (!canMove) {
           addCommentary("No moves available!", player.name);
-          // Only auto-skip for humans; bots are handled in useEffect
           if (!player.isBot) {
             setTimeout(() => nextTurn(), 1500);
           }
@@ -268,6 +311,45 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAuth = async () => {
+    if (!phone || !password) {
+      setAuthError('Required information missing.');
+      return;
+    }
+    setIsAuthLoading(true); setAuthError('');
+    try {
+      const normalized = phone.replace(/\D/g, '').slice(-10);
+      const existing = await databaseService.getUserByPhone(normalized);
+      if (isSignUp) {
+        if (existing) {
+          setAuthError('Phone already registered.');
+          return;
+        }
+        const newUser: UserProfile = { 
+          name: name || 'Player', 
+          phone: normalized, 
+          password, 
+          balance: 0, 
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${normalized}`, 
+          stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, 
+          history: [] 
+        };
+        await databaseService.updateUser(newUser); 
+        setUser(newUser);
+        localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser)); 
+        setView('LOBBY');
+      } else {
+        if (!existing || existing.password !== password) {
+          setAuthError('Invalid phone or password.');
+        } else { 
+          setUser(existing); 
+          localStorage.setItem('LUDO_SESSION', JSON.stringify(existing)); 
+          setView('LOBBY'); 
+        }
+      }
+    } finally { setIsAuthLoading(false); }
+  };
+
   const startFinding = () => {
     if (!user || user.balance < selectedStake) return alert("Insufficient balance.");
     setIsLocalMode(false);
@@ -288,18 +370,14 @@ const App: React.FC = () => {
 
   const prepareGame = (local: boolean) => {
     const activeCount = local ? localPlayerCount : playerCount;
-    // Standard Clockwise Order: Red, Green, Yellow, Blue
     const colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
     const players: Player[] = [];
     
     for (let i = 0; i < activeCount; i++) {
-      // In 2 player mode, typically players face each other (Red vs Yellow)
       const color = activeCount === 2 ? (i === 0 ? PlayerColor.RED : PlayerColor.YELLOW) : colors[i];
       if (local) {
         players.push({ 
-          id: `l-${i}`, 
-          name: localPlayerNames[i], 
-          country: 'BD', flag: '🇧🇩', color, 
+          id: `l-${i}`, name: localPlayerNames[i], country: 'BD', flag: '🇧🇩', color, 
           isBot: false, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Local${i}`, tokens: [] 
         });
       } else {
@@ -326,40 +404,18 @@ const App: React.FC = () => {
     setCommentary(text);
   };
 
-  const handleAuth = async () => {
-    if (!phone || !password) {
-      setAuthError('Missing info');
-      return;
-    }
-    setIsAuthLoading(true); setAuthError('');
-    try {
-      const normalized = phone.replace(/\D/g, '').slice(-10);
-      const existing = await databaseService.getUserByPhone(normalized);
-      if (isSignUp) {
-        if (existing) {
-          setAuthError('Phone registered');
-          return;
-        }
-        const newUser: UserProfile = { name: name || 'User', phone: normalized, password, balance: 0, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${normalized}`, stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: [] };
-        await databaseService.updateUser(newUser); setUser(newUser);
-        localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser)); setView('LOBBY');
-      } else {
-        if (!existing || existing.password !== password) {
-          setAuthError('Wrong credentials');
-        } else { 
-          setUser(existing); 
-          localStorage.setItem('LUDO_SESSION', JSON.stringify(existing)); 
-          setView('LOBBY'); 
-        }
-      }
-    } finally { setIsAuthLoading(false); }
+  const handleLogout = () => {
+    localStorage.removeItem('LUDO_SESSION');
+    setUser(null);
+    setView('LOGIN');
+    setSettingsOpen(false);
   };
 
   return (
     <div className="h-screen w-full flex flex-col relative overflow-hidden bg-[#020617] text-white">
       {view === 'SPLASH' && (
         <div className="h-full flex flex-col items-center justify-center animate-in fade-in">
-          <h1 onClick={() => setAdminTapCount(c => c + 1)} className="ludo-money-logo text-7xl mb-12 select-none tracking-tighter">LUDO MONEY</h1>
+          <h1 onClick={() => setAdminTapCount(c => c + 1)} className="ludo-money-logo text-7xl mb-12 select-none tracking-tighter cursor-pointer">LUDO MONEY</h1>
           <div className="w-64 h-2 bg-white/5 rounded-full overflow-hidden border border-white/10">
             <div className="h-full bg-yellow-400 transition-all duration-300" style={{ width: `${loadingProgress}%` }}></div>
           </div>
@@ -367,19 +423,19 @@ const App: React.FC = () => {
       )}
 
       {view === 'LOGIN' && (
-        <div className="h-full flex flex-col items-center justify-center p-6">
-          <div className="bg-[#1c212e]/90 backdrop-blur-xl p-10 rounded-[45px] w-full max-sm:max-w-xs border border-white/10 shadow-2xl">
-            <h2 className="ludo-money-logo text-5xl mb-10 uppercase text-center">{isSignUp ? 'SIGNUP' : 'LOGIN'}</h2>
-            {authError && <p className="text-red-500 text-xs text-center mb-4 font-bold">{authError}</p>}
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-gradient-to-b from-slate-950 to-indigo-950">
+          <div className="bg-[#1c212e]/90 backdrop-blur-3xl p-10 rounded-[50px] w-full max-sm:max-w-xs border border-white/10 shadow-[0_25px_100px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-500">
+            <h1 onClick={() => setAdminTapCount(c => c + 1)} className="ludo-money-logo text-5xl mb-12 uppercase text-center tracking-tighter italic cursor-pointer">{isSignUp ? 'SIGNUP' : 'LUDO MONEY'}</h1>
+            {authError && <p className="text-red-500 text-[10px] text-center mb-6 font-black uppercase tracking-widest bg-red-500/10 p-2 rounded-lg">{authError}</p>}
             <div className="space-y-4 mb-8">
-              {isSignUp && <input type="text" placeholder="Full Name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none" />}
-              <input type="tel" placeholder="Phone" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none" />
-              <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none" />
+              {isSignUp && <input type="text" placeholder="Full Name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none text-sm font-bold focus:border-yellow-400/50 transition-all" />}
+              <input type="tel" placeholder="Phone Number" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none text-sm font-bold focus:border-yellow-400/50 transition-all" />
+              <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none text-sm font-bold focus:border-yellow-400/50 transition-all" />
             </div>
-            <button onClick={handleAuth} disabled={isAuthLoading} className="w-full bg-yellow-400 text-black py-5 rounded-2xl font-black uppercase shadow-xl transition-all">
-               {isAuthLoading ? 'Please Wait' : 'ENTER ARENA'}
+            <button onClick={handleAuth} disabled={isAuthLoading} className="w-full bg-gradient-to-r from-yellow-400 to-amber-600 text-black py-5 rounded-2xl font-black uppercase shadow-xl active:translate-y-1 transition-all">
+               {isAuthLoading ? 'PLEASE WAIT...' : 'ENTER ARENA'}
             </button>
-            <button onClick={() => setIsSignUp(!isSignUp)} className="w-full mt-6 text-white/30 text-[10px] uppercase font-bold tracking-widest">{isSignUp ? 'Back to Login' : 'Create New Account'}</button>
+            <button onClick={() => { soundManager.play('click'); setIsSignUp(!isSignUp); }} className="w-full mt-6 text-white/30 text-[10px] uppercase font-black tracking-[0.2em] hover:text-white transition-colors">{isSignUp ? 'Already a Member? Login' : 'New Player? Create Account'}</button>
           </div>
         </div>
       )}
@@ -388,31 +444,31 @@ const App: React.FC = () => {
         <div className="h-full flex flex-col animate-in fade-in overflow-y-auto no-scrollbar pb-24">
           <div className="flex justify-between items-center p-6 shrink-0">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl border-2 border-yellow-400 bg-slate-800 overflow-hidden"><img src={user.avatar} className="w-full h-full object-cover" /></div>
+              <div className="w-12 h-12 rounded-2xl border-2 border-yellow-400 bg-slate-800 overflow-hidden shadow-lg shadow-yellow-400/10"><img src={user.avatar} className="w-full h-full object-cover" /></div>
               <div>
                 <h3 className="text-sm font-black uppercase italic tracking-tighter">{user.name}</h3>
-                <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Level 12 • Pro</p>
+                <p className="text-[10px] text-yellow-400/50 font-bold uppercase tracking-widest">Global Rank #242</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={() => setWalletOpen(true)} className="bg-slate-900 border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+              <button onClick={() => { soundManager.play('click'); setWalletOpen(true); }} className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-xl">
                 <span className="text-sm font-black text-yellow-400">৳{Math.floor(user.balance).toLocaleString()}</span>
-                <span className="w-5 h-5 bg-yellow-400 text-black rounded-full flex items-center justify-center text-[10px] font-bold">+</span>
+                <span className="w-5 h-5 bg-yellow-400 text-black rounded-full flex items-center justify-center text-[10px] font-black">+</span>
               </button>
-              <button onClick={() => setSettingsOpen(true)} className="bg-slate-900 border border-white/10 p-3 rounded-full text-xl">⚙️</button>
+              <button onClick={() => { soundManager.play('click'); setSettingsOpen(true); }} className="bg-white/5 border border-white/10 p-3 rounded-full text-xl hover:bg-white/10 transition-colors">⚙️</button>
             </div>
           </div>
 
           <div className="px-6 mt-8 space-y-8">
             <div className="bg-[#2b64f3] rounded-[50px] border-[12px] border-[#1e4ccf] p-10 flex flex-col items-center shadow-2xl relative overflow-hidden group">
               <div className="bg-[#1e40af] p-1.5 rounded-full flex w-full max-w-[200px] mb-8 shadow-inner">
-                <button onClick={() => setPlayerCount(2)} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg' : 'text-white/40'}`}>2 Player</button>
-                <button onClick={() => setPlayerCount(4)} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg' : 'text-white/40'}`}>4 Player</button>
+                <button onClick={() => { soundManager.play('click'); setPlayerCount(2); }} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg' : 'text-white/40'}`}>2 Player</button>
+                <button onClick={() => { soundManager.play('click'); setPlayerCount(4); }} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg' : 'text-white/40'}`}>4 Player</button>
               </div>
               <h2 className="text-5xl font-black italic uppercase text-white mb-8 tracking-tighter drop-shadow-xl">Global Arena</h2>
               <div className="flex flex-wrap justify-center gap-3 mb-12">
                 {[50, 100, 500, 1000].map(s => (
-                  <button key={s} onClick={() => setSelectedStake(s)} className={`px-5 py-3 rounded-2xl text-xs font-black border-2 transition-all ${selectedStake === s ? 'bg-yellow-400 border-yellow-300 text-black scale-110 shadow-xl' : 'bg-[#1e40af] border-transparent text-white/40 hover:bg-white/5'}`}>৳{s}</button>
+                  <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`px-5 py-3 rounded-2xl text-xs font-black border-2 transition-all ${selectedStake === s ? 'bg-yellow-400 border-yellow-300 text-black scale-110 shadow-xl' : 'bg-[#1e40af] border-transparent text-white/40 hover:bg-white/5'}`}>৳{s}</button>
                 ))}
               </div>
               <button onClick={startFinding} className="w-full py-6 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[30px] font-black text-2xl uppercase italic text-black border-b-[6px] border-amber-950 active:translate-y-2 active:border-b-0 shadow-2xl transition-all">Battle Now</button>
@@ -420,7 +476,7 @@ const App: React.FC = () => {
 
             <div className="bg-purple-700 rounded-[50px] border-[12px] border-purple-800 p-10 flex flex-col items-center shadow-2xl">
               <h2 className="text-3xl font-black italic uppercase text-white mb-8">Local Pass</h2>
-              <button onClick={() => setView('LOCAL_SETUP')} className="w-full py-5 bg-white text-purple-700 rounded-[30px] font-black text-xl uppercase italic shadow-xl border-b-[6px] border-slate-300 active:translate-y-2 transition-all">Play Friends</button>
+              <button onClick={() => { soundManager.play('click'); setView('LOCAL_SETUP'); }} className="w-full py-5 bg-white text-purple-700 rounded-[30px] font-black text-xl uppercase italic shadow-xl border-b-[6px] border-slate-300 active:translate-y-2 transition-all">Play Friends</button>
             </div>
           </div>
         </div>
@@ -452,7 +508,6 @@ const App: React.FC = () => {
 
       {view === 'LOCAL_SETUP' && (
         <div className="h-full flex flex-col bg-[#e6dbbf] animate-in slide-in-from-right duration-300">
-           {/* Header */}
            <div className="bg-[#2b64f3] p-6 flex items-center justify-between shadow-lg shrink-0">
               <button onClick={() => setView('LOBBY')} className="w-10 h-10 bg-[#fbbf24] rounded-full border-2 border-white flex items-center justify-center shadow-md active:scale-90 transition-transform">
                  <span className="text-black text-xl font-bold">◀</span>
@@ -460,7 +515,6 @@ const App: React.FC = () => {
               <h2 className="text-4xl font-black uppercase text-white tracking-tight drop-shadow-md italic">Local</h2>
               <div className="w-10"></div>
            </div>
-
            <div className="flex-1 p-6 flex flex-col gap-8 overflow-y-auto no-scrollbar">
               <div className="flex gap-1 bg-[#8d6e3c] p-1 rounded-2xl shadow-inner">
                  {[2, 3, 4].map(num => (
@@ -469,12 +523,10 @@ const App: React.FC = () => {
                      onClick={() => setLocalPlayerCount(num as any)}
                      className={`relative flex-1 py-4 rounded-xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${localPlayerCount === num ? 'bg-gradient-to-b from-[#fcd34d] to-[#fbbf24] text-[#78350f] shadow-lg' : 'text-white/40'}`}
                    >
-                     {localPlayerCount === num && <span className="bg-green-500 w-4 h-4 rounded-full border border-white flex items-center justify-center text-[8px] text-white">✓</span>}
                      {num} Players
                    </button>
                  ))}
               </div>
-
               <div className="flex flex-col gap-6">
                  {[
                    { color: PlayerColor.RED, label: 'Player 1' },
@@ -504,24 +556,13 @@ const App: React.FC = () => {
                               }}
                               className="w-full bg-transparent px-5 py-4 font-black text-slate-800 outline-none text-lg"
                             />
-                            <span className="text-slate-300 text-xl">✎</span>
                          </div>
                       </div>
                     );
                  })}
               </div>
-
               <div className="mt-auto pt-8">
-                 <button 
-                   onClick={() => {
-                      soundManager.play('click');
-                      setIsLocalMode(true);
-                      prepareGame(true);
-                   }}
-                   className="w-full py-6 bg-gradient-to-b from-[#4ade80] to-[#16a34a] text-white rounded-[30px] font-black text-4xl uppercase italic shadow-[0_10px_0_#14532d] border-b-2 border-white/20 active:translate-y-2 active:shadow-[0_4px_0_#14532d] transition-all tracking-tighter"
-                 >
-                   Start
-                 </button>
+                 <button onClick={() => { soundManager.play('click'); setIsLocalMode(true); prepareGame(true); }} className="w-full py-6 bg-gradient-to-b from-[#4ade80] to-[#16a34a] text-white rounded-[30px] font-black text-4xl uppercase italic shadow-[0_10px_0_#14532d] active:translate-y-2 active:shadow-[0_4px_0_#14532d] transition-all tracking-tighter">Start</button>
               </div>
            </div>
         </div>
@@ -531,19 +572,14 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col relative animate-in fade-in p-2 select-none overflow-hidden bg-slate-950">
           <div className="absolute top-6 left-6 z-[100] flex items-center gap-4">
             <button 
-              onClick={() => {
-                soundManager.play('click');
-                setShowExitWarning(true);
-              }} 
-              className="bg-red-600 w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold shadow-[0_4px_12px_rgba(220,38,38,0.5)] border-2 border-white/20 active:scale-90 transition-all text-white"
+              onClick={() => { soundManager.play('click'); setShowExitWarning(true); }} 
+              className="bg-red-600 w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold shadow-lg shadow-red-600/20 border-2 border-white/20 active:scale-90 transition-all text-white"
             >
               ✕
             </button>
-            <div className="flex flex-col">
-              <span className="bg-white/5 backdrop-blur-md px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 text-yellow-400">
+            <span className="bg-white/5 backdrop-blur-md px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 text-yellow-400">
                 {isLocalMode ? 'LOCAL MODE' : `ARENA • ৳${selectedStake}`}
-              </span>
-            </div>
+            </span>
           </div>
 
           <div className="flex-1 flex flex-col items-center justify-center mt-12 mb-24">
@@ -557,24 +593,12 @@ const App: React.FC = () => {
                 
                 {gameState.players.map((p, i) => {
                   const isActive = gameState.currentPlayerIndex === i;
-                  let posClass = "";
-                  if (gameState.players.length === 2) {
-                    posClass = i === 0 ? "top-[-120px] left-0" : "bottom-[-120px] right-0";
-                  } else {
-                    // Standard 4 Player Layout: Red (TL), Green (TR), Yellow (BR), Blue (BL)
-                    posClass = ["top-[-120px] left-0", "top-[-120px] right-0", "bottom-[-120px] right-0", "bottom-[-120px] left-0"][i];
-                  }
+                  let posClass = ["top-[-120px] left-0", "top-[-120px] right-0", "bottom-[-120px] right-0", "bottom-[-120px] left-0"][i];
+                  if (gameState.players.length === 2 && i === 1) posClass = "bottom-[-120px] right-0";
                   
                   return (
                     <div key={p.id} className={`absolute ${posClass}`}>
-                       <PlayerPanel 
-                         player={p} 
-                         isActive={isActive} 
-                         diceValue={gameState.diceValue} 
-                         isRolling={isRolling} 
-                         onRoll={rollDice} 
-                         isDiceRolled={gameState.isDiceRolled} 
-                       />
+                       <PlayerPanel player={p} isActive={isActive} diceValue={gameState.diceValue} isRolling={isRolling} onRoll={rollDice} isDiceRolled={gameState.isDiceRolled} />
                     </div>
                   );
                 })}
@@ -582,7 +606,7 @@ const App: React.FC = () => {
           </div>
 
           <div className="fixed bottom-8 left-0 right-0 flex justify-center px-10 z-[150]">
-            <div className="bg-white/5 backdrop-blur-2xl border border-white/10 p-5 rounded-[40px] w-full max-w-sm h-14 flex items-center gap-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+            <div className="bg-white/5 backdrop-blur-2xl border border-white/10 p-5 rounded-[40px] w-full max-w-sm h-14 flex items-center gap-4 shadow-2xl">
                <span className="text-xl">🎙️</span>
                <p className="text-[10px] font-black italic text-white/90 truncate uppercase tracking-widest leading-none">{commentary}</p>
             </div>
@@ -594,38 +618,9 @@ const App: React.FC = () => {
                 <h3 className="text-2xl font-black uppercase text-white mb-6 italic tracking-tight">Exit Game?</h3>
                 <p className="text-white/60 text-sm mb-10 font-bold">Your progress will be lost. Are you sure?</p>
                 <div className="flex flex-col gap-3">
-                  <button 
-                    onClick={() => {
-                      soundManager.play('click');
-                      setView('LOBBY');
-                      setShowExitWarning(false);
-                      setGameState(null);
-                    }} 
-                    className="w-full bg-red-600 text-white py-4 rounded-2xl font-black uppercase shadow-lg active:scale-95 transition-all"
-                  >
-                    Confirm Exit
-                  </button>
-                  <button 
-                    onClick={() => {
-                      soundManager.play('click');
-                      setShowExitWarning(false);
-                    }} 
-                    className="w-full bg-white/5 text-white/40 py-4 rounded-2xl font-black uppercase"
-                  >
-                    Cancel
-                  </button>
+                  <button onClick={() => { soundManager.play('click'); setView('LOBBY'); setShowExitWarning(false); setGameState(null); }} className="w-full bg-red-600 text-white py-4 rounded-2xl font-black uppercase">Confirm Exit</button>
+                  <button onClick={() => { soundManager.play('click'); setShowExitWarning(false); }} className="w-full bg-white/5 text-white/40 py-4 rounded-2xl font-black uppercase">Cancel</button>
                 </div>
-              </div>
-            </div>
-          )}
-          
-          {gameState.winner && (
-            <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/95 p-6 animate-in fade-in duration-500">
-              <div className="bg-indigo-950 p-16 rounded-[60px] border-[6px] border-yellow-400 text-center w-full max-w-xs shadow-[0_0_80px_rgba(251,191,36,0.5)]">
-                <div className="text-6xl mb-6">🏆</div>
-                <h2 className="text-5xl font-black italic uppercase text-yellow-400 mb-2 tracking-tighter">VICTORY</h2>
-                <p className="text-white font-black uppercase mb-10 text-xl tracking-widest">{gameState.players.find(p => p.color === gameState.winner)?.name}</p>
-                <button onClick={() => setView('LOBBY')} className="w-full bg-yellow-400 text-black py-5 rounded-3xl font-black uppercase text-lg shadow-xl active:scale-95">Back to Lobby</button>
               </div>
             </div>
           )}
@@ -633,30 +628,22 @@ const App: React.FC = () => {
       )}
 
       {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={async (tx) => { await databaseService.createTransaction(tx); setWalletOpen(false); alert("Request Sent!"); }} />}
-      {adminTapCount >= 5 && (
+      {isSettingsOpen && <SettingsModal isOpen={isSettingsOpen} onClose={() => setSettingsOpen(false)} onLogout={handleLogout} />}
+      
+      {adminTapCount >= 7 && (
         <div className="fixed inset-0 bg-black z-[1000] flex flex-col items-center justify-center p-8">
-          <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-sm border border-white/10">
-            <h2 className="text-3xl font-black uppercase italic text-sky-400 mb-10">Admin Access</h2>
+          <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-sm border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95">
+            <h2 className="text-3xl font-black uppercase italic text-sky-400 mb-10 text-center">Admin Access</h2>
             <div className="space-y-6 mb-10">
-              <input type="text" placeholder="ID" value={adminId} onChange={e => setAdminId(e.target.value)} className="w-full bg-white/5 p-5 rounded-2xl outline-none" />
-              <input type="password" placeholder="Pass" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full bg-white/5 p-5 rounded-2xl outline-none" />
+              <input type="text" placeholder="ID" value={adminId} onChange={e => setAdminId(e.target.value)} className="w-full bg-white/5 p-5 rounded-2xl outline-none border border-white/10 focus:border-sky-500 transition-all" />
+              <input type="password" placeholder="Pass" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full bg-white/5 p-5 rounded-2xl outline-none border border-white/10 focus:border-sky-500 transition-all" />
             </div>
-            <button 
-              onClick={() => { 
-                if (adminId === 'admin' && adminPass === 'ludo2025') { 
-                  setView('ADMIN'); 
-                  setAdminTapCount(0); 
-                } else alert('Denied'); 
-              }} 
-              className="w-full bg-sky-500 py-5 rounded-2xl font-black uppercase text-xl"
-            >
-              LOGIN ADMIN
-            </button>
-            <button onClick={() => setAdminTapCount(0)} className="w-full mt-4 text-[10px] font-bold text-white/20 uppercase tracking-widest">Cancel</button>
+            <button onClick={() => { if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') { refreshAdminData().then(() => setView('ADMIN')); setAdminTapCount(0); } else alert('Denied'); }} className="w-full bg-sky-500 py-5 rounded-2xl font-black uppercase text-xl shadow-lg active:scale-95 transition-all">LOGIN ADMIN</button>
+            <button onClick={() => setAdminTapCount(0)} className="w-full mt-4 text-[10px] font-bold text-white/20 uppercase tracking-widest text-center">Cancel</button>
           </div>
         </div>
       )}
-      {view === 'ADMIN' && user && <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={(u) => setAllUsers(allUsers.map(usr => usr.phone === u.phone ? u : usr))} onApproveTransaction={async (tx) => { const target = allUsers.find(u => u.phone === tx.userPhone); if (target) { const updated = { ...target, balance: target.balance + tx.amount }; await databaseService.updateUser(updated); await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); alert("Approved!"); } }} onRejectTransaction={async (txId) => { await databaseService.updateTransactionStatus(txId, 'REJECTED'); setPendingTransactions(prev => prev.filter(p => p.id !== txId)); }} onExit={() => setView('LOBBY')} onRefreshData={async () => { const [users, txs] = await Promise.all([databaseService.getUsers(), databaseService.getPendingTransactions()]); setAllUsers(users); setPendingTransactions(txs); }} />}
+      {view === 'ADMIN' && user && <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={(u) => setAllUsers(allUsers.map(usr => usr.phone === u.phone ? u : usr))} onApproveTransaction={async (tx) => { const target = allUsers.find(u => u.phone === tx.userPhone); if (target) { const updated = { ...target, balance: target.balance + tx.amount }; await databaseService.updateUser(updated); await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); alert("Approved!"); } }} onRejectTransaction={async (txId) => { await databaseService.updateTransactionStatus(txId, 'REJECTED'); setPendingTransactions(prev => prev.filter(p => p.id !== txId)); }} onExit={() => setView('LOBBY')} onRefreshData={refreshAdminData} />}
     </div>
   );
 };
