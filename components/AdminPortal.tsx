@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { UserProfile, PendingTransaction, LiveMatch, PlayerColor, CurrencyCode } from '../types';
 import { soundManager } from '../services/soundService';
 import { databaseService } from '../services/database';
@@ -70,7 +70,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [txs, settings] = await Promise.all([
@@ -85,15 +85,15 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
         setBinanceNum(settings.binance_number || '');
       }
     } catch (e) {
-      console.error(e);
+      console.error("fetchData Error:", e);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, [activeTab]);
+  }, [activeTab, pendingTransactions.length, fetchData]); // Re-fetch when transactions count changes or tab changes
 
   const stats = useMemo(() => {
     const totalBaseBalance = allUsers.reduce((acc, u) => acc + (u.balance || 0), 0);
@@ -124,8 +124,8 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const filteredTxs = useMemo(() => {
     return allTxs.filter(t => {
       const matchStatus = txFilter === 'ALL' || t.status === txFilter;
-      const matchSearch = t.userName.toLowerCase().includes(txSearchTerm.toLowerCase()) || 
-                          t.userPhone.includes(txSearchTerm) || 
+      const matchSearch = (t.userName?.toLowerCase() || "").includes(txSearchTerm.toLowerCase()) || 
+                          (t.userPhone || "").includes(txSearchTerm) || 
                           (t.trxId || '').includes(txSearchTerm);
       return matchStatus && matchSearch;
     });
@@ -338,7 +338,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                              <button onClick={handleToggleBlock} className="w-full py-4 text-red-500 text-[10px] font-black uppercase border border-red-500/20 rounded-2xl">{selectedUser.isBlocked ? 'Unblock User' : 'Block User'}</button>
                           </div>
                        </div>
-                     ) : <div className="h-64 border-2 border-dashed border-white/5 rounded-[32px] flex items-center justify-center opacity-20">ইউজার সিলেক্ট করুন</div>}
+                     ) : <div className="h-64 border-2 border-dashed border-white/5 rounded-[32px] flex items-center justify-center opacity-20 text-xs italic">সিলেক্ট করুন</div>}
                   </div>
                </div>
             </div>
@@ -356,22 +356,24 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                </div>
 
                <div className="space-y-3">
-                  {filteredTxs.map(tx => {
+                  {filteredTxs.length === 0 ? (
+                    <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-[40px] opacity-10 italic text-sm">কোনো লেনদেন রেকর্ড পাওয়া যায়নি</div>
+                  ) : filteredTxs.map(tx => {
                     const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
                     return (
                       <div key={tx.id} className="bg-slate-900 border border-white/5 p-5 rounded-3xl flex items-center justify-between group hover:border-sky-500/40 transition-all">
                          <div className="flex items-center gap-5">
                             <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center p-2 shadow-lg">
-                               <img src={REAL_LOGOS[tx.method.toLowerCase()]} className="w-full h-full object-contain" />
+                               <img src={REAL_LOGOS[tx.method.toLowerCase()] || REAL_LOGOS.bkash} className="w-full h-full object-contain" />
                             </div>
                             <div>
                                <div className="flex items-center gap-2">
-                                  <span className="font-black text-white uppercase">{tx.userName}</span>
+                                  <span className="font-black text-white uppercase">{tx.userName || 'Unknown'}</span>
                                   <span className={`text-[7px] font-black px-2 py-0.5 rounded-full uppercase ${tx.type === 'DEPOSIT' ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>{tx.type === 'DEPOSIT' ? 'DEP' : 'WIT'}</span>
                                   <span className="bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full text-[7px] font-black">{tx.currency}</span>
                                </div>
                                <div className="flex gap-x-4 mt-0.5 text-[9px] font-bold text-white/30 uppercase">
-                                  <span>📞 {tx.phone}</span>
+                                  <span>📞 {tx.userPhone || tx.phone}</span>
                                   {tx.trxId && <span>Trx: <span className="text-sky-400 font-black">{tx.trxId}</span></span>}
                                   <span>{formatTimeAgo(tx.timestamp)}</span>
                                </div>

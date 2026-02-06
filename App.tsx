@@ -118,14 +118,12 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState('');
 
   const formatBalance = (bal: number) => {
-    // Safety check for CURRENCY_CONFIG lookup
     const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
     const converted = bal / config.rate;
     return `${config.symbol}${converted.toLocaleString(undefined, { minimumFractionDigits: currency === 'BDT' ? 0 : 2, maximumFractionDigits: 2 })}`;
   };
 
   const getStakesByCurrency = () => {
-    // Safety check for CURRENCY_CONFIG lookup
     const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
     if (currency === 'BDT') return [50, 100, 500, 1000];
     if (currency === 'USD') return [1, 5, 10, 50];
@@ -155,7 +153,6 @@ const App: React.FC = () => {
         const fresh = await databaseService.getUserByPhone(parsed.phone);
         if (fresh && !fresh.isBlocked) {
           setUser(fresh);
-          // Only set currency if it's a valid key in CURRENCY_CONFIG
           if (fresh.preferredCurrency && CURRENCY_CONFIG[fresh.preferredCurrency]) {
             setCurrency(fresh.preferredCurrency);
           }
@@ -327,7 +324,6 @@ const App: React.FC = () => {
     if (won) {
       setGameState(p => p ? { ...p, winner: player.color } : null);
       if (!isLocalMode && user) {
-        // Safety check for CURRENCY_CONFIG lookup
         const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
         const baseStake = selectedStake * config.rate;
         const prize = baseStake * (gameState.players.length - 0.2);
@@ -474,8 +470,13 @@ const App: React.FC = () => {
       const baseAmount = tx.amount * config.rate;
       if (user.balance >= baseAmount) {
         const updatedUser = { ...user, balance: user.balance - baseAmount };
-        await databaseService.updateUser(updatedUser);
-        setUser(updatedUser);
+        const updateResult = await databaseService.updateUser(updatedUser);
+        if (updateResult.success) {
+           setUser(updatedUser);
+        } else {
+           alert("ব্যালেন্স আপডেট করতে ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।");
+           return;
+        }
       } else {
         alert("আপনার ব্যালেন্স পর্যাপ্ত নয়!");
         return;
@@ -486,7 +487,7 @@ const App: React.FC = () => {
     if (result.success) {
       setWalletOpen(false);
       alert("আপনার অনুরোধটি পাঠানো হয়েছে!");
-      refreshAdminData(); // Refresh list if admin is viewing
+      if (view === 'ADMIN') refreshAdminData(); 
     } else {
       alert("লেনদেন সফল হয়নি: " + result.message);
     }
@@ -777,7 +778,6 @@ const App: React.FC = () => {
                 const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
                 const baseAmount = tx.amount * config.rate;
                 
-                // If deposit, add balance. If withdrawal, balance was already deducted on request.
                 if (tx.type === 'DEPOSIT') {
                   const updated = { ...target, balance: target.balance + baseAmount }; 
                   await databaseService.updateUser(updated); 
@@ -787,10 +787,10 @@ const App: React.FC = () => {
                 await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
                 setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 
                 alert("অনুমোদিত হয়েছে!"); 
+                refreshAdminData(); 
               } 
             }} 
             onRejectTransaction={async (txId) => { 
-              // If it was a withdrawal, we need to refund the balance
               const tx = await databaseService.getTransactionById(txId);
               if (tx && tx.type === 'WITHDRAW') {
                 const target = allUsers.find(u => u.phone === tx.userPhone);
@@ -805,6 +805,7 @@ const App: React.FC = () => {
               await databaseService.updateTransactionStatus(txId, 'REJECTED'); 
               setPendingTransactions(prev => prev.filter(p => p.id !== txId)); 
               alert("অনুরোধটি বাতিল করা হয়েছে এবং টাকা ফেরত দেওয়া হয়েছে (যদি প্রযোজ্য হয়)।");
+              refreshAdminData(); 
             }} 
             onExit={() => setView('LOBBY')} 
             onRefreshData={refreshAdminData} 
