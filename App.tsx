@@ -103,15 +103,18 @@ const App: React.FC = () => {
   const [foundPlayers, setFoundPlayers] = useState<any[]>([]);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [commentary, setCommentary] = useState<string>("Welcome to the Ludo Arena! 🎲");
+  
+  // Admin Secrets
   const [adminTapCount, setAdminTapCount] = useState(0);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminId, setAdminId] = useState('');
+  const [adminPass, setAdminPass] = useState('');
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [adminId, setAdminId] = useState('');
-  const [adminPass, setAdminPass] = useState('');
 
   const refreshAdminData = useCallback(async () => {
     try {
@@ -148,6 +151,14 @@ const App: React.FC = () => {
     const interval = setInterval(() => setLoadingProgress(p => (p < 100 ? p + 4 : 100)), 30);
     return () => clearInterval(interval);
   }, []);
+
+  // Admin tap logic
+  useEffect(() => {
+    if (adminTapCount >= 7) {
+      setShowAdminLogin(true);
+      setAdminTapCount(0);
+    }
+  }, [adminTapCount]);
 
   // Handle auto-refresh when entering admin view
   useEffect(() => {
@@ -313,7 +324,7 @@ const App: React.FC = () => {
 
   const handleAuth = async () => {
     if (!phone || !password) {
-      setAuthError('Required information missing.');
+      setAuthError('সব তথ্য পূরণ করুন।');
       return;
     }
     setIsAuthLoading(true); setAuthError('');
@@ -322,7 +333,7 @@ const App: React.FC = () => {
       const existing = await databaseService.getUserByPhone(normalized);
       if (isSignUp) {
         if (existing) {
-          setAuthError('Phone already registered.');
+          setAuthError('এই মোবাইল নম্বর দিয়ে অ্যাকাউন্ট খোলা আছে।');
           return;
         }
         const newUser: UserProfile = { 
@@ -340,7 +351,7 @@ const App: React.FC = () => {
         setView('LOBBY');
       } else {
         if (!existing || existing.password !== password) {
-          setAuthError('Invalid phone or password.');
+          setAuthError('ভুল পাসওয়ার্ড বা মোবাইল নম্বর।');
         } else { 
           setUser(existing); 
           localStorage.setItem('LUDO_SESSION', JSON.stringify(existing)); 
@@ -350,8 +361,20 @@ const App: React.FC = () => {
     } finally { setIsAuthLoading(false); }
   };
 
+  const handleAdminLogin = async () => {
+    if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') {
+      await refreshAdminData();
+      setView('ADMIN');
+      setShowAdminLogin(false);
+      setAdminId('');
+      setAdminPass('');
+    } else {
+      alert('ভুল অ্যাডমিন আইডি অথবা পাসওয়ার্ড।');
+    }
+  };
+
   const startFinding = () => {
-    if (!user || user.balance < selectedStake) return alert("Insufficient balance.");
+    if (!user || user.balance < selectedStake) return alert("ব্যালেন্স নেই, দয়া করে রিচার্জ করুন।");
     setIsLocalMode(false);
     setView('FINDING');
     setFindingTimer(6);
@@ -423,19 +446,71 @@ const App: React.FC = () => {
       )}
 
       {view === 'LOGIN' && (
-        <div className="h-full flex flex-col items-center justify-center p-6 bg-gradient-to-b from-slate-950 to-indigo-950">
-          <div className="bg-[#1c212e]/90 backdrop-blur-3xl p-10 rounded-[50px] w-full max-sm:max-w-xs border border-white/10 shadow-[0_25px_100px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-500">
-            <h1 onClick={() => setAdminTapCount(c => c + 1)} className="ludo-money-logo text-5xl mb-12 uppercase text-center tracking-tighter italic cursor-pointer">{isSignUp ? 'SIGNUP' : 'LUDO MONEY'}</h1>
-            {authError && <p className="text-red-500 text-[10px] text-center mb-6 font-black uppercase tracking-widest bg-red-500/10 p-2 rounded-lg">{authError}</p>}
-            <div className="space-y-4 mb-8">
-              {isSignUp && <input type="text" placeholder="Full Name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none text-sm font-bold focus:border-yellow-400/50 transition-all" />}
-              <input type="tel" placeholder="Phone Number" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none text-sm font-bold focus:border-yellow-400/50 transition-all" />
-              <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl outline-none text-sm font-bold focus:border-yellow-400/50 transition-all" />
+        <div className="h-full w-full flex flex-col items-center justify-center p-6 bg-[#0f172a] relative overflow-hidden">
+          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+          
+          <div className="w-full max-w-sm z-10 flex flex-col items-center">
+            <div className="relative mb-10 flex flex-col items-center animate-in zoom-in-95 duration-700">
+               <div className="w-32 h-32 bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-wrap p-2 rotate-12 relative">
+                  <div className="w-1/2 h-1/2 bg-red-500 rounded-tl-xl rounded-br-sm border-2 border-white"></div>
+                  <div className="w-1/2 h-1/2 bg-green-500 rounded-tr-xl rounded-bl-sm border-2 border-white"></div>
+                  <div className="w-1/2 h-1/2 bg-blue-500 rounded-bl-xl rounded-tr-sm border-2 border-white"></div>
+                  <div className="w-1/2 h-1/2 bg-yellow-400 rounded-br-xl rounded-tl-sm border-2 border-white"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                     <div className="w-12 h-12 bg-white rounded-xl shadow-xl border-2 border-slate-200 flex items-center justify-center -rotate-12">
+                        <div className="w-3 h-3 bg-red-600 rounded-full"></div>
+                     </div>
+                  </div>
+               </div>
+               <h1 onClick={() => setAdminTapCount(c => c + 1)} className="ludo-money-logo text-5xl mt-6 uppercase tracking-tighter italic drop-shadow-lg cursor-pointer">Ludo Money</h1>
             </div>
-            <button onClick={handleAuth} disabled={isAuthLoading} className="w-full bg-gradient-to-r from-yellow-400 to-amber-600 text-black py-5 rounded-2xl font-black uppercase shadow-xl active:translate-y-1 transition-all">
-               {isAuthLoading ? 'PLEASE WAIT...' : 'ENTER ARENA'}
+
+            <div className="w-full bg-slate-900/80 backdrop-blur-3xl p-8 rounded-[40px] border border-white/10 shadow-[0_30px_100px_rgba(0,0,0,0.6)] animate-in slide-in-from-bottom-12 duration-500">
+              <div className="flex bg-black/40 p-1.5 rounded-[24px] mb-8 border border-white/5">
+                 <button onClick={() => setIsSignUp(false)} className={`flex-1 py-3 rounded-[20px] text-[10px] font-black uppercase transition-all ${!isSignUp ? 'bg-white/10 text-white shadow-lg' : 'text-white/30'}`}>লগইন</button>
+                 <button onClick={() => setIsSignUp(true)} className={`flex-1 py-3 rounded-[20px] text-[10px] font-black uppercase transition-all ${isSignUp ? 'bg-white/10 text-white shadow-lg' : 'text-white/30'}`}>নিবন্ধন</button>
+              </div>
+
+              {authError && <div className="text-red-400 text-[10px] text-center mb-6 font-black uppercase tracking-widest bg-red-500/10 p-3 rounded-2xl border border-red-500/20">{authError}</div>}
+              
+              <div className="space-y-4 mb-10">
+                {isSignUp && (
+                  <div className="relative group">
+                    <input type="text" placeholder="পূর্ণ নাম" value={name} onChange={e => setName(e.target.value)} className="w-full bg-black/20 border border-white/10 p-5 pl-14 rounded-3xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-yellow-400/50 focus:ring-4 focus:ring-yellow-400/10 transition-all" />
+                    <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">👤</span>
+                  </div>
+                )}
+                <div className="relative group">
+                  <input type="tel" placeholder="মোবাইল নম্বর" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-black/20 border border-white/10 p-5 pl-14 rounded-3xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-yellow-400/50 focus:ring-4 focus:ring-yellow-400/10 transition-all" />
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">📱</span>
+                </div>
+                <div className="relative group">
+                  <input type="password" placeholder="পাসওয়ার্ড" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-black/20 border border-white/10 p-5 pl-14 rounded-3xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-yellow-400/50 focus:ring-4 focus:ring-yellow-400/10 transition-all" />
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">🔑</span>
+                </div>
+              </div>
+
+              <button 
+                onClick={handleAuth} 
+                disabled={isAuthLoading} 
+                className="w-full bg-gradient-to-b from-yellow-300 to-amber-600 text-black py-5 rounded-[28px] font-black uppercase tracking-tight shadow-[0_10px_30px_rgba(245,158,11,0.3)] border-b-[6px] border-amber-900 active:translate-y-1 active:border-b-0 transition-all text-lg flex items-center justify-center gap-3 disabled:opacity-50"
+              >
+                {isAuthLoading ? (
+                  <div className="w-6 h-6 border-4 border-black/20 border-t-black rounded-full animate-spin"></div>
+                ) : (
+                  <span>{isSignUp ? 'অ্যাকাউন্ট খুলুন' : 'প্রবেশ করুন'}</span>
+                )}
+              </button>
+            </div>
+            
+            <button 
+              onClick={() => setShowAdminLogin(true)} 
+              className="mt-8 text-white/10 hover:text-white/40 text-[10px] font-bold uppercase tracking-widest text-center transition-colors"
+            >
+              Admin Access
             </button>
-            <button onClick={() => { soundManager.play('click'); setIsSignUp(!isSignUp); }} className="w-full mt-6 text-white/30 text-[10px] uppercase font-black tracking-[0.2em] hover:text-white transition-colors">{isSignUp ? 'Already a Member? Login' : 'New Player? Create Account'}</button>
+            <p className="mt-2 text-white/5 text-[9px] font-bold uppercase tracking-widest text-center">Version 4.2.5 • Developed by Emu</p>
           </div>
         </div>
       )}
@@ -506,68 +581,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {view === 'LOCAL_SETUP' && (
-        <div className="h-full flex flex-col bg-[#e6dbbf] animate-in slide-in-from-right duration-300">
-           <div className="bg-[#2b64f3] p-6 flex items-center justify-between shadow-lg shrink-0">
-              <button onClick={() => setView('LOBBY')} className="w-10 h-10 bg-[#fbbf24] rounded-full border-2 border-white flex items-center justify-center shadow-md active:scale-90 transition-transform">
-                 <span className="text-black text-xl font-bold">◀</span>
-              </button>
-              <h2 className="text-4xl font-black uppercase text-white tracking-tight drop-shadow-md italic">Local</h2>
-              <div className="w-10"></div>
-           </div>
-           <div className="flex-1 p-6 flex flex-col gap-8 overflow-y-auto no-scrollbar">
-              <div className="flex gap-1 bg-[#8d6e3c] p-1 rounded-2xl shadow-inner">
-                 {[2, 3, 4].map(num => (
-                   <button 
-                     key={num} 
-                     onClick={() => setLocalPlayerCount(num as any)}
-                     className={`relative flex-1 py-4 rounded-xl font-black text-sm uppercase transition-all flex items-center justify-center gap-2 ${localPlayerCount === num ? 'bg-gradient-to-b from-[#fcd34d] to-[#fbbf24] text-[#78350f] shadow-lg' : 'text-white/40'}`}
-                   >
-                     {num} Players
-                   </button>
-                 ))}
-              </div>
-              <div className="flex flex-col gap-6">
-                 {[
-                   { color: PlayerColor.RED, label: 'Player 1' },
-                   { color: PlayerColor.GREEN, label: 'Player 2' },
-                   { color: PlayerColor.YELLOW, label: 'Player 3' },
-                   { color: PlayerColor.BLUE, label: 'Player 4' }
-                 ].map((p, i) => {
-                    const isDisabled = i >= localPlayerCount;
-                    return (
-                      <div key={p.color} className={`flex items-center gap-6 transition-all duration-300 ${isDisabled ? 'opacity-30 grayscale' : ''}`}>
-                         <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
-                            <div className="absolute inset-0 bg-black/5 rounded-full blur-sm"></div>
-                            <svg viewBox="0 0 100 100" className={`w-12 h-12 drop-shadow-lg ${isDisabled ? 'fill-gray-600' : p.color === PlayerColor.RED ? 'fill-red-500' : p.color === PlayerColor.YELLOW ? 'fill-yellow-400' : p.color === PlayerColor.GREEN ? 'fill-green-500' : 'fill-blue-500'}`}>
-                               <path d="M50 10 C40 10 35 20 35 30 C35 38 42 45 45 50 L30 85 L70 85 L55 50 C58 45 65 38 65 30 C65 20 60 10 50 10 Z" />
-                               <ellipse cx="50" cy="85" rx="25" ry="8" />
-                            </svg>
-                         </div>
-                         <div className="flex-1 bg-white border-2 border-[#d4d4d8] rounded-2xl p-1 shadow-md flex items-center pr-4">
-                            <input 
-                              type="text" 
-                              disabled={isDisabled}
-                              value={localPlayerNames[i]} 
-                              onChange={(e) => {
-                                 const newNames = [...localPlayerNames];
-                                 newNames[i] = e.target.value.slice(0, 15);
-                                 setLocalPlayerNames(newNames);
-                              }}
-                              className="w-full bg-transparent px-5 py-4 font-black text-slate-800 outline-none text-lg"
-                            />
-                         </div>
-                      </div>
-                    );
-                 })}
-              </div>
-              <div className="mt-auto pt-8">
-                 <button onClick={() => { soundManager.play('click'); setIsLocalMode(true); prepareGame(true); }} className="w-full py-6 bg-gradient-to-b from-[#4ade80] to-[#16a34a] text-white rounded-[30px] font-black text-4xl uppercase italic shadow-[0_10px_0_#14532d] active:translate-y-2 active:shadow-[0_4px_0_#14532d] transition-all tracking-tighter">Start</button>
-              </div>
-           </div>
-        </div>
-      )}
-
       {view === 'GAME' && gameState && (
         <div className="flex-1 flex flex-col relative animate-in fade-in p-2 select-none overflow-hidden bg-slate-950">
           <div className="absolute top-6 left-6 z-[100] flex items-center gap-4">
@@ -627,23 +640,88 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={async (tx) => { await databaseService.createTransaction(tx); setWalletOpen(false); alert("Request Sent!"); }} />}
-      {isSettingsOpen && <SettingsModal isOpen={isSettingsOpen} onClose={() => setSettingsOpen(false)} onLogout={handleLogout} />}
-      
-      {adminTapCount >= 7 && (
-        <div className="fixed inset-0 bg-black z-[1000] flex flex-col items-center justify-center p-8">
-          <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-sm border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95">
-            <h2 className="text-3xl font-black uppercase italic text-sky-400 mb-10 text-center">Admin Access</h2>
-            <div className="space-y-6 mb-10">
-              <input type="text" placeholder="ID" value={adminId} onChange={e => setAdminId(e.target.value)} className="w-full bg-white/5 p-5 rounded-2xl outline-none border border-white/10 focus:border-sky-500 transition-all" />
-              <input type="password" placeholder="Pass" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full bg-white/5 p-5 rounded-2xl outline-none border border-white/10 focus:border-sky-500 transition-all" />
+      {showAdminLogin && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-2xl z-[1000] flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 duration-300">
+          <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-sm border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.8)]">
+            <div className="text-center mb-10">
+              <div className="w-20 h-20 bg-sky-500/10 rounded-3xl border border-sky-500/20 flex items-center justify-center mx-auto mb-4">
+                <span className="text-4xl">🛡️</span>
+              </div>
+              <h2 className="text-3xl font-black uppercase italic text-sky-400 tracking-tighter">Admin Portal</h2>
+              <p className="text-white/30 text-[10px] font-bold uppercase tracking-widest mt-2">Internal Access Only</p>
             </div>
-            <button onClick={() => { if (adminId === 'emukhan580' && adminPass === 'Imran2015@!@!') { refreshAdminData().then(() => setView('ADMIN')); setAdminTapCount(0); } else alert('Denied'); }} className="w-full bg-sky-500 py-5 rounded-2xl font-black uppercase text-xl shadow-lg active:scale-95 transition-all">LOGIN ADMIN</button>
-            <button onClick={() => setAdminTapCount(0)} className="w-full mt-4 text-[10px] font-bold text-white/20 uppercase tracking-widest text-center">Cancel</button>
+            
+            <div className="space-y-4 mb-10">
+              <div className="relative">
+                <input 
+                  type="text" 
+                  placeholder="Admin ID" 
+                  value={adminId} 
+                  onChange={e => setAdminId(e.target.value)} 
+                  className="w-full bg-black/40 p-5 pl-14 rounded-2xl outline-none border border-white/10 focus:border-sky-500 font-bold text-white transition-all shadow-inner" 
+                />
+                <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">🆔</span>
+              </div>
+              <div className="relative">
+                <input 
+                  type="password" 
+                  placeholder="Password" 
+                  value={adminPass} 
+                  onChange={e => setAdminPass(e.target.value)} 
+                  className="w-full bg-black/40 p-5 pl-14 rounded-2xl outline-none border border-white/10 focus:border-sky-500 font-bold text-white transition-all shadow-inner" 
+                />
+                <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">🔑</span>
+              </div>
+            </div>
+            
+            <button 
+              onClick={handleAdminLogin} 
+              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 text-white py-5 rounded-2xl font-black uppercase text-xl shadow-[0_10px_30px_rgba(14,165,233,0.3)] border-b-[6px] border-indigo-950 active:translate-y-1 active:border-b-0 transition-all"
+            >
+              Access System
+            </button>
+            <button 
+              onClick={() => { setShowAdminLogin(false); setAdminId(''); setAdminPass(''); }} 
+              className="w-full mt-6 text-[10px] font-bold text-white/20 hover:text-white uppercase tracking-widest text-center transition-colors"
+            >
+              Cancel Login
+            </button>
           </div>
         </div>
       )}
-      {view === 'ADMIN' && user && <AdminPortal user={user} allUsers={allUsers} onUpdateUsersDB={setAllUsers} pendingTransactions={pendingTransactions} liveMatches={[]} onUpdateUser={(u) => setAllUsers(allUsers.map(usr => usr.phone === u.phone ? u : usr))} onApproveTransaction={async (tx) => { const target = allUsers.find(u => u.phone === tx.userPhone); if (target) { const updated = { ...target, balance: target.balance + tx.amount }; await databaseService.updateUser(updated); await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); alert("Approved!"); } }} onRejectTransaction={async (txId) => { await databaseService.updateTransactionStatus(txId, 'REJECTED'); setPendingTransactions(prev => prev.filter(p => p.id !== txId)); }} onExit={() => setView('LOBBY')} onRefreshData={refreshAdminData} />}
+
+      {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={async (tx) => { await databaseService.createTransaction(tx); setWalletOpen(false); alert("আপনার অনুরোধটি পাঠানো হয়েছে!"); }} />}
+      {isSettingsOpen && <SettingsModal isOpen={isSettingsOpen} onClose={() => setSettingsOpen(false)} onLogout={handleLogout} />}
+      
+      {view === 'ADMIN' && (
+        <div className="fixed inset-0 z-[2000] bg-black">
+          <AdminPortal 
+            user={user || { name: 'Admin', phone: '000', balance: 0, avatar: '', stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, history: [] }} 
+            allUsers={allUsers} 
+            onUpdateUsersDB={setAllUsers} 
+            pendingTransactions={pendingTransactions} 
+            liveMatches={[]} 
+            onUpdateUser={(u) => setAllUsers(allUsers.map(usr => usr.phone === u.phone ? u : usr))} 
+            onApproveTransaction={async (tx) => { 
+              const target = allUsers.find(u => u.phone === tx.userPhone); 
+              if (target) { 
+                const updated = { ...target, balance: target.balance + tx.amount }; 
+                await databaseService.updateUser(updated); 
+                await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
+                setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); 
+                setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 
+                alert("অনুমোদিত হয়েছে!"); 
+              } 
+            }} 
+            onRejectTransaction={async (txId) => { 
+              await databaseService.updateTransactionStatus(txId, 'REJECTED'); 
+              setPendingTransactions(prev => prev.filter(p => p.id !== txId)); 
+            }} 
+            onExit={() => setView('LOBBY')} 
+            onRefreshData={refreshAdminData} 
+          />
+        </div>
+      )}
     </div>
   );
 };
