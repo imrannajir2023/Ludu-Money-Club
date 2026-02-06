@@ -1,8 +1,8 @@
-import { PlayerColor } from './types';
+
+import { PlayerColor, CurrencyCode } from './types';
 
 export const SAFE_SPOTS = [0, 8, 13, 21, 26, 34, 39, 47];
 
-// Starting positions on the main path (0-51)
 export const START_POSITIONS: Record<PlayerColor, number> = {
   [PlayerColor.RED]: 0,
   [PlayerColor.GREEN]: 13,
@@ -15,6 +15,12 @@ export const HOME_ENTRANCE: Record<PlayerColor, number> = {
   [PlayerColor.GREEN]: 11,
   [PlayerColor.YELLOW]: 24,
   [PlayerColor.BLUE]: 37
+};
+
+export const CURRENCY_CONFIG: Record<CurrencyCode, { symbol: string, rate: number, label: string }> = {
+  BDT: { symbol: '৳', rate: 1, label: 'Bangladeshi Taka' },
+  USD: { symbol: '$', rate: 120, label: 'US Dollar (USDT)' },
+  INR: { symbol: '₹', rate: 1.4, label: 'Indian Rupee' }
 };
 
 export const COLORS = {
@@ -47,7 +53,3 @@ export const COLORS = {
     bgLight: 'bg-blue-100'
   }
 };
-
-// Map path index to Grid Coordinates (row, col) - 15x15 Grid
-// This is a simplified linear path mapping for the visualizer
-// We will calculate exact grid placement in the component

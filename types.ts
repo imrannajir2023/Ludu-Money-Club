@@ -12,6 +12,8 @@ export enum TokenState {
   WIN = 'WIN'
 }
 
+export type CurrencyCode = 'BDT' | 'USD' | 'INR';
+
 export interface Token {
   id: number;
   color: PlayerColor;
@@ -49,6 +51,7 @@ export interface PendingTransaction {
   type: 'DEPOSIT' | 'WITHDRAW';
   method: string;
   amount: number;
+  currency: CurrencyCode;
   phone: string;
   trxId?: string | null;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -59,7 +62,8 @@ export interface UserProfile {
   name: string;
   phone: string;
   password?: string;
-  balance: number;
+  balance: number; // Stored in base currency (BDT)
+  preferredCurrency?: CurrencyCode;
   avatar: string;
   country?: string;
   address?: string;

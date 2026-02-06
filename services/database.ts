@@ -82,6 +82,7 @@ export const databaseService = {
         password: user.password,
         balance: cleanBalance,
         avatar: user.avatar,
+        preferred_currency: user.preferredCurrency,
         last_login: new Date().toISOString()
       };
       
@@ -138,6 +139,7 @@ export const databaseService = {
         type: tx.type,
         method: tx.method,
         amount: Number(tx.amount) || 0,
+        currency: tx.currency,
         phone: normalizePhone(tx.phone),
         trx_id: tx.trxId,
         status: tx.status,
