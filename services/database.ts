@@ -22,7 +22,7 @@ const mapDbRowToTransaction = (row: any): PendingTransaction => {
     type: row.type as 'DEPOSIT' | 'WITHDRAW',
     method: row.method || '',
     amount: Number(row.amount) || 0,
-    currency: (row.currency as any) || 'BDT', // Safe fallback if column is missing or null
+    currency: (row.currency as any) || 'BDT', 
     phone: row.phone || '',
     trxId: row.trx_id || null,
     status: row.status as 'PENDING' | 'APPROVED' | 'REJECTED',
@@ -148,6 +148,7 @@ export const databaseService = {
   },
 
   async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
+    // IMPORTANT: Do NOT include 'id' here. Let the DB generate it.
     const fullDbData: any = {
       user_name: tx.userName,
       user_phone: normalizePhone(tx.userPhone),
@@ -166,14 +167,10 @@ export const databaseService = {
       const { error: error1 } = await supabase.from('transactions').insert([fullDbData]);
       
       if (error1) {
-        // Check if error is specifically about the 'currency' column missing in schema cache
+        // Handle missing currency column case if cache is stale
         if (error1.message?.includes("'currency' column") || error1.details?.includes("'currency' column")) {
-          console.warn("Supabase Schema Cache not yet updated for 'currency'. Retrying without it...");
-          
-          // Attempt 2: Fallback insert without currency column
           const { currency, ...fallbackData } = fullDbData;
           const { error: error2 } = await supabase.from('transactions').insert([fallbackData]);
-          
           if (error2) throw error2;
           return { success: true };
         }
@@ -182,7 +179,12 @@ export const databaseService = {
       return { success: true };
     } catch (error: any) {
       console.error("Transaction Creation Failed:", error);
-      return { success: false, message: error.message };
+      // Clean up descriptive error for the user
+      let msg = error.message;
+      if (msg.includes("column \"id\"")) {
+          msg = "Database Error: Please ensure 'id' column is set to IDENTITY/Auto-increment in Supabase SQL Editor.";
+      }
+      return { success: false, message: msg };
     }
   },
 
