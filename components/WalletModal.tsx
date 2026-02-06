@@ -38,7 +38,8 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
 
   if (!isOpen) return null;
 
-  const currentConfig = CURRENCY_CONFIG[currency];
+  // Added safety fallback for currentConfig
+  const currentConfig = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
 
   const handleTransaction = () => {
     const val = parseFloat(amount);
@@ -116,7 +117,7 @@ const WalletModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserPr
                onClick={() => setCurrency(c as CurrencyCode)}
                className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all ${currency === c ? 'bg-sky-500 text-white shadow-lg' : 'text-white/20 hover:text-white/40'}`}
              >
-               {c} ({CURRENCY_CONFIG[c as CurrencyCode].symbol})
+               {c} ({(CURRENCY_CONFIG[c as CurrencyCode] || CURRENCY_CONFIG['BDT']).symbol})
              </button>
            ))}
         </div>

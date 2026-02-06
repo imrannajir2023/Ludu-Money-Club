@@ -118,13 +118,15 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState('');
 
   const formatBalance = (bal: number) => {
-    const config = CURRENCY_CONFIG[currency];
+    // Safety check for CURRENCY_CONFIG lookup
+    const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
     const converted = bal / config.rate;
     return `${config.symbol}${converted.toLocaleString(undefined, { minimumFractionDigits: currency === 'BDT' ? 0 : 2, maximumFractionDigits: 2 })}`;
   };
 
   const getStakesByCurrency = () => {
-    const config = CURRENCY_CONFIG[currency];
+    // Safety check for CURRENCY_CONFIG lookup
+    const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
     if (currency === 'BDT') return [50, 100, 500, 1000];
     if (currency === 'USD') return [1, 5, 10, 50];
     if (currency === 'INR') return [50, 100, 500, 1000];
@@ -153,7 +155,10 @@ const App: React.FC = () => {
         const fresh = await databaseService.getUserByPhone(parsed.phone);
         if (fresh && !fresh.isBlocked) {
           setUser(fresh);
-          if (fresh.preferredCurrency) setCurrency(fresh.preferredCurrency);
+          // Only set currency if it's a valid key in CURRENCY_CONFIG
+          if (fresh.preferredCurrency && CURRENCY_CONFIG[fresh.preferredCurrency]) {
+            setCurrency(fresh.preferredCurrency);
+          }
           setTimeout(() => setView('LOBBY'), 1000);
         } else {
           localStorage.removeItem('LUDO_SESSION');
@@ -322,7 +327,8 @@ const App: React.FC = () => {
     if (won) {
       setGameState(p => p ? { ...p, winner: player.color } : null);
       if (!isLocalMode && user) {
-        const config = CURRENCY_CONFIG[currency];
+        // Safety check for CURRENCY_CONFIG lookup
+        const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
         const baseStake = selectedStake * config.rate;
         const prize = baseStake * (gameState.players.length - 0.2);
         const updatedUser = { ...user, balance: user.balance + prize };
@@ -394,7 +400,7 @@ const App: React.FC = () => {
   };
 
   const startFinding = () => {
-    const config = CURRENCY_CONFIG[currency];
+    const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
     const baseStake = selectedStake * config.rate;
     if (!user || user.balance < baseStake) return alert("ব্যালেন্স নেই, দয়া করে রিচার্জ করুন।");
     
@@ -428,7 +434,7 @@ const App: React.FC = () => {
         });
       } else {
         if (i === 0) {
-          const config = CURRENCY_CONFIG[currency];
+          const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
           const baseStake = selectedStake * config.rate;
           players.push({ id: 'user', name: user!.name, country: 'BD', flag: '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user!.avatar, tokens: [] });
           const updatedUser = { ...user!, balance: user!.balance - baseStake };
@@ -446,7 +452,7 @@ const App: React.FC = () => {
       currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: 'Started', consecutiveSixes: 0
     });
     setView('GAME');
-    addCommentary(local ? "Local game started!" : `Battle for ${CURRENCY_CONFIG[currency].symbol}${selectedStake} started!`, "Arena");
+    addCommentary(local ? "Local game started!" : `Battle for ${(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}${selectedStake} started!`, "Arena");
   };
 
   const addCommentary = async (evt: string, name: string) => {
@@ -560,7 +566,7 @@ const App: React.FC = () => {
                      onClick={() => setCurrency(c as CurrencyCode)} 
                      className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${currency === c ? 'bg-yellow-400 text-black shadow-lg scale-110' : 'text-white/30'}`}
                    >
-                     {CURRENCY_CONFIG[c as CurrencyCode].symbol}
+                     {(CURRENCY_CONFIG[c as CurrencyCode] || CURRENCY_CONFIG['BDT']).symbol}
                    </button>
                  ))}
               </div>
@@ -581,7 +587,7 @@ const App: React.FC = () => {
               <h2 className="text-5xl font-black italic uppercase text-white mb-8 tracking-tighter drop-shadow-xl">Global Arena</h2>
               <div className="flex flex-wrap justify-center gap-3 mb-12">
                 {getStakesByCurrency().map(s => (
-                  <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`px-5 py-3 rounded-2xl text-xs font-black border-2 transition-all ${selectedStake === s ? 'bg-yellow-400 border-yellow-300 text-black scale-110 shadow-xl' : 'bg-[#1e40af] border-transparent text-white/40 hover:bg-white/5'}`}>{CURRENCY_CONFIG[currency].symbol}{s}</button>
+                  <button key={s} onClick={() => { soundManager.play('click'); setSelectedStake(s); }} className={`px-5 py-3 rounded-2xl text-xs font-black border-2 transition-all ${selectedStake === s ? 'bg-yellow-400 border-yellow-300 text-black scale-110 shadow-xl' : 'bg-[#1e40af] border-transparent text-white/40 hover:bg-white/5'}`}>{(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}{s}</button>
                 ))}
               </div>
               <button onClick={startFinding} className="w-full py-6 bg-gradient-to-b from-yellow-400 to-amber-600 rounded-[30px] font-black text-2xl uppercase italic text-black border-b-[6px] border-amber-950 active:translate-y-2 active:border-b-0 shadow-2xl transition-all">Battle Now</button>
@@ -603,7 +609,7 @@ const App: React.FC = () => {
               <div className="absolute inset-0 flex items-center justify-center"><span className="text-7xl animate-bounce">🎲</span></div>
            </div>
            <h2 className="text-3xl font-black italic uppercase tracking-[0.2em] mb-4">Finding Rivals</h2>
-           <p className="text-yellow-400 font-bold uppercase text-xs mb-12 tracking-widest animate-pulse">Arena Stake: {CURRENCY_CONFIG[currency].symbol}{selectedStake}</p>
+           <p className="text-yellow-400 font-bold uppercase text-xs mb-12 tracking-widest animate-pulse">Arena Stake: {(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}{selectedStake}</p>
            <div className="flex gap-4 mb-16">
               {foundPlayers.map((p, i) => (
                 <div key={i} className="flex flex-col items-center animate-in zoom-in">
@@ -629,7 +635,7 @@ const App: React.FC = () => {
               ✕
             </button>
             <span className="bg-white/5 backdrop-blur-md px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 text-yellow-400">
-                {isLocalMode ? 'LOCAL MODE' : `ARENA • ${CURRENCY_CONFIG[currency].symbol}${selectedStake}`}
+                {isLocalMode ? 'LOCAL MODE' : `ARENA • ${(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}${selectedStake}`}
             </span>
           </div>
 
@@ -743,7 +749,7 @@ const App: React.FC = () => {
             onApproveTransaction={async (tx) => { 
               const target = allUsers.find(u => u.phone === tx.userPhone); 
               if (target) { 
-                const config = CURRENCY_CONFIG[tx.currency];
+                const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
                 const baseAmount = tx.amount * config.rate;
                 const updated = { ...target, balance: target.balance + baseAmount }; 
                 await databaseService.updateUser(updated); 

@@ -136,7 +136,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
     const amount = parseFloat(adjustAmount);
     if (isNaN(amount) || amount <= 0) return alert("সঠিক সংখ্যা লিখুন।");
 
-    const config = CURRENCY_CONFIG[adjustCurrency];
+    const config = CURRENCY_CONFIG[adjustCurrency] || CURRENCY_CONFIG['BDT'];
     const baseAmount = amount * config.rate;
     const newBalance = adjustType === 'add' ? selectedUser.balance + baseAmount : selectedUser.balance - baseAmount;
     const updatedUser = { ...selectedUser, balance: Math.max(0, newBalance) };
@@ -241,22 +241,25 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                </div>
 
                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-                  {Object.entries(stats.txByCurrency).map(([curr, data]) => (
-                    <div key={curr} className="bg-slate-900 border border-white/5 p-6 rounded-[32px] relative overflow-hidden group">
-                       <div className="absolute top-0 right-0 p-4 opacity-5 text-6xl font-black">{CURRENCY_CONFIG[curr as CurrencyCode].symbol}</div>
-                       <h4 className="font-black text-sky-400 mb-4">{curr} Flow</h4>
-                       <div className="space-y-2">
-                          <div className="flex justify-between text-[10px] font-black uppercase">
-                             <span className="text-green-500">Deposit:</span>
-                             <span>{CURRENCY_CONFIG[curr as CurrencyCode].symbol}{data.deposits.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-[10px] font-black uppercase">
-                             <span className="text-red-500">Withdraw:</span>
-                             <span>{CURRENCY_CONFIG[curr as CurrencyCode].symbol}{data.withdraws.toLocaleString()}</span>
-                          </div>
-                       </div>
-                    </div>
-                  ))}
+                  {Object.entries(stats.txByCurrency).map(([curr, data]) => {
+                    const config = CURRENCY_CONFIG[curr as CurrencyCode] || CURRENCY_CONFIG['BDT'];
+                    return (
+                      <div key={curr} className="bg-slate-900 border border-white/5 p-6 rounded-[32px] relative overflow-hidden group">
+                         <div className="absolute top-0 right-0 p-4 opacity-5 text-6xl font-black">{config.symbol}</div>
+                         <h4 className="font-black text-sky-400 mb-4">{curr} Flow</h4>
+                         <div className="space-y-2">
+                            <div className="flex justify-between text-[10px] font-black uppercase">
+                               <span className="text-green-500">Deposit:</span>
+                               <span>{config.symbol}{data.deposits.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px] font-black uppercase">
+                               <span className="text-red-500">Withdraw:</span>
+                               <span>{config.symbol}{data.withdraws.toLocaleString()}</span>
+                            </div>
+                         </div>
+                      </div>
+                    );
+                  })}
                </div>
             </div>
           )}
@@ -353,39 +356,42 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                </div>
 
                <div className="space-y-3">
-                  {filteredTxs.map(tx => (
-                    <div key={tx.id} className="bg-slate-900 border border-white/5 p-5 rounded-3xl flex items-center justify-between group hover:border-sky-500/40 transition-all">
-                       <div className="flex items-center gap-5">
-                          <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center p-2 shadow-lg">
-                             <img src={REAL_LOGOS[tx.method.toLowerCase()]} className="w-full h-full object-contain" />
-                          </div>
-                          <div>
-                             <div className="flex items-center gap-2">
-                                <span className="font-black text-white uppercase">{tx.userName}</span>
-                                <span className={`text-[7px] font-black px-2 py-0.5 rounded-full uppercase ${tx.type === 'DEPOSIT' ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>{tx.type === 'DEPOSIT' ? 'DEP' : 'WIT'}</span>
-                                <span className="bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full text-[7px] font-black">{tx.currency}</span>
-                             </div>
-                             <div className="flex gap-x-4 mt-0.5 text-[9px] font-bold text-white/30 uppercase">
-                                <span>📞 {tx.phone}</span>
-                                {tx.trxId && <span>Trx: <span className="text-sky-400 font-black">{tx.trxId}</span></span>}
-                                <span>{formatTimeAgo(tx.timestamp)}</span>
-                             </div>
-                          </div>
-                       </div>
-                       
-                       <div className="flex items-center gap-6">
-                          <div className="text-right">
-                             <p className="text-2xl font-black text-yellow-500">{CURRENCY_CONFIG[tx.currency].symbol}{tx.amount.toLocaleString()}</p>
-                          </div>
-                          {tx.status === 'PENDING' ? (
-                            <div className="flex gap-2">
-                               <button onClick={() => onApproveTransaction(tx)} className="bg-green-500 text-black px-4 py-2 rounded-xl font-black uppercase text-[9px]">Approve</button>
-                               <button onClick={() => onRejectTransaction(tx.id)} className="bg-red-500/10 text-red-500 border border-red-500/20 px-4 py-2 rounded-xl font-black uppercase text-[9px]">Reject</button>
+                  {filteredTxs.map(tx => {
+                    const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
+                    return (
+                      <div key={tx.id} className="bg-slate-900 border border-white/5 p-5 rounded-3xl flex items-center justify-between group hover:border-sky-500/40 transition-all">
+                         <div className="flex items-center gap-5">
+                            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center p-2 shadow-lg">
+                               <img src={REAL_LOGOS[tx.method.toLowerCase()]} className="w-full h-full object-contain" />
                             </div>
-                          ) : <span className={`text-[10px] font-black uppercase ${tx.status === 'APPROVED' ? 'text-green-500' : 'text-red-500'}`}>{tx.status}</span>}
-                       </div>
-                    </div>
-                  ))}
+                            <div>
+                               <div className="flex items-center gap-2">
+                                  <span className="font-black text-white uppercase">{tx.userName}</span>
+                                  <span className={`text-[7px] font-black px-2 py-0.5 rounded-full uppercase ${tx.type === 'DEPOSIT' ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>{tx.type === 'DEPOSIT' ? 'DEP' : 'WIT'}</span>
+                                  <span className="bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full text-[7px] font-black">{tx.currency}</span>
+                               </div>
+                               <div className="flex gap-x-4 mt-0.5 text-[9px] font-bold text-white/30 uppercase">
+                                  <span>📞 {tx.phone}</span>
+                                  {tx.trxId && <span>Trx: <span className="text-sky-400 font-black">{tx.trxId}</span></span>}
+                                  <span>{formatTimeAgo(tx.timestamp)}</span>
+                               </div>
+                            </div>
+                         </div>
+                         
+                         <div className="flex items-center gap-6">
+                            <div className="text-right">
+                               <p className="text-2xl font-black text-yellow-500">{config.symbol}{tx.amount.toLocaleString()}</p>
+                            </div>
+                            {tx.status === 'PENDING' ? (
+                              <div className="flex gap-2">
+                                 <button onClick={() => onApproveTransaction(tx)} className="bg-green-500 text-black px-4 py-2 rounded-xl font-black uppercase text-[9px]">Approve</button>
+                                 <button onClick={() => onRejectTransaction(tx.id)} className="bg-red-500/10 text-red-500 border border-red-500/20 px-4 py-2 rounded-xl font-black uppercase text-[9px]">Reject</button>
+                              </div>
+                            ) : <span className={`text-[10px] font-black uppercase ${tx.status === 'APPROVED' ? 'text-green-500' : 'text-red-500'}`}>{tx.status}</span>}
+                         </div>
+                      </div>
+                    );
+                  })}
                </div>
             </div>
           )}
