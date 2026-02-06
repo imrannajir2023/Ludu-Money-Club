@@ -144,6 +144,16 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Admin Auto-Refresh Interval
+  useEffect(() => {
+    let interval: any;
+    if (view === 'ADMIN') {
+      refreshAdminData();
+      interval = setInterval(refreshAdminData, 30000); // 30 sec auto refresh
+    }
+    return () => interval && clearInterval(interval);
+  }, [view, refreshAdminData]);
+
   // Initialize data
   useEffect(() => {
     const init = async () => {
@@ -166,8 +176,8 @@ const App: React.FC = () => {
       }
     };
     init();
-    const interval = setInterval(() => setLoadingProgress(p => (p < 100 ? p + 4 : 100)), 30);
-    return () => clearInterval(interval);
+    const progressInterval = setInterval(() => setLoadingProgress(p => (p < 100 ? p + 4 : 100)), 30);
+    return () => clearInterval(progressInterval);
   }, []);
 
   // Admin tap logic
@@ -177,13 +187,6 @@ const App: React.FC = () => {
       setAdminTapCount(0);
     }
   }, [adminTapCount]);
-
-  // Handle auto-refresh when entering admin view
-  useEffect(() => {
-    if (view === 'ADMIN') {
-      refreshAdminData();
-    }
-  }, [view, refreshAdminData]);
 
   const nextTurn = useCallback(() => {
     setGameState(prev => {
@@ -464,31 +467,43 @@ const App: React.FC = () => {
   };
 
   const onSubmitTransaction = async (tx: PendingTransaction) => {
-    // Deduct balance for withdrawals immediately when request is submitted
+    // 1. Withdrawal Balance Check & Deduction
     if (tx.type === 'WITHDRAW' && user) {
       const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
       const baseAmount = tx.amount * config.rate;
-      if (user.balance >= baseAmount) {
-        const updatedUser = { ...user, balance: user.balance - baseAmount };
-        const updateResult = await databaseService.updateUser(updatedUser);
-        if (updateResult.success) {
-           setUser(updatedUser);
-        } else {
-           alert("ব্যালেন্স আপডেট করতে ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।");
-           return;
-        }
-      } else {
+      if (user.balance < baseAmount) {
         alert("আপনার ব্যালেন্স পর্যাপ্ত নয়!");
         return;
       }
+      
+      // Deduct balance from memory first
+      const updatedUser = { ...user, balance: user.balance - baseAmount };
+      
+      // Attempt to update database
+      const updateResult = await databaseService.updateUser(updatedUser);
+      if (updateResult.success) {
+         setUser(updatedUser);
+      } else {
+         alert("ব্যালেন্স আপডেট করতে ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।");
+         return;
+      }
     }
     
+    // 2. Create Transaction Record
     const result = await databaseService.createTransaction(tx);
     if (result.success) {
       setWalletOpen(false);
       alert("আপনার অনুরোধটি পাঠানো হয়েছে!");
       if (view === 'ADMIN') refreshAdminData(); 
     } else {
+      // Refund if insertion failed for withdrawal
+      if (tx.type === 'WITHDRAW' && user) {
+        const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
+        const baseAmount = tx.amount * config.rate;
+        const refundUser = { ...user, balance: user.balance + baseAmount };
+        await databaseService.updateUser(refundUser);
+        setUser(refundUser);
+      }
       alert("লেনদেন সফল হয়নি: " + result.message);
     }
   };
@@ -778,11 +793,13 @@ const App: React.FC = () => {
                 const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
                 const baseAmount = tx.amount * config.rate;
                 
+                // For deposit, we add balance on approval
                 if (tx.type === 'DEPOSIT') {
                   const updated = { ...target, balance: target.balance + baseAmount }; 
                   await databaseService.updateUser(updated); 
                   setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); 
                 }
+                // For withdrawal, balance was already deducted on request creation.
                 
                 await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
                 setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 

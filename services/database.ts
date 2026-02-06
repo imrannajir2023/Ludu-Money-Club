@@ -13,17 +13,21 @@ const normalizePhone = (p: string | undefined): string => {
   return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
 };
 
-const toCamelCase = (obj: any): any => {
-  if (Array.isArray(obj)) return obj.map(toCamelCase);
-  if (obj !== null && typeof obj === 'object') {
-    const n: any = {};
-    Object.keys(obj).forEach(k => {
-      const key = k.replace(/(_\w)/g, m => m[1].toUpperCase());
-      n[key] = obj[k];
-    });
-    return n;
-  }
-  return obj;
+// More robust camelCase converter
+const mapDbRowToTransaction = (row: any): PendingTransaction => {
+  return {
+    id: row.id?.toString() || '',
+    userName: row.user_name || 'Unknown',
+    userPhone: row.user_phone || '',
+    type: row.type as 'DEPOSIT' | 'WITHDRAW',
+    method: row.method || '',
+    amount: Number(row.amount) || 0,
+    currency: (row.currency as any) || 'BDT',
+    phone: row.phone || '',
+    trxId: row.trx_id || null,
+    status: row.status as 'PENDING' | 'APPROVED' | 'REJECTED',
+    timestamp: row.timestamp || row.created_at || new Date().toISOString()
+  };
 };
 
 export const databaseService = {
@@ -34,16 +38,21 @@ export const databaseService = {
     try {
       const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map(u => {
-        const camel = toCamelCase(u);
-        camel.balance = Number(u.balance) || 0;
-        camel.stats = {
+      return (data || []).map(u => ({
+        ...u,
+        name: u.name,
+        phone: u.phone,
+        balance: Number(u.balance) || 0,
+        avatar: u.avatar,
+        isBlocked: u.is_blocked,
+        preferredCurrency: u.preferred_currency,
+        stats: {
            totalGames: Number(u.total_games) || 0,
            wins: Number(u.wins) || 0,
            totalWinnings: Number(u.total_winnings) || 0
-        };
-        return camel;
-      });
+        },
+        history: []
+      }));
     } catch (error: any) {
       console.error("getUsers Error:", error);
       return [];
@@ -57,14 +66,18 @@ export const databaseService = {
       if (error) throw error;
       if (!data) return null;
       
-      const camel = toCamelCase(data);
-      camel.balance = Number(data.balance) || 0;
-      camel.stats = {
-        totalGames: Number(data.total_games) || 0,
-        wins: Number(data.wins) || 0,
-        totalWinnings: Number(data.total_winnings) || 0
+      return {
+        ...data,
+        balance: Number(data.balance) || 0,
+        isBlocked: data.is_blocked,
+        preferredCurrency: data.preferred_currency,
+        stats: {
+          totalGames: Number(data.total_games) || 0,
+          wins: Number(data.wins) || 0,
+          totalWinnings: Number(data.total_winnings) || 0
+        },
+        history: []
       };
-      return camel;
     } catch (e) {
       console.error("getUserByPhone Error:", e);
       return null;
@@ -74,19 +87,17 @@ export const databaseService = {
   async updateUser(user: UserProfile): Promise<{success: boolean, message?: string}> {
     try {
       const normalizedPhone = normalizePhone(user.phone);
-      const cleanBalance = Number(user.balance) || 0;
-      
       const dbReadyData: any = {
         phone: normalizedPhone,
         name: user.name,
         password: user.password,
-        balance: cleanBalance,
+        balance: Number(user.balance) || 0,
         avatar: user.avatar,
         preferred_currency: user.preferredCurrency,
+        is_blocked: user.isBlocked,
         last_login: new Date().toISOString()
       };
       
-      if (user.isBlocked !== undefined) dbReadyData.is_blocked = user.isBlocked;
       if (user.stats) {
         dbReadyData.total_games = Number(user.stats.totalGames) || 0;
         dbReadyData.wins = Number(user.stats.wins) || 0;
@@ -105,12 +116,11 @@ export const databaseService = {
   async getPendingTransactions(): Promise<PendingTransaction[]> {
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('status', 'PENDING').order('timestamp', { ascending: false });
-      if (error) throw error;
-      return (data || []).map(t => {
-        const camel = toCamelCase(t);
-        camel.amount = Number(t.amount) || 0;
-        return camel;
-      });
+      if (error) {
+        console.error("getPendingTransactions Error:", error);
+        throw error;
+      }
+      return (data || []).map(mapDbRowToTransaction);
     } catch (error: any) {
       return [];
     }
@@ -120,10 +130,7 @@ export const databaseService = {
     try {
       const { data, error } = await supabase.from('transactions').select('*').eq('id', txId).maybeSingle();
       if (error) throw error;
-      if (!data) return null;
-      const camel = toCamelCase(data);
-      camel.amount = Number(data.amount) || 0;
-      return camel;
+      return data ? mapDbRowToTransaction(data) : null;
     } catch (e) {
       return null;
     }
@@ -133,12 +140,9 @@ export const databaseService = {
     try {
       const { data, error } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false });
       if (error) throw error;
-      return (data || []).map(t => {
-        const camel = toCamelCase(t);
-        camel.amount = Number(t.amount) || 0;
-        return camel;
-      });
+      return (data || []).map(mapDbRowToTransaction);
     } catch (error: any) {
+      console.error("getAllTransactions Error:", error);
       return [];
     }
   },
@@ -146,7 +150,6 @@ export const databaseService = {
   async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
     try {
       const dbData = {
-        id: tx.id,
         user_name: tx.userName,
         user_phone: normalizePhone(tx.userPhone),
         type: tx.type,
@@ -160,10 +163,12 @@ export const databaseService = {
       };
       
       const { error } = await supabase.from('transactions').insert([dbData]);
-      if (error) throw error;
+      if (error) {
+        console.error("Insert Transaction Error:", error);
+        throw error;
+      }
       return { success: true };
     } catch (error: any) {
-      console.error("createTransaction Error:", error);
       return { success: false, message: error.message };
     }
   },
