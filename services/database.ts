@@ -13,7 +13,7 @@ const normalizePhone = (p: string | undefined): string => {
   return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
 };
 
-// Map DB row to Transaction including 'currency' column
+// Map DB row to Transaction with fallback for missing currency
 const mapDbRowToTransaction = (row: any): PendingTransaction => {
   return {
     id: row.id?.toString() || '',
@@ -22,7 +22,7 @@ const mapDbRowToTransaction = (row: any): PendingTransaction => {
     type: row.type as 'DEPOSIT' | 'WITHDRAW',
     method: row.method || '',
     amount: Number(row.amount) || 0,
-    currency: (row.currency as any) || 'BDT', // Now mapping the currency column correctly
+    currency: (row.currency as any) || 'BDT', // Safe fallback if column is missing or null
     phone: row.phone || '',
     trxId: row.trx_id || null,
     status: row.status as 'PENDING' | 'APPROVED' | 'REJECTED',
@@ -148,27 +148,40 @@ export const databaseService = {
   },
 
   async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
+    const fullDbData: any = {
+      user_name: tx.userName,
+      user_phone: normalizePhone(tx.userPhone),
+      type: tx.type,
+      method: tx.method,
+      amount: Number(tx.amount) || 0,
+      currency: tx.currency,
+      phone: normalizePhone(tx.phone),
+      trx_id: tx.trxId,
+      status: tx.status,
+      timestamp: tx.timestamp
+    };
+
     try {
-      const dbData: any = {
-        user_name: tx.userName,
-        user_phone: normalizePhone(tx.userPhone),
-        type: tx.type,
-        method: tx.method,
-        amount: Number(tx.amount) || 0,
-        currency: tx.currency, // Re-enabled currency column
-        phone: normalizePhone(tx.phone),
-        trx_id: tx.trxId,
-        status: tx.status,
-        timestamp: tx.timestamp
-      };
+      // Attempt 1: Full insert with currency
+      const { error: error1 } = await supabase.from('transactions').insert([fullDbData]);
       
-      const { error } = await supabase.from('transactions').insert([dbData]);
-      if (error) {
-        console.error("Insert Transaction Error:", error);
-        throw error;
+      if (error1) {
+        // Check if error is specifically about the 'currency' column missing in schema cache
+        if (error1.message?.includes("'currency' column") || error1.details?.includes("'currency' column")) {
+          console.warn("Supabase Schema Cache not yet updated for 'currency'. Retrying without it...");
+          
+          // Attempt 2: Fallback insert without currency column
+          const { currency, ...fallbackData } = fullDbData;
+          const { error: error2 } = await supabase.from('transactions').insert([fallbackData]);
+          
+          if (error2) throw error2;
+          return { success: true };
+        }
+        throw error1;
       }
       return { success: true };
     } catch (error: any) {
+      console.error("Transaction Creation Failed:", error);
       return { success: false, message: error.message };
     }
   },
