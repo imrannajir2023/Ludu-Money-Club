@@ -467,6 +467,31 @@ const App: React.FC = () => {
     setSettingsOpen(false);
   };
 
+  const onSubmitTransaction = async (tx: PendingTransaction) => {
+    // Deduct balance for withdrawals immediately when request is submitted
+    if (tx.type === 'WITHDRAW' && user) {
+      const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
+      const baseAmount = tx.amount * config.rate;
+      if (user.balance >= baseAmount) {
+        const updatedUser = { ...user, balance: user.balance - baseAmount };
+        await databaseService.updateUser(updatedUser);
+        setUser(updatedUser);
+      } else {
+        alert("আপনার ব্যালেন্স পর্যাপ্ত নয়!");
+        return;
+      }
+    }
+    
+    const result = await databaseService.createTransaction(tx);
+    if (result.success) {
+      setWalletOpen(false);
+      alert("আপনার অনুরোধটি পাঠানো হয়েছে!");
+      refreshAdminData(); // Refresh list if admin is viewing
+    } else {
+      alert("লেনদেন সফল হয়নি: " + result.message);
+    }
+  };
+
   return (
     <div className="h-screen w-full flex flex-col relative overflow-hidden bg-[#020617] text-white">
       {view === 'SPLASH' && (
@@ -734,7 +759,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={async (tx) => { await databaseService.createTransaction(tx); setWalletOpen(false); alert("আপনার অনুরোধটি পাঠানো হয়েছে!"); }} />}
+      {isWalletOpen && user && <WalletModal isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} user={user} onSubmitTransaction={onSubmitTransaction} />}
       {isSettingsOpen && <SettingsModal isOpen={isSettingsOpen} onClose={() => setSettingsOpen(false)} onLogout={handleLogout} />}
       
       {view === 'ADMIN' && (
@@ -751,17 +776,35 @@ const App: React.FC = () => {
               if (target) { 
                 const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
                 const baseAmount = tx.amount * config.rate;
-                const updated = { ...target, balance: target.balance + baseAmount }; 
-                await databaseService.updateUser(updated); 
+                
+                // If deposit, add balance. If withdrawal, balance was already deducted on request.
+                if (tx.type === 'DEPOSIT') {
+                  const updated = { ...target, balance: target.balance + baseAmount }; 
+                  await databaseService.updateUser(updated); 
+                  setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); 
+                }
+                
                 await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
-                setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); 
                 setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 
                 alert("অনুমোদিত হয়েছে!"); 
               } 
             }} 
             onRejectTransaction={async (txId) => { 
+              // If it was a withdrawal, we need to refund the balance
+              const tx = await databaseService.getTransactionById(txId);
+              if (tx && tx.type === 'WITHDRAW') {
+                const target = allUsers.find(u => u.phone === tx.userPhone);
+                if (target) {
+                  const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
+                  const baseAmount = tx.amount * config.rate;
+                  const updated = { ...target, balance: target.balance + baseAmount };
+                  await databaseService.updateUser(updated);
+                  setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u));
+                }
+              }
               await databaseService.updateTransactionStatus(txId, 'REJECTED'); 
               setPendingTransactions(prev => prev.filter(p => p.id !== txId)); 
+              alert("অনুরোধটি বাতিল করা হয়েছে এবং টাকা ফেরত দেওয়া হয়েছে (যদি প্রযোজ্য হয়)।");
             }} 
             onExit={() => setView('LOBBY')} 
             onRefreshData={refreshAdminData} 

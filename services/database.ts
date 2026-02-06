@@ -116,6 +116,19 @@ export const databaseService = {
     }
   },
 
+  async getTransactionById(txId: string): Promise<PendingTransaction | null> {
+    try {
+      const { data, error } = await supabase.from('transactions').select('*').eq('id', txId).maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      const camel = toCamelCase(data);
+      camel.amount = Number(data.amount) || 0;
+      return camel;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async getAllTransactions(): Promise<PendingTransaction[]> {
     try {
       const { data, error } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false });
