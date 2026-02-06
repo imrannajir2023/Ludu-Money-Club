@@ -16,7 +16,7 @@ const normalizePhone = (p: string | undefined): string => {
 // Map DB row to Transaction with fallback for missing currency
 const mapDbRowToTransaction = (row: any): PendingTransaction => {
   return {
-    id: row.id?.toString() || '',
+    id: row.id?.toString() || '', // Safe conversion for BIGINT identity column
     userName: row.user_name || 'Unknown',
     userPhone: row.user_phone || '',
     type: row.type as 'DEPOSIT' | 'WITHDRAW',
@@ -148,7 +148,7 @@ export const databaseService = {
   },
 
   async createTransaction(tx: PendingTransaction): Promise<{success: boolean, message?: string}> {
-    // IMPORTANT: Do NOT include 'id' here. Let the DB generate it.
+    // Explicitly exclude ID for auto-incrementing identity columns
     const fullDbData: any = {
       user_name: tx.userName,
       user_phone: normalizePhone(tx.userPhone),
@@ -163,28 +163,27 @@ export const databaseService = {
     };
 
     try {
-      // Attempt 1: Full insert with currency
-      const { error: error1 } = await supabase.from('transactions').insert([fullDbData]);
+      const { error } = await supabase.from('transactions').insert([fullDbData]);
       
-      if (error1) {
-        // Handle missing currency column case if cache is stale
-        if (error1.message?.includes("'currency' column") || error1.details?.includes("'currency' column")) {
+      if (error) {
+        // Safe fallback if 'currency' column isn't in cache yet
+        if (error.message?.includes("'currency' column") || error.details?.includes("'currency' column")) {
           const { currency, ...fallbackData } = fullDbData;
-          const { error: error2 } = await supabase.from('transactions').insert([fallbackData]);
-          if (error2) throw error2;
+          const { error: errorFallback } = await supabase.from('transactions').insert([fallbackData]);
+          if (errorFallback) throw errorFallback;
           return { success: true };
         }
-        throw error1;
+        throw error;
       }
       return { success: true };
     } catch (error: any) {
       console.error("Transaction Creation Failed:", error);
-      // Clean up descriptive error for the user
-      let msg = error.message;
-      if (msg.includes("column \"id\"")) {
-          msg = "Database Error: Please ensure 'id' column is set to IDENTITY/Auto-increment in Supabase SQL Editor.";
-      }
-      return { success: false, message: msg };
+      return { 
+        success: false, 
+        message: error.message.includes("id") 
+          ? "Database Error: Please ensure you ran the correct BIGINT SQL script in Supabase."
+          : error.message 
+      };
     }
   },
 
