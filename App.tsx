@@ -131,6 +131,22 @@ const App: React.FC = () => {
     return [50, 100, 500, 1000];
   };
 
+  const updateCurrency = async (newCurr: CurrencyCode) => {
+    soundManager.play('click');
+    setCurrency(newCurr);
+    
+    // Update selected stake to first valid stake of new currency to avoid sync issues
+    const stakes = newCurr === 'USD' ? [1, 5, 10, 50] : [50, 100, 500, 1000];
+    setSelectedStake(stakes[0]);
+    
+    // Persist to DB for the user
+    if (user) {
+      const updated = { ...user, preferredCurrency: newCurr };
+      setUser(updated);
+      await databaseService.updateUser(updated);
+    }
+  };
+
   const detectAutoCurrency = async (): Promise<{ code: CurrencyCode, country: string }> => {
     try {
       const resp = await fetch('https://ipapi.co/json/');
@@ -319,13 +335,10 @@ const App: React.FC = () => {
     } else {
       const targetPos = (player.tokens[tIdx].distanceTraveled + START_POSITIONS[player.color]) % 52;
       
-      // Capture Logic Fix: Only capture if we are on the shared circular path (distanceTraveled <= 50)
-      // distanceTraveled 51-56 are in the colored home lanes where pieces are safe from capture.
       if (player.tokens[tIdx].distanceTraveled <= 50 && !SAFE_SPOTS.includes(targetPos)) {
         players.forEach((otherP, otherPIdx) => {
           if (otherPIdx === playerIdx) return;
           otherP.tokens.forEach((otherT, otherTIdx) => {
-            // Also ensure the target is on the shared path and not already finished
             if (otherT.state === TokenState.PATH && otherT.distanceTraveled <= 50) {
               const otherAbsPos = (otherT.distanceTraveled + START_POSITIONS[otherT.color]) % 52;
               if (otherAbsPos === targetPos) {
@@ -405,7 +418,6 @@ const App: React.FC = () => {
           setAuthError('ভুল পাসওয়ার্ড বা মোবাইল নম্বর।');
         } else { 
           let finalUser = existing;
-          // Auto-detect currency if not set for existing user
           if (!existing.preferredCurrency) {
             finalUser = { ...existing, preferredCurrency: autoCurrency, country: autoCountry };
             await databaseService.updateUser(finalUser);
@@ -441,7 +453,6 @@ const App: React.FC = () => {
     setFindingTimer(6);
     setFoundPlayers([{ name: user.name, avatar: user.avatar }]);
     
-    // logic fix: only add as many bots as needed for the selected player count
     const interval = setInterval(() => {
       setFindingTimer(t => {
         if (t <= 1) { 
@@ -449,22 +460,17 @@ const App: React.FC = () => {
           prepareGame(false); 
           return 0; 
         }
-
-        // 2 Player game: Add 1 bot at t=4
         if (playerCount === 2) {
           if (t === 4 && foundPlayers.length < 2) {
             const bot = getRandomBotIdentity();
             setFoundPlayers(p => [...p, { name: bot.name, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bot.name}` }]);
           }
-        } 
-        // 4 Player game: Add 3 bots at t=5, t=3, t=2
-        else if (playerCount === 4) {
+        } else if (playerCount === 4) {
           if ((t === 5 || t === 3 || t === 2) && foundPlayers.length < 4) {
             const bot = getRandomBotIdentity();
             setFoundPlayers(p => [...p, { name: bot.name, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bot.name}` }]);
           }
         }
-
         return t - 1;
       });
     }, 1000);
@@ -472,14 +478,10 @@ const App: React.FC = () => {
 
   const prepareGame = (local: boolean) => {
     const activeCount = local ? localPlayerCount : playerCount;
-    // Standard order: Red, Green, Yellow, Blue. 
-    // Human is always index 0. We want index 0 to be BLUE (Bottom-Left).
-    // So the sequence for 4 players is Blue (Human), Red (Bot), Green (Bot), Yellow (Bot).
     const colors = [PlayerColor.BLUE, PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW];
     const players: Player[] = [];
     
     for (let i = 0; i < activeCount; i++) {
-      // For 2 players, BLUE vs GREEN (Opposite)
       const color = activeCount === 2 ? (i === 0 ? PlayerColor.BLUE : PlayerColor.GREEN) : colors[i];
       if (local) {
         players.push({ 
@@ -633,11 +635,11 @@ const App: React.FC = () => {
               <div className="w-12 h-12 rounded-2xl border-2 border-yellow-400 bg-slate-800 overflow-hidden shadow-lg shadow-yellow-400/10"><img src={user.avatar} className="w-full h-full object-cover" /></div>
               <div>
                 <h3 className="text-sm font-black uppercase italic tracking-tighter">{user.name}</h3>
-                <p className="text-[10px] text-yellow-400/50 font-bold uppercase tracking-widest">{user.country || 'Global'} Rank #242</p>
+                <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Global Rank #242</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={() => { soundManager.play('click'); setWalletOpen(true); }} className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-xl">
+              <button onClick={() => { soundManager.play('click'); setWalletOpen(true); }} className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-xl hover:bg-white/10 transition-all">
                 <span className="text-sm font-black text-yellow-400">{formatBalance(user.balance)}</span>
                 <span className="w-5 h-5 bg-yellow-400 text-black rounded-full flex items-center justify-center text-[10px] font-black">+</span>
               </button>
@@ -647,10 +649,25 @@ const App: React.FC = () => {
 
           <div className="px-6 mt-8 space-y-8">
             <div className="bg-[#2b64f3] rounded-[50px] border-[12px] border-[#1e4ccf] p-10 flex flex-col items-center shadow-2xl relative overflow-hidden group">
-              <div className="bg-[#1e40af] p-1.5 rounded-full flex w-full max-w-[200px] mb-8 shadow-inner">
+              {/* Game Mode Toggles */}
+              <div className="flex bg-[#1e40af] p-1.5 rounded-full w-full max-w-[200px] mb-4 shadow-inner">
                 <button onClick={() => { soundManager.play('click'); setPlayerCount(2); }} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 2 ? 'bg-yellow-400 text-black shadow-lg' : 'text-white/40'}`}>2 Player</button>
                 <button onClick={() => { soundManager.play('click'); setPlayerCount(4); }} className={`flex-1 py-3 rounded-full text-[10px] font-black uppercase transition-all ${playerCount === 4 ? 'bg-yellow-400 text-black shadow-lg' : 'text-white/40'}`}>4 Player</button>
               </div>
+
+              {/* Currency Toggles (Golden Premium Style) */}
+              <div className="flex bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 p-1 rounded-full mb-8 border border-amber-600/30 shadow-[0_4px_15px_rgba(245,158,11,0.2)]">
+                {(['BDT', 'USD', 'INR'] as CurrencyCode[]).map(c => (
+                  <button 
+                    key={c} 
+                    onClick={() => updateCurrency(c)}
+                    className={`px-7 py-2.5 rounded-full text-[10px] font-black uppercase transition-all duration-300 ${currency === c ? 'bg-black/80 text-white shadow-lg scale-105' : 'text-black/40 hover:text-black/60'}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+
               <h2 className="text-5xl font-black italic uppercase text-white mb-8 tracking-tighter drop-shadow-xl">Global Arena</h2>
               <div className="flex flex-wrap justify-center gap-3 mb-12">
                 {getStakesByCurrency().map(s => (
@@ -672,7 +689,6 @@ const App: React.FC = () => {
         <div className="h-full flex flex-col items-center justify-center p-8 bg-gradient-to-br from-purple-900 to-indigo-950 animate-in fade-in">
            <div className="w-full max-sm bg-black/40 backdrop-blur-3xl border border-white/10 p-8 rounded-[40px] shadow-2xl">
               <h2 className="text-4xl font-black italic uppercase text-white text-center mb-10 tracking-tighter">Match Setup</h2>
-              
               <div className="mb-10">
                  <p className="text-[10px] font-black uppercase text-purple-400 mb-4 tracking-widest text-center">Select Player Count</p>
                  <div className="flex gap-2 p-1.5 bg-black/40 rounded-[28px] border border-white/5">
@@ -687,7 +703,6 @@ const App: React.FC = () => {
                     ))}
                  </div>
               </div>
-
               <div className="space-y-4 mb-10 max-h-[240px] overflow-y-auto no-scrollbar pr-1">
                  {[...Array(localPlayerCount)].map((_, i) => (
                     <div key={i} className="relative">
@@ -706,7 +721,6 @@ const App: React.FC = () => {
                     </div>
                  ))}
               </div>
-
               <div className="flex flex-col gap-3">
                  <button onClick={() => prepareGame(true)} className="w-full py-6 bg-gradient-to-b from-purple-400 to-indigo-600 text-white rounded-[30px] font-black text-2xl uppercase italic border-b-[6px] border-indigo-950 active:translate-y-2 active:border-b-0 shadow-2xl transition-all">Start Game</button>
                  <button onClick={() => setView('LOBBY')} className="w-full py-4 text-white/20 font-black uppercase text-[10px] tracking-widest text-center">Back to Lobby</button>
@@ -717,7 +731,6 @@ const App: React.FC = () => {
 
       {view === 'FINDING' && (
         <div className="h-full flex flex-col items-center justify-center p-8 animate-in fade-in bg-[#050a18]">
-           {/* Central Dice Container */}
            <div className="relative w-64 h-64 mb-12 flex items-center justify-center">
               <div className="absolute inset-0 border-[2px] border-white/5 rounded-full"></div>
               <div className="bg-white w-16 h-16 rounded-xl shadow-2xl border-2 border-slate-200 flex flex-wrap p-2 rotate-12 relative animate-pulse">
@@ -728,14 +741,10 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 flex items-center justify-center"><div className="w-3 h-3 bg-red-600 rounded-full"></div></div>
               </div>
            </div>
-
-           {/* Title and Stake */}
            <div className="text-center space-y-2 mb-16">
               <h2 className="text-4xl font-black italic uppercase tracking-[0.15em] text-white">FINDING RIVALS</h2>
               <p className="text-[#fbbf24] font-black uppercase text-[10px] tracking-[0.2em]">ARENA STAKE: {(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}{selectedStake}</p>
            </div>
-
-           {/* Avatars Grid */}
            <div className="flex gap-6 mb-20 min-h-[100px] items-start justify-center">
               {foundPlayers.map((p, i) => (
                 <div key={i} className="flex flex-col items-center animate-in zoom-in duration-300">
@@ -745,7 +754,6 @@ const App: React.FC = () => {
                    <span className="text-[10px] font-black uppercase text-white/60 tracking-tighter whitespace-nowrap">{p.name.split(' ')[0]}</span>
                 </div>
               ))}
-              {/* Empty slots for missing players */}
               {[...Array(playerCount - foundPlayers.length)].map((_, i) => (
                 <div key={i} className="flex flex-col items-center opacity-10 animate-pulse">
                    <div className="w-[72px] h-[72px] rounded-2xl border-2 border-white/20 bg-white/5 flex items-center justify-center mb-3">
@@ -755,8 +763,6 @@ const App: React.FC = () => {
                 </div>
               ))}
            </div>
-
-           {/* Cancel Action */}
            <button 
              onClick={() => setView('LOBBY')} 
              className="px-12 py-4 rounded-full border border-white/10 text-white/30 font-black uppercase text-[10px] tracking-widest hover:text-white hover:border-white/30 transition-all duration-300 active:scale-95"
@@ -779,7 +785,6 @@ const App: React.FC = () => {
                 {isLocalMode ? 'LOCAL MODE' : `ARENA • ${(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}${selectedStake}`}
             </span>
           </div>
-
           <div className="flex-1 flex flex-col items-center justify-center mt-12 mb-24">
              <div className="w-full max-w-[580px] aspect-square relative scale-[0.85] sm:scale-100 transition-transform">
                 <LudoBoard 
@@ -788,29 +793,18 @@ const App: React.FC = () => {
                   validTokens={gameState.isDiceRolled && !isMoving ? gameState.players[gameState.currentPlayerIndex].tokens.filter(t => t.state !== TokenState.WIN && (t.state === TokenState.HOME ? gameState.diceValue === 6 : t.distanceTraveled + gameState.diceValue! <= 56)).map(t => t.id) : []} 
                   currentPlayerColor={gameState.players[gameState.currentPlayerIndex].color} 
                 />
-                
                 {gameState.players.map((p, i) => {
                   const isActive = gameState.currentPlayerIndex === i;
-                  
-                  // Mapping player colors to visual panel positions:
-                  // RED -> Top Left
-                  // GREEN -> Top Right
-                  // YELLOW -> Bottom Right
-                  // BLUE -> Bottom Left (Human Player index 0 is always assigned Blue color now)
                   const panelPositions: Record<PlayerColor, string> = {
                     [PlayerColor.RED]: "top-[-120px] left-0",
                     [PlayerColor.GREEN]: "top-[-120px] right-0",
                     [PlayerColor.YELLOW]: "bottom-[-120px] right-0",
                     [PlayerColor.BLUE]: "bottom-[-120px] left-0"
                   };
-                  
                   let posClass = panelPositions[p.color];
-                  
-                  // Handle 2-player mode alignment visually opposite
                   if (gameState.players.length === 2) {
                     posClass = p.color === PlayerColor.BLUE ? "bottom-[-120px] left-0" : "top-[-120px] right-0";
                   }
-                  
                   return (
                     <div key={p.id} className={`absolute ${posClass}`}>
                        <PlayerPanel player={p} isActive={isActive} diceValue={gameState.diceValue} isRolling={isRolling} onRoll={rollDice} isDiceRolled={gameState.isDiceRolled} />
@@ -819,14 +813,12 @@ const App: React.FC = () => {
                 })}
              </div>
           </div>
-
           <div className="fixed bottom-8 left-0 right-0 flex justify-center px-10 z-[150]">
             <div className="bg-white/5 backdrop-blur-2xl border border-white/10 p-5 rounded-[40px] w-full max-w-sm h-14 flex items-center gap-4 shadow-2xl">
                <span className="text-xl">🎙️</span>
                <p className="text-[10px] font-black italic text-white/90 truncate uppercase tracking-widest leading-none">{commentary}</p>
             </div>
           </div>
-
           {showExitWarning && (
             <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6 animate-in fade-in">
               <div className="bg-slate-900 p-10 rounded-[40px] border border-white/10 w-full max-w-xs text-center shadow-2xl">
@@ -845,46 +837,24 @@ const App: React.FC = () => {
       {showAdminLogin && (
         <div className="fixed inset-0 bg-[#020617] backdrop-blur-2xl z-[1000] flex flex-col items-center justify-center p-8 animate-in fade-in duration-300">
           <div className="bg-[#0f172a] p-12 rounded-[50px] w-full max-sm border border-white/5 shadow-[0_0_80px_rgba(0,0,0,0.8)] flex flex-col items-center">
-            
             <div className="w-24 h-24 bg-[#1e293b] rounded-3xl border border-sky-500/20 flex items-center justify-center mb-8">
                <div className="w-12 h-12 flex items-center justify-center bg-white rounded-full overflow-hidden p-1.5">
-                  <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444'%3E%3Cpath d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.5 1.1 2.5 2.5S13.4 12 12 12s-2.5-1.1-2.5-2.5S10.6 7 12 7zm0 13.92c-3.13-1.07-5.5-4.22-5.5-7.42 0-.28.02-.56.07-.83 1.34 1.1 3.2 1.83 5.43 1.83 2.23 0 4.09-.73 5.43-1.83.05.27.07.55.07.83 0 3.2-2.37 6.35-5.5 7.42z'/%3E%3C/svg%3E" alt="Shield Icon" />
+                  <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444'%3E%3Cpath d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z'/%3E%3C/svg%3E" alt="Shield Icon" />
                </div>
             </div>
-
             <h2 className="text-3xl font-black italic uppercase text-[#42dbff] tracking-tight mb-1">ADMIN PORTAL</h2>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-12">INTERNAL ACCESS ONLY</p>
-
             <div className="w-full space-y-4 mb-10">
                <div className="relative">
                   <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30 text-sky-400">🆔</span>
-                  <input 
-                    type="text" 
-                    placeholder="Admin ID" 
-                    value={adminId}
-                    onChange={e => setAdminId(e.target.value)}
-                    className="w-full bg-[#050a18] border border-white/5 p-5 pl-14 rounded-2xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-sky-500/50 transition-all" 
-                  />
+                  <input type="text" placeholder="Admin ID" value={adminId} onChange={e => setAdminId(e.target.value)} className="w-full bg-[#050a18] border border-white/5 p-5 pl-14 rounded-2xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-sky-500/50 transition-all" />
                </div>
                <div className="relative">
                   <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30 text-yellow-400">🔑</span>
-                  <input 
-                    type="password" 
-                    placeholder="Password" 
-                    value={adminPass}
-                    onChange={e => setAdminPass(e.target.value)}
-                    className="w-full bg-[#050a18] border border-white/5 p-5 pl-14 rounded-2xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-sky-500/50 transition-all" 
-                  />
+                  <input type="password" placeholder="Password" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full bg-[#050a18] border border-white/5 p-5 pl-14 rounded-2xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-sky-500/50 transition-all" />
                </div>
             </div>
-
-            <button 
-              onClick={handleAdminLogin} 
-              className="w-full py-6 bg-gradient-to-r from-[#20bdff] to-[#4c66f5] rounded-3xl font-black uppercase text-xl shadow-[0_10px_30px_rgba(76,102,245,0.3)] active:scale-95 transition-all mb-8"
-            >
-              ACCESS SYSTEM
-            </button>
-
+            <button onClick={handleAdminLogin} className="w-full py-6 bg-gradient-to-r from-[#20bdff] to-[#4c66f5] rounded-3xl font-black uppercase text-xl shadow-[0_10px_30px_rgba(76,102,245,0.3)] active:scale-95 transition-all mb-8">ACCESS SYSTEM</button>
             <button onClick={() => setShowAdminLogin(false)} className="text-[10px] font-black uppercase text-white/20 hover:text-white transition-colors tracking-[0.2em]">CANCEL LOGIN</button>
           </div>
         </div>
@@ -941,4 +911,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
