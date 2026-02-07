@@ -61,7 +61,12 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
   const [nagadNum, setNagadNum] = useState('');
   const [rocketNum, setRocketNum] = useState('');
   const [binanceNum, setBinanceNum] = useState('');
-  const [adminCommission, setAdminCommission] = useState("0");
+  
+  // Separate commission states
+  const [commBDT, setCommBDT] = useState("0");
+  const [commUSD, setCommUSD] = useState("0");
+  const [commINR, setCommINR] = useState("0");
+  
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -78,7 +83,10 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
         setNagadNum(settings.nagad_number || '');
         setRocketNum(settings.rocket_number || '');
         setBinanceNum(settings.binance_number || '');
-        setAdminCommission(settings.admin_commission || "0");
+        // Fetch separate commissions
+        setCommBDT(settings.commission_BDT || "0");
+        setCommUSD(settings.commission_USD || "0");
+        setCommINR(settings.commission_INR || "0");
       }
     } catch (e) {
       console.error("fetchData Error:", e);
@@ -250,6 +258,25 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                   </div>
                </div>
 
+               {/* Multi-Currency Commission Section */}
+               <div className="space-y-4">
+                  <h3 className="text-xl font-black italic uppercase text-white tracking-widest ml-4">PLATFORM COMMISSIONS COLLECTED</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      <div className="bg-[#064e3b]/10 p-10 rounded-[40px] border border-[#059669]/20 flex flex-col">
+                         <p className="text-[10px] font-black uppercase text-[#10b981] mb-2">BDT COMMISSION</p>
+                         <p className="text-4xl font-black text-[#10b981]">৳{parseFloat(commBDT).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-[#1e1b4b]/20 p-10 rounded-[40px] border border-[#4338ca]/20 flex flex-col">
+                         <p className="text-[10px] font-black uppercase text-[#6366f1] mb-2">USD COMMISSION</p>
+                         <p className="text-4xl font-black text-[#6366f1]">${parseFloat(commUSD).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                      </div>
+                      <div className="bg-[#451a03]/10 p-10 rounded-[40px] border border-[#9a3412]/20 flex flex-col">
+                         <p className="text-[10px] font-black uppercase text-[#ea580c] mb-2">INR COMMISSION</p>
+                         <p className="text-4xl font-black text-[#ea580c]">₹{parseFloat(commINR).toLocaleString()}</p>
+                      </div>
+                  </div>
+               </div>
+
                {/* Currency Flow Cards */}
                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   {['BDT', 'USD', 'INR'].map(curr => {
@@ -272,12 +299,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({
                       </div>
                     );
                   })}
-               </div>
-
-               {/* Commission Stat (Added below) */}
-               <div className="bg-[#064e3b]/10 p-10 rounded-[40px] border border-[#059669]/20 flex flex-col">
-                  <p className="text-[10px] font-black uppercase text-[#10b981] mb-2">PLATFORM COMMISSION COLLECTED (BASE)</p>
-                  <p className="text-5xl font-black text-[#10b981]">৳{parseFloat(adminCommission).toLocaleString()}</p>
                </div>
             </div>
           )}
