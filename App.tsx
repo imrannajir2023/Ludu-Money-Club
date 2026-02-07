@@ -8,7 +8,7 @@ import { soundManager } from './services/soundService';
 import { databaseService } from './services/database';
 import { getRandomBotIdentity, calculateBestBotMove } from './services/botService';
 import { generateGameCommentary } from './services/geminiService';
-import { SAFE_SPOTS, START_POSITIONS, CURRENCY_CONFIG } from './constants';
+import { SAFE_SPOTS, START_POSITIONS, CURRENCY_CONFIG, COLORS } from './constants';
 
 const Dice3D: React.FC<{ value: number | null, isRolling: boolean, onClick?: () => void, disabled?: boolean }> = ({ value, isRolling, onClick, disabled }) => {
   return (
@@ -129,6 +129,19 @@ const App: React.FC = () => {
     if (currency === 'USD') return [1, 5, 10, 50];
     if (currency === 'INR') return [50, 100, 500, 1000];
     return [50, 100, 500, 1000];
+  };
+
+  const detectAutoCurrency = async (): Promise<{ code: CurrencyCode, country: string }> => {
+    try {
+      const resp = await fetch('https://ipapi.co/json/');
+      const data = await resp.json();
+      if (data.country_code === 'BD') return { code: 'BDT', country: 'Bangladesh' };
+      if (data.country_code === 'IN') return { code: 'INR', country: 'India' };
+      return { code: 'USD', country: data.country_name || 'Global' };
+    } catch (e) {
+      console.warn("Currency detection failed, defaulting to USD");
+      return { code: 'USD', country: 'Global' };
+    }
   };
 
   const refreshAdminData = useCallback(async () => {
@@ -305,11 +318,15 @@ const App: React.FC = () => {
       reachedHome = true;
     } else {
       const targetPos = (player.tokens[tIdx].distanceTraveled + START_POSITIONS[player.color]) % 52;
-      if (!SAFE_SPOTS.includes(targetPos)) {
+      
+      // Capture Logic Fix: Only capture if we are on the shared circular path (distanceTraveled <= 50)
+      // distanceTraveled 51-56 are in the colored home lanes where pieces are safe from capture.
+      if (player.tokens[tIdx].distanceTraveled <= 50 && !SAFE_SPOTS.includes(targetPos)) {
         players.forEach((otherP, otherPIdx) => {
           if (otherPIdx === playerIdx) return;
           otherP.tokens.forEach((otherT, otherTIdx) => {
-            if (otherT.state === TokenState.PATH) {
+            // Also ensure the target is on the shared path and not already finished
+            if (otherT.state === TokenState.PATH && otherT.distanceTraveled <= 50) {
               const otherAbsPos = (otherT.distanceTraveled + START_POSITIONS[otherT.color]) % 52;
               if (otherAbsPos === targetPos) {
                 otherP.tokens[otherTIdx].state = TokenState.HOME;
@@ -328,10 +345,13 @@ const App: React.FC = () => {
       setGameState(p => p ? { ...p, winner: player.color } : null);
       if (!isLocalMode && user) {
         const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
-        const baseStake = selectedStake * config.rate;
-        const prize = baseStake * (gameState.players.length - 0.2);
+        const stakeInBase = selectedStake * config.rate;
+        const totalPool = stakeInBase * gameState.players.length;
+        const commission = totalPool * 0.05;
+        const prize = totalPool - commission;
         const updatedUser = { ...user, balance: user.balance + prize };
         databaseService.updateUser(updatedUser);
+        databaseService.addCommission(commission);
         setUser(updatedUser);
       }
     } else {
@@ -356,6 +376,9 @@ const App: React.FC = () => {
     try {
       const normalized = phone.replace(/\D/g, '').slice(-10);
       const existing = await databaseService.getUserByPhone(normalized);
+      
+      const { code: autoCurrency, country: autoCountry } = await detectAutoCurrency();
+
       if (isSignUp) {
         if (existing) {
           setAuthError('এই মোবাইল নম্বর দিয়ে অ্যাকাউন্ট খোলা আছে।');
@@ -367,19 +390,29 @@ const App: React.FC = () => {
           password, 
           balance: 0, 
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${normalized}`, 
+          preferredCurrency: autoCurrency,
+          country: autoCountry,
           stats: { totalGames: 0, wins: 0, totalWinnings: 0 }, 
           history: [] 
         };
         await databaseService.updateUser(newUser); 
         setUser(newUser);
+        setCurrency(autoCurrency);
         localStorage.setItem('LUDO_SESSION', JSON.stringify(newUser)); 
         setView('LOBBY');
       } else {
         if (!existing || existing.password !== password) {
           setAuthError('ভুল পাসওয়ার্ড বা মোবাইল নম্বর।');
         } else { 
-          setUser(existing); 
-          localStorage.setItem('LUDO_SESSION', JSON.stringify(existing)); 
+          let finalUser = existing;
+          // Auto-detect currency if not set for existing user
+          if (!existing.preferredCurrency) {
+            finalUser = { ...existing, preferredCurrency: autoCurrency, country: autoCountry };
+            await databaseService.updateUser(finalUser);
+          }
+          setUser(finalUser); 
+          setCurrency(finalUser.preferredCurrency || 'USD');
+          localStorage.setItem('LUDO_SESSION', JSON.stringify(finalUser)); 
           setView('LOBBY'); 
         }
       }
@@ -407,13 +440,31 @@ const App: React.FC = () => {
     setView('FINDING');
     setFindingTimer(6);
     setFoundPlayers([{ name: user.name, avatar: user.avatar }]);
+    
+    // logic fix: only add as many bots as needed for the selected player count
     const interval = setInterval(() => {
       setFindingTimer(t => {
-        if (t <= 1) { clearInterval(interval); prepareGame(false); return 0; }
-        if (t === 4 || t === 2) {
-          const bot = getRandomBotIdentity();
-          setFoundPlayers(p => [...p, { name: bot.name, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bot.name}` }]);
+        if (t <= 1) { 
+          clearInterval(interval); 
+          prepareGame(false); 
+          return 0; 
         }
+
+        // 2 Player game: Add 1 bot at t=4
+        if (playerCount === 2) {
+          if (t === 4 && foundPlayers.length < 2) {
+            const bot = getRandomBotIdentity();
+            setFoundPlayers(p => [...p, { name: bot.name, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bot.name}` }]);
+          }
+        } 
+        // 4 Player game: Add 3 bots at t=5, t=3, t=2
+        else if (playerCount === 4) {
+          if ((t === 5 || t === 3 || t === 2) && foundPlayers.length < 4) {
+            const bot = getRandomBotIdentity();
+            setFoundPlayers(p => [...p, { name: bot.name, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${bot.name}` }]);
+          }
+        }
+
         return t - 1;
       });
     }, 1000);
@@ -421,21 +472,25 @@ const App: React.FC = () => {
 
   const prepareGame = (local: boolean) => {
     const activeCount = local ? localPlayerCount : playerCount;
-    const colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+    // Standard order: Red, Green, Yellow, Blue. 
+    // Human is always index 0. We want index 0 to be BLUE (Bottom-Left).
+    // So the sequence for 4 players is Blue (Human), Red (Bot), Green (Bot), Yellow (Bot).
+    const colors = [PlayerColor.BLUE, PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW];
     const players: Player[] = [];
     
     for (let i = 0; i < activeCount; i++) {
-      const color = activeCount === 2 ? (i === 0 ? PlayerColor.RED : PlayerColor.YELLOW) : colors[i];
+      // For 2 players, BLUE vs GREEN (Opposite)
+      const color = activeCount === 2 ? (i === 0 ? PlayerColor.BLUE : PlayerColor.GREEN) : colors[i];
       if (local) {
         players.push({ 
-          id: `l-${i}`, name: localPlayerNames[i], country: 'BD', flag: '🇧🇩', color, 
+          id: `l-${i}`, name: localPlayerNames[i] || `Player ${i + 1}`, country: 'BD', flag: '🇧🇩', color, 
           isBot: false, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Local${i}`, tokens: [] 
         });
       } else {
         if (i === 0) {
           const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
           const baseStake = selectedStake * config.rate;
-          players.push({ id: 'user', name: user!.name, country: 'BD', flag: '🇧🇩', color: PlayerColor.RED, isBot: false, avatarUrl: user!.avatar, tokens: [] });
+          players.push({ id: 'user', name: user!.name, country: 'BD', flag: '🇧🇩', color, isBot: false, avatarUrl: user!.avatar, tokens: [] });
           const updatedUser = { ...user!, balance: user!.balance - baseStake };
           databaseService.updateUser(updatedUser);
           setUser(updatedUser);
@@ -450,6 +505,7 @@ const App: React.FC = () => {
       players: players.map((p, i) => ({ ...p, tokens: [0, 1, 2, 3].map(tid => ({ id: (i * 4) + tid, color: p.color, state: TokenState.HOME, position: 0, distanceTraveled: 0 })) })),
       currentPlayerIndex: 0, diceValue: null, isDiceRolled: false, winner: null, log: [], lastAction: 'Started', consecutiveSixes: 0
     });
+    setIsLocalMode(local);
     setView('GAME');
     addCommentary(local ? "Local game started!" : `Battle for ${(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}${selectedStake} started!`, "Arena");
   };
@@ -467,7 +523,6 @@ const App: React.FC = () => {
   };
 
   const onSubmitTransaction = async (tx: PendingTransaction) => {
-    // 1. Withdrawal Balance Check & Deduction
     if (tx.type === 'WITHDRAW' && user) {
       const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
       const baseAmount = tx.amount * config.rate;
@@ -475,28 +530,18 @@ const App: React.FC = () => {
         alert("আপনার ব্যালেন্স পর্যাপ্ত নয়!");
         return;
       }
-      
-      // Deduct balance from memory first
       const updatedUser = { ...user, balance: user.balance - baseAmount };
-      
-      // Attempt to update database
       const updateResult = await databaseService.updateUser(updatedUser);
-      if (updateResult.success) {
-         setUser(updatedUser);
-      } else {
-         alert("ব্যালেন্স আপডেট করতে ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।");
-         return;
-      }
+      if (updateResult.success) setUser(updatedUser);
+      else return alert("ব্যালেন্স আপডেট করতে ব্যর্থ হয়েছে।");
     }
     
-    // 2. Create Transaction Record
     const result = await databaseService.createTransaction(tx);
     if (result.success) {
       setWalletOpen(false);
       alert("আপনার অনুরোধটি পাঠানো হয়েছে!");
       if (view === 'ADMIN') refreshAdminData(); 
     } else {
-      // Refund if insertion failed for withdrawal
       if (tx.type === 'WITHDRAW' && user) {
         const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
         const baseAmount = tx.amount * config.rate;
@@ -524,7 +569,7 @@ const App: React.FC = () => {
           <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
           <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none"></div>
           
-          <div className="w-full max-w-sm z-10 flex flex-col items-center">
+          <div className="w-full max-sm z-10 flex flex-col items-center">
             <div className="relative mb-10 flex flex-col items-center animate-in zoom-in-95 duration-700">
                <div className="w-32 h-32 bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-wrap p-2 rotate-12 relative">
                   <div className="w-1/2 h-1/2 bg-red-500 rounded-tl-xl rounded-br-sm border-2 border-white"></div>
@@ -577,14 +622,6 @@ const App: React.FC = () => {
                 )}
               </button>
             </div>
-            
-            <button 
-              onClick={() => setShowAdminLogin(true)} 
-              className="mt-8 text-white/10 hover:text-white/40 text-[10px] font-bold uppercase tracking-widest text-center transition-colors"
-            >
-              Admin Access
-            </button>
-            <p className="mt-2 text-white/5 text-[9px] font-bold uppercase tracking-widest text-center">Version 4.3.0 • Multi-Currency Ready</p>
           </div>
         </div>
       )}
@@ -596,21 +633,10 @@ const App: React.FC = () => {
               <div className="w-12 h-12 rounded-2xl border-2 border-yellow-400 bg-slate-800 overflow-hidden shadow-lg shadow-yellow-400/10"><img src={user.avatar} className="w-full h-full object-cover" /></div>
               <div>
                 <h3 className="text-sm font-black uppercase italic tracking-tighter">{user.name}</h3>
-                <p className="text-[10px] text-yellow-400/50 font-bold uppercase tracking-widest">Global Rank #242</p>
+                <p className="text-[10px] text-yellow-400/50 font-bold uppercase tracking-widest">{user.country || 'Global'} Rank #242</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="bg-white/5 p-1 rounded-full border border-white/10 flex items-center gap-1">
-                 {Object.keys(CURRENCY_CONFIG).map((c) => (
-                   <button 
-                     key={c} 
-                     onClick={() => setCurrency(c as CurrencyCode)} 
-                     className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${currency === c ? 'bg-yellow-400 text-black shadow-lg scale-110' : 'text-white/30'}`}
-                   >
-                     {(CURRENCY_CONFIG[c as CurrencyCode] || CURRENCY_CONFIG['BDT']).symbol}
-                   </button>
-                 ))}
-              </div>
               <button onClick={() => { soundManager.play('click'); setWalletOpen(true); }} className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-xl">
                 <span className="text-sm font-black text-yellow-400">{formatBalance(user.balance)}</span>
                 <span className="w-5 h-5 bg-yellow-400 text-black rounded-full flex items-center justify-center text-[10px] font-black">+</span>
@@ -642,27 +668,101 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {view === 'FINDING' && (
-        <div className="h-full flex flex-col items-center justify-center p-8 animate-in fade-in bg-[#020617]">
-           <div className="relative w-48 h-48 mb-16">
-              <div className="absolute inset-0 border-4 border-yellow-400/20 rounded-full animate-ping"></div>
-              <div className="absolute inset-4 border-4 border-yellow-400/40 rounded-full animate-ping [animation-delay:0.3s]"></div>
-              <div className="absolute inset-0 flex items-center justify-center"><span className="text-7xl animate-bounce">🎲</span></div>
+      {view === 'LOCAL_SETUP' && (
+        <div className="h-full flex flex-col items-center justify-center p-8 bg-gradient-to-br from-purple-900 to-indigo-950 animate-in fade-in">
+           <div className="w-full max-sm bg-black/40 backdrop-blur-3xl border border-white/10 p-8 rounded-[40px] shadow-2xl">
+              <h2 className="text-4xl font-black italic uppercase text-white text-center mb-10 tracking-tighter">Match Setup</h2>
+              
+              <div className="mb-10">
+                 <p className="text-[10px] font-black uppercase text-purple-400 mb-4 tracking-widest text-center">Select Player Count</p>
+                 <div className="flex gap-2 p-1.5 bg-black/40 rounded-[28px] border border-white/5">
+                    {[2, 3, 4].map(n => (
+                      <button 
+                        key={n} 
+                        onClick={() => { soundManager.play('click'); setLocalPlayerCount(n as any); }} 
+                        className={`flex-1 py-4 rounded-[22px] font-black text-lg transition-all ${localPlayerCount === n ? 'bg-purple-500 text-white shadow-lg scale-105' : 'text-white/20'}`}
+                      >
+                        {n}P
+                      </button>
+                    ))}
+                 </div>
+              </div>
+
+              <div className="space-y-4 mb-10 max-h-[240px] overflow-y-auto no-scrollbar pr-1">
+                 {[...Array(localPlayerCount)].map((_, i) => (
+                    <div key={i} className="relative">
+                       <input 
+                         type="text" 
+                         placeholder={`Player ${i+1} Name`}
+                         value={localPlayerNames[i]}
+                         onChange={e => {
+                            const newNames = [...localPlayerNames];
+                            newNames[i] = e.target.value;
+                            setLocalPlayerNames(newNames);
+                         }}
+                         className="w-full bg-white/5 border border-white/10 p-5 pl-14 rounded-3xl outline-none text-sm font-bold text-white focus:border-purple-400/50 transition-all" 
+                       />
+                       <span className={`absolute left-6 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${[COLORS.RED.base, COLORS.GREEN.base, COLORS.YELLOW.base, COLORS.BLUE.base][i]}`}></span>
+                    </div>
+                 ))}
+              </div>
+
+              <div className="flex flex-col gap-3">
+                 <button onClick={() => prepareGame(true)} className="w-full py-6 bg-gradient-to-b from-purple-400 to-indigo-600 text-white rounded-[30px] font-black text-2xl uppercase italic border-b-[6px] border-indigo-950 active:translate-y-2 active:border-b-0 shadow-2xl transition-all">Start Game</button>
+                 <button onClick={() => setView('LOBBY')} className="w-full py-4 text-white/20 font-black uppercase text-[10px] tracking-widest text-center">Back to Lobby</button>
+              </div>
            </div>
-           <h2 className="text-3xl font-black italic uppercase tracking-[0.2em] mb-4">Finding Rivals</h2>
-           <p className="text-yellow-400 font-bold uppercase text-xs mb-12 tracking-widest animate-pulse">Arena Stake: {(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}{selectedStake}</p>
-           <div className="flex gap-4 mb-16">
+        </div>
+      )}
+
+      {view === 'FINDING' && (
+        <div className="h-full flex flex-col items-center justify-center p-8 animate-in fade-in bg-[#050a18]">
+           {/* Central Dice Container */}
+           <div className="relative w-64 h-64 mb-12 flex items-center justify-center">
+              <div className="absolute inset-0 border-[2px] border-white/5 rounded-full"></div>
+              <div className="bg-white w-16 h-16 rounded-xl shadow-2xl border-2 border-slate-200 flex flex-wrap p-2 rotate-12 relative animate-pulse">
+                <div className="w-1/2 h-1/2 bg-white flex items-center justify-center"><div className="w-2 h-2 bg-black rounded-full"></div></div>
+                <div className="w-1/2 h-1/2 bg-white flex items-center justify-center"></div>
+                <div className="w-1/2 h-1/2 bg-white flex items-center justify-center"></div>
+                <div className="w-1/2 h-1/2 bg-white flex items-center justify-center"><div className="w-2 h-2 bg-black rounded-full"></div></div>
+                <div className="absolute inset-0 flex items-center justify-center"><div className="w-3 h-3 bg-red-600 rounded-full"></div></div>
+              </div>
+           </div>
+
+           {/* Title and Stake */}
+           <div className="text-center space-y-2 mb-16">
+              <h2 className="text-4xl font-black italic uppercase tracking-[0.15em] text-white">FINDING RIVALS</h2>
+              <p className="text-[#fbbf24] font-black uppercase text-[10px] tracking-[0.2em]">ARENA STAKE: {(CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT']).symbol}{selectedStake}</p>
+           </div>
+
+           {/* Avatars Grid */}
+           <div className="flex gap-6 mb-20 min-h-[100px] items-start justify-center">
               {foundPlayers.map((p, i) => (
-                <div key={i} className="flex flex-col items-center animate-in zoom-in">
-                   <img src={p.avatar} className="w-16 h-16 rounded-2xl border-2 border-yellow-400 bg-slate-800 shadow-xl" />
-                   <span className="text-[10px] mt-2 font-bold uppercase text-white/60">{p.name}</span>
+                <div key={i} className="flex flex-col items-center animate-in zoom-in duration-300">
+                   <div className="p-1 rounded-2xl border-2 border-[#fbbf24] bg-slate-800 shadow-xl mb-3 overflow-hidden">
+                      <img src={p.avatar} className="w-16 h-16 object-cover rounded-xl" />
+                   </div>
+                   <span className="text-[10px] font-black uppercase text-white/60 tracking-tighter whitespace-nowrap">{p.name.split(' ')[0]}</span>
                 </div>
               ))}
-              {[...Array(Math.max(0, playerCount - foundPlayers.length))].map((_, i) => (
-                <div key={i} className="w-16 h-16 rounded-2xl border-2 border-white/5 bg-white/5 flex items-center justify-center text-white/20 animate-pulse font-black">?</div>
+              {/* Empty slots for missing players */}
+              {[...Array(playerCount - foundPlayers.length)].map((_, i) => (
+                <div key={i} className="flex flex-col items-center opacity-10 animate-pulse">
+                   <div className="w-[72px] h-[72px] rounded-2xl border-2 border-white/20 bg-white/5 flex items-center justify-center mb-3">
+                      <span className="text-xl font-black text-white/20">?</span>
+                   </div>
+                   <span className="text-[10px] font-black uppercase text-white/10 tracking-tighter">SEARCHING</span>
+                </div>
               ))}
            </div>
-           <button onClick={() => setView('LOBBY')} className="px-10 py-4 rounded-full border border-white/10 text-white/30 font-black uppercase text-xs hover:text-white transition-all">Cancel Match</button>
+
+           {/* Cancel Action */}
+           <button 
+             onClick={() => setView('LOBBY')} 
+             className="px-12 py-4 rounded-full border border-white/10 text-white/30 font-black uppercase text-[10px] tracking-widest hover:text-white hover:border-white/30 transition-all duration-300 active:scale-95"
+           >
+             CANCEL MATCH
+           </button>
         </div>
       )}
 
@@ -691,8 +791,25 @@ const App: React.FC = () => {
                 
                 {gameState.players.map((p, i) => {
                   const isActive = gameState.currentPlayerIndex === i;
-                  let posClass = ["top-[-120px] left-0", "top-[-120px] right-0", "bottom-[-120px] right-0", "bottom-[-120px] left-0"][i];
-                  if (gameState.players.length === 2 && i === 1) posClass = "bottom-[-120px] right-0";
+                  
+                  // Mapping player colors to visual panel positions:
+                  // RED -> Top Left
+                  // GREEN -> Top Right
+                  // YELLOW -> Bottom Right
+                  // BLUE -> Bottom Left (Human Player index 0 is always assigned Blue color now)
+                  const panelPositions: Record<PlayerColor, string> = {
+                    [PlayerColor.RED]: "top-[-120px] left-0",
+                    [PlayerColor.GREEN]: "top-[-120px] right-0",
+                    [PlayerColor.YELLOW]: "bottom-[-120px] right-0",
+                    [PlayerColor.BLUE]: "bottom-[-120px] left-0"
+                  };
+                  
+                  let posClass = panelPositions[p.color];
+                  
+                  // Handle 2-player mode alignment visually opposite
+                  if (gameState.players.length === 2) {
+                    posClass = p.color === PlayerColor.BLUE ? "bottom-[-120px] left-0" : "top-[-120px] right-0";
+                  }
                   
                   return (
                     <div key={p.id} className={`absolute ${posClass}`}>
@@ -726,51 +843,49 @@ const App: React.FC = () => {
       )}
 
       {showAdminLogin && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-2xl z-[1000] flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 duration-300">
-          <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-sm border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.8)]">
-            <div className="text-center mb-10">
-              <div className="w-20 h-20 bg-sky-500/10 rounded-3xl border border-sky-500/20 flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">🛡️</span>
-              </div>
-              <h2 className="text-3xl font-black uppercase italic text-sky-400 tracking-tighter">Admin Portal</h2>
-              <p className="text-white/30 text-[10px] font-bold uppercase tracking-widest mt-2">Internal Access Only</p>
-            </div>
+        <div className="fixed inset-0 bg-[#020617] backdrop-blur-2xl z-[1000] flex flex-col items-center justify-center p-8 animate-in fade-in duration-300">
+          <div className="bg-[#0f172a] p-12 rounded-[50px] w-full max-sm border border-white/5 shadow-[0_0_80px_rgba(0,0,0,0.8)] flex flex-col items-center">
             
-            <div className="space-y-4 mb-10">
-              <div className="relative">
-                <input 
-                  type="text" 
-                  placeholder="Admin ID" 
-                  value={adminId} 
-                  onChange={e => setAdminId(e.target.value)} 
-                  className="w-full bg-black/40 p-5 pl-14 rounded-2xl outline-none border border-white/10 focus:border-sky-500 font-bold text-white transition-all shadow-inner" 
-                />
-                <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">🆔</span>
-              </div>
-              <div className="relative">
-                <input 
-                  type="password" 
-                  placeholder="Password" 
-                  value={adminPass} 
-                  onChange={e => setAdminPass(e.target.value)} 
-                  className="w-full bg-black/40 p-5 pl-14 rounded-2xl outline-none border border-white/10 focus:border-sky-500 font-bold text-white transition-all shadow-inner" 
-                />
-                <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">🔑</span>
-              </div>
+            <div className="w-24 h-24 bg-[#1e293b] rounded-3xl border border-sky-500/20 flex items-center justify-center mb-8">
+               <div className="w-12 h-12 flex items-center justify-center bg-white rounded-full overflow-hidden p-1.5">
+                  <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444'%3E%3Cpath d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.5 1.1 2.5 2.5S13.4 12 12 12s-2.5-1.1-2.5-2.5S10.6 7 12 7zm0 13.92c-3.13-1.07-5.5-4.22-5.5-7.42 0-.28.02-.56.07-.83 1.34 1.1 3.2 1.83 5.43 1.83 2.23 0 4.09-.73 5.43-1.83.05.27.07.55.07.83 0 3.2-2.37 6.35-5.5 7.42z'/%3E%3C/svg%3E" alt="Shield Icon" />
+               </div>
             </div>
-            
+
+            <h2 className="text-3xl font-black italic uppercase text-[#42dbff] tracking-tight mb-1">ADMIN PORTAL</h2>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-12">INTERNAL ACCESS ONLY</p>
+
+            <div className="w-full space-y-4 mb-10">
+               <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30 text-sky-400">🆔</span>
+                  <input 
+                    type="text" 
+                    placeholder="Admin ID" 
+                    value={adminId}
+                    onChange={e => setAdminId(e.target.value)}
+                    className="w-full bg-[#050a18] border border-white/5 p-5 pl-14 rounded-2xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-sky-500/50 transition-all" 
+                  />
+               </div>
+               <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30 text-yellow-400">🔑</span>
+                  <input 
+                    type="password" 
+                    placeholder="Password" 
+                    value={adminPass}
+                    onChange={e => setAdminPass(e.target.value)}
+                    className="w-full bg-[#050a18] border border-white/5 p-5 pl-14 rounded-2xl outline-none text-sm font-bold text-white placeholder:text-white/20 focus:border-sky-500/50 transition-all" 
+                  />
+               </div>
+            </div>
+
             <button 
               onClick={handleAdminLogin} 
-              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 text-white py-5 rounded-2xl font-black uppercase text-xl shadow-[0_10px_30px_rgba(14,165,233,0.3)] border-b-[6px] border-indigo-950 active:translate-y-1 active:border-b-0 transition-all"
+              className="w-full py-6 bg-gradient-to-r from-[#20bdff] to-[#4c66f5] rounded-3xl font-black uppercase text-xl shadow-[0_10px_30px_rgba(76,102,245,0.3)] active:scale-95 transition-all mb-8"
             >
-              Access System
+              ACCESS SYSTEM
             </button>
-            <button 
-              onClick={() => { setShowAdminLogin(false); setAdminId(''); setAdminPass(''); }} 
-              className="w-full mt-6 text-[10px] font-bold text-white/20 hover:text-white uppercase tracking-widest text-center transition-colors"
-            >
-              Cancel Login
-            </button>
+
+            <button onClick={() => setShowAdminLogin(false)} className="text-[10px] font-black uppercase text-white/20 hover:text-white transition-colors tracking-[0.2em]">CANCEL LOGIN</button>
           </div>
         </div>
       )}
@@ -792,18 +907,12 @@ const App: React.FC = () => {
               if (target) { 
                 const config = CURRENCY_CONFIG[tx.currency] || CURRENCY_CONFIG['BDT'];
                 const baseAmount = tx.amount * config.rate;
-                
-                // For deposit, we add balance on approval
                 if (tx.type === 'DEPOSIT') {
                   const updated = { ...target, balance: target.balance + baseAmount }; 
                   await databaseService.updateUser(updated); 
                   setAllUsers(allUsers.map(u => u.phone === updated.phone ? updated : u)); 
                 }
-                // For withdrawal, balance was already deducted on request creation.
-                
                 await databaseService.updateTransactionStatus(tx.id, 'APPROVED'); 
-                setPendingTransactions(prev => prev.filter(p => p.id !== tx.id)); 
-                alert("অনুমোদিত হয়েছে!"); 
                 refreshAdminData(); 
               } 
             }} 
@@ -820,8 +929,6 @@ const App: React.FC = () => {
                 }
               }
               await databaseService.updateTransactionStatus(txId, 'REJECTED'); 
-              setPendingTransactions(prev => prev.filter(p => p.id !== txId)); 
-              alert("অনুরোধটি বাতিল করা হয়েছে এবং টাকা ফেরত দেওয়া হয়েছে (যদি প্রযোজ্য হয়)।");
               refreshAdminData(); 
             }} 
             onExit={() => setView('LOBBY')} 
@@ -834,3 +941,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+
