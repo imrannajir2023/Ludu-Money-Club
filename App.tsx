@@ -358,13 +358,18 @@ const App: React.FC = () => {
       setGameState(p => p ? { ...p, winner: player.color } : null);
       if (!isLocalMode && user) {
         const config = CURRENCY_CONFIG[currency] || CURRENCY_CONFIG['BDT'];
-        const stakeInBase = selectedStake * config.rate;
-        const totalPool = stakeInBase * gameState.players.length;
-        const commission = totalPool * 0.05;
-        const prize = totalPool - commission;
-        const updatedUser = { ...user, balance: user.balance + prize };
+        
+        // Calculate commission in the original currency
+        const commissionInOriginal = (selectedStake * gameState.players.length) * 0.05;
+        const prizeInOriginal = (selectedStake * gameState.players.length) - commissionInOriginal;
+        
+        // Convert prize to base balance (BDT) for user storage
+        const prizeInBase = prizeInOriginal * config.rate;
+        const updatedUser = { ...user, balance: user.balance + prizeInBase };
+        
         databaseService.updateUser(updatedUser);
-        databaseService.addCommission(commission);
+        // Track commission specifically for the currency used
+        databaseService.addCommission(commissionInOriginal, currency);
         setUser(updatedUser);
       }
     } else {
