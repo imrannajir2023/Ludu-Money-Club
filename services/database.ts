@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { UserProfile, PendingTransaction } from '../types';
+import { UserProfile, PendingTransaction, CurrencyCode } from '../types';
 
 const supabaseUrl = 'https://ipvfupwcckkigyxeqazg.supabase.co';
 const supabaseKey = 'sb_publishable_IymvinlNRCFKhicLAUXqFw_cc_xiOm6';
@@ -215,6 +215,18 @@ export const databaseService = {
       if (error) throw error;
       return true;
     } catch (error: any) {
+      return false;
+    }
+  },
+
+  async addCommission(amount: number, currency: CurrencyCode) {
+    try {
+      const settings = await this.getSettings();
+      const key = `commission_${currency}`;
+      const current = parseFloat(settings[key] || "0");
+      await this.updateSetting(key, (current + amount).toString());
+      return true;
+    } catch (e) {
       return false;
     }
   }
